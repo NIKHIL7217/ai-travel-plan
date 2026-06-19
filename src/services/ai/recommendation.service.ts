@@ -1,42 +1,57 @@
-import { GEMINI_API_KEY as API_KEY, GEMINI_API_URL as API_URL, DEMO_MODE, REAL_DATA_ONLY, extractJsonObject, safeJsonParse } from "./planner.service";
+import { GEMINI_API_KEY as API_KEY, GEMINI_API_URL as API_URL, DEMO_MODE, NO_MOCK_DATA_POLICY, REAL_DATA_ONLY, extractJsonObject, safeJsonParse } from "./planner.service";
 import { geocodePlace } from "../maps/geocoding.service";
 import { getRouteDistance } from "../maps/route.service";
 import { fetchWeather } from "../travel/weather.service";
 import { fetchNearbyPlaces } from "../travel/places.service";
 import { userLocation } from "../location";
 import { getDemoDestinationSuggestions, getDemoDestinationDetails } from "../../data/demoWorkingData";
+import {
+  destinationDetailsSchema,
+  destinationOverviewSchema,
+  destinationSuggestionSchema
+} from "../../schemas/destination.schema";
+import { locationDataSchema } from "../../schemas/trip.schema";
+import { parseArrayWithSchema, parseWithSchema } from "../../schemas/parse";
+import type {
+  DestinationDetails,
+  DestinationOverview,
+  DestinationProfile,
+  DestinationSuggestion
+} from "../../types/Destination";
+import type { LocationData } from "../../types/Trip";
+import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+import { getLiveDestinationPhoto } from "../photo/provider.service";
 
-export interface DestinationSuggestion {
-  id: string;
-  name: string;
-  location: string;
-  rating: number;
-  startingBudget: number;
-  bestTime: string;
-  description: string;
-  image: string;
-  [key: string]: any;
+export type {
+  DestinationDetails,
+  DestinationOverview,
+  DestinationProfile,
+  DestinationSuggestion
+} from "../../types/Destination";
+export type { LocationData } from "../../types/Trip";
+
+const SEARCH_CACHE_TTL_MS = 1000 * 60 * 15;
+const DESTINATION_CACHE_TTL_MS = 1000 * 60 * 30;
+
+function isBundledImage(path: string): boolean {
+  return String(path || "").startsWith("/images/");
 }
 
-export interface DestinationProfile extends DestinationSuggestion {
-  [key: string]: any;
+function validateDestinationSuggestions(value: unknown, context: string): DestinationSuggestion[] {
+  return parseArrayWithSchema(destinationSuggestionSchema, value, context);
 }
 
-export interface DestinationDetails extends DestinationProfile {
-  localCurrency?: string;
-  weatherForecast?: Array<Record<string, any>>;
-  budgetBreakdown?: Record<string, number>;
+function validateDestinationDetails(value: unknown, context: string): DestinationDetails | null {
+  return parseWithSchema(destinationDetailsSchema, value, context);
 }
 
-export interface LocationData {
-  hotels?: Array<Record<string, any>>;
-  restaurants?: Array<Record<string, any>>;
-  hospitals?: Array<Record<string, any>>;
-  fuelStations?: Array<Record<string, any>>;
-  evChargingStations?: Array<Record<string, any>>;
-  attractions?: Array<Record<string, any>>;
-  updatedAt?: string;
-  [key: string]: any;
+function validateDestinationOverview(value: unknown, context: string): DestinationOverview | null {
+  return parseWithSchema(destinationOverviewSchema, value, context);
+}
+
+function validateLocationData(value: unknown, context: string): LocationData | null {
+  return parseWithSchema(locationDataSchema, value, context);
 }
 
 export const MOCK_DESTINATIONS: DestinationProfile[] = [
@@ -274,17 +289,27 @@ export function resolveUnsplashImage(cityName: string): string {
   return `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=800&q=80`;
 }
 
+export async function resolveDestinationPhoto(cityName: string, lat?: number | null, lng?: number | null): Promise<string> {
+  const query = String(cityName || "destination").trim();
+  return getLiveDestinationPhoto(query, lat, lng);
+}
+
 /**
  * Returns matching destination profiles, appending a custom card if no match exists
  */
 export async function generateDestinationSuggestions(query: string): Promise<DestinationSuggestion[]> {
-  const q = String(query || "").trim();
+  return withCache(
+    CacheBuckets.search,
+    String(query || "").trim().toLowerCase(),
+    SEARCH_CACHE_TTL_MS,
+    async () => {
+      const q = String(query || "").trim();
 
-  const isMockRequest = q.toLowerCase().includes("demo") || q.toLowerCase().includes("mock");
+      const isMockRequest = q.toLowerCase().includes("demo") || q.toLowerCase().includes("mock");
 
-  if (!q) {
-    return REAL_DATA_ONLY ? [] : MOCK_DESTINATIONS;
-  }
+      if (!q) {
+        return [];
+      }
 
   const buildQuerySeed = (raw) => {
     const seed = String(raw || "").trim();
@@ -313,37 +338,40 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
     cleanedQ.split(" ").slice(-1).join(" ")
   ].filter((item, idx, arr) => item && arr.indexOf(item) === idx);
 
-  const mapSuggestions = (items) => {
+      const mapSuggestions = (items) => {
     if (!Array.isArray(items) || items.length === 0) {
       return [];
     }
 
-    return items.map((item, idx) => ({
-      id: String(item.id || item.name || `destination-${idx}`).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
-      name: item.name || "Destination",
-      location: item.location || item.country || "Global",
-      rating: Number(item.rating || 4.4),
-      startingBudget: Math.max(0, Math.round(Number(item.startingBudget || item.budget || 0))),
-      bestTime: item.bestTime || "Season varies",
-      description: item.description || "Popular travel destination.",
-      image: item.image || resolveUnsplashImage(item.name || q)
-    }));
-  };
+        const mapped = items.map((item, idx) => ({
+          id: String(item.id || item.name || `destination-${idx}`).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
+          name: item.name || "Destination",
+          location: item.location || item.country || "Global",
+          rating: Number(item.rating || 4.4),
+          startingBudget: Math.max(0, Math.round(Number(item.startingBudget || item.budget || 0))),
+          bestTime: item.bestTime || "Season varies",
+          description: item.description || "Popular travel destination.",
+          image: item.image && !isBundledImage(item.image) ? item.image : resolveUnsplashImage(item.name || q)
+        }));
 
-  if (DEMO_MODE || isMockRequest) {
-    const mockFromGemini = mapSuggestions(MOCK_DESTINATIONS);
-    const demoFromFile = mapSuggestions(getDemoDestinationSuggestions());
-    const merged = [...mockFromGemini, ...demoFromFile];
-    const seen = new Set();
-    return merged.filter((item) => {
-      if (!item?.id || seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-  }
+        return validateDestinationSuggestions(mapped, "mapped destination suggestions");
+      };
 
-  if (API_KEY) {
-    try {
+      if (!NO_MOCK_DATA_POLICY && (DEMO_MODE || isMockRequest)) {
+        const mockFromGemini = mapSuggestions(MOCK_DESTINATIONS);
+        const demoFromFile = mapSuggestions(getDemoDestinationSuggestions());
+        const merged = [...mockFromGemini, ...demoFromFile];
+        const seen = new Set();
+        const unique = merged.filter((item) => {
+          if (!item?.id || seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+        return validateDestinationSuggestions(unique, "demo destination suggestions");
+      }
+
+      if (API_KEY) {
+        try {
       const prompt = `
         You are a travel discovery assistant. For user query "${q}", return real destination suggestions.
         Respond with a single valid JSON array only, no markdown.
@@ -361,16 +389,20 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
         Return between 4 and 8 items.
       `;
 
-      const response = await fetch(API_URL, {
+          const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "recommendation.gemini_suggestions",
+        timeoutMs: 15000,
+        retries: 1
       });
 
-      if (response.ok) {
+          if (response.ok) {
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
         const parsed = extractJsonObject(text) || safeJsonParse(text, []);
@@ -385,25 +417,25 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
               : [];
 
         const mapped = mapSuggestions(directList.length > 0 ? directList : nestedList);
-        if (mapped.length > 0) {
-          return mapped;
+            if (mapped.length > 0) {
+              return mapped;
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to generate destination suggestions from Gemini:", error);
         }
       }
-    } catch (error) {
-      console.warn("Failed to generate destination suggestions from Gemini:", error);
-    }
-  }
 
   // Real-data fallback: if Gemini fails, still resolve searched place via geocoding.
-  try {
-    for (const candidate of geocodeCandidates) {
+      try {
+        for (const candidate of geocodeCandidates) {
       const geo = await geocodePlace(candidate);
       if (geo?.formattedName) {
         const parts = String(geo.formattedName).split(",").map((p) => p.trim()).filter(Boolean);
         const name = parts[0] || candidate;
         const location = parts.slice(-1)[0] || "Global";
 
-        return [
+          return validateDestinationSuggestions([
           {
             id: String(name).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
             name,
@@ -414,43 +446,25 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
             description: `Real geolocation result for ${name}. Open details to load live weather, routes, and nearby places.`,
             image: resolveUnsplashImage(name)
           }
-        ];
+            ], "geocoded destination suggestion");
+          }
+        }
+      } catch (error) {
+        console.warn("Geocode fallback for destination search failed:", error);
       }
+
+      if (NO_MOCK_DATA_POLICY || REAL_DATA_ONLY) {
+        return [];
+      }
+
+      return validateDestinationSuggestions([buildQuerySeed(q)], "query seed destination suggestion");
     }
-  } catch (error) {
-    console.warn("Geocode fallback for destination search failed:", error);
-  }
-
-  if (REAL_DATA_ONLY) {
-    return [buildQuerySeed(q)];
-  }
-
-  const lower = query.toLowerCase().trim();
-  const filtered = MOCK_DESTINATIONS.filter(
-    d => d.name.toLowerCase().includes(lower) || d.location.toLowerCase().includes(lower)
   );
-
-  // If the user is searching for a custom city that isn't in MOCK_DESTINATIONS, append a dynamically created profile suggestion
-  if (filtered.length === 0 && query.length >= 2) {
-    const formattedName = query.charAt(0).toUpperCase() + query.slice(1);
-    filtered.push({
-      id: lower.replace(/\s+/g, "-"),
-      name: formattedName,
-      location: "Global Destination",
-      rating: 4.5,
-      startingBudget: 800,
-      bestTime: "All Year Round",
-      description: `Discover the scenic landmarks, local cuisine, and culture of ${formattedName}.`,
-      image: resolveUnsplashImage(formattedName)
-    });
-  }
-
-  return filtered;
 }
 
 function fillIntelligenceFields(destData) {
   const mock = generateDynamicMockDestination(destData.name || "Destination");
-  return {
+  const details = {
     ...mock,
     ...destData,
     weatherForecast: destData.weatherForecast || mock.weatherForecast,
@@ -462,6 +476,8 @@ function fillIntelligenceFields(destData) {
     advantages: destData.advantages || mock.advantages,
     disadvantages: destData.disadvantages || mock.disadvantages
   };
+
+  return validateDestinationDetails(details, "dynamic fallback destination details") || details;
 }
 
 /**
@@ -469,20 +485,30 @@ function fillIntelligenceFields(destData) {
  * @param {string} destId - ID or name of destination
  */
 export async function getDestinationDetails(destId: string): Promise<DestinationDetails> {
-  if (String(destId || "").toLowerCase().includes("-demo")) {
-    return getDemoDestinationDetails(String(destId || "goa-demo").toLowerCase());
+  if (!NO_MOCK_DATA_POLICY && String(destId || "").toLowerCase().includes("-demo")) {
+    const demoDetails = getDemoDestinationDetails(String(destId || "goa-demo").toLowerCase());
+    const validated = validateDestinationDetails(demoDetails, "demo destination details");
+    if (validated) {
+      return validated;
+    }
+    return generateDynamicMockDestination(destId || "goa-demo");
   }
 
   const cleanId = String(destId).toLowerCase().trim();
-  const matched = MOCK_DESTINATIONS.find(d => d.id === cleanId);
+  const matched = NO_MOCK_DATA_POLICY ? null : MOCK_DESTINATIONS.find(d => d.id === cleanId);
 
   // In demo mode, prefer built-in mock profiles directly for quick showcase.
-  if (DEMO_MODE && matched) {
-    return fillIntelligenceFields({
+  if (!NO_MOCK_DATA_POLICY && DEMO_MODE && matched) {
+    const demoDetails = fillIntelligenceFields({
       ...matched,
       id: matched.id,
       image: matched.image || resolveUnsplashImage(matched.name)
     });
+    const validated = validateDestinationDetails(demoDetails, "mock destination details");
+    if (validated) {
+      return validated;
+    }
+    return generateDynamicMockDestination(matched.name);
   }
   
   // 1. Geocode location to get coordinates and formatted name
@@ -508,7 +534,11 @@ export async function getDestinationDetails(destId: string): Promise<Destination
     }
     // Reverse geocode to get actual location names
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`);
+      const res = await requestWithRetry(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`, {}, {
+        operation: "recommendation.reverse_geocode",
+        timeoutMs: 9000,
+        retries: 1
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.address) {
@@ -624,19 +654,23 @@ export async function getDestinationDetails(destId: string): Promise<Destination
         }
       `;
 
-      const response = await fetch(API_URL, {
+      const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "recommendation.gemini_details",
+        timeoutMs: 15000,
+        retries: 1
       });
 
       if (response.ok) {
         const resJson = await response.json();
         const text = resJson.candidates[0].content.parts[0].text;
-        aiResult = JSON.parse(text.trim());
+        aiResult = validateDestinationOverview(JSON.parse(text.trim()), "Gemini destination overview");
       }
     } catch (e) {
       console.warn("Gemini overview analysis failed, using fallback:", e);
@@ -645,7 +679,7 @@ export async function getDestinationDetails(destId: string): Promise<Destination
 
   // Fallback if AI fails or key is absent
   if (!aiResult) {
-    if (REAL_DATA_ONLY) {
+    if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
       aiResult = {
         description: `${resolvedName} travel profile based on currently available live location signals.`,
         longDescription: `${resolvedName} is being shown using live coordinates, weather, and nearby establishments. Detailed narrative insights are temporarily unavailable.`,
@@ -682,7 +716,7 @@ export async function getDestinationDetails(destId: string): Promise<Destination
   const startingBudget = Math.round(budgetBreakdown.total);
   const flightHours = Math.max(1, Math.round((distanceKm / 750) * 10) / 10);
 
-  return {
+  const details = {
     id: cleanId,
     name: resolvedName,
     location: country,
@@ -692,19 +726,19 @@ export async function getDestinationDetails(destId: string): Promise<Destination
     bestTime: aiResult.bestTime,
     description: aiResult.description,
     longDescription: aiResult.longDescription,
-    image: matched ? matched.image : `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80`,
+    image: await resolveDestinationPhoto(resolvedName, lat, lng),
     distanceFromHubs: `${distanceKm.toLocaleString()} km`,
     localCurrency,
     aqi: facts.weather.aqi,
     travelScore: Math.round(75 + (lat % 15) + (lng % 10)),
     safetyScore: Math.round(80 + (lat % 8) - (lng % 5)),
-    advantages: REAL_DATA_ONLY ? [] : ["Stunning local scenery and view spots", "Real local culinary delicacies", "Friendly neighborhood environment"],
-    disadvantages: REAL_DATA_ONLY ? [] : ["Can get crowded during peak weather seasons", "Premium hotels have high peak season pricing"],
+    advantages: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? [] : ["Stunning local scenery and view spots", "Real local culinary delicacies", "Friendly neighborhood environment"],
+    disadvantages: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? [] : ["Can get crowded during peak weather seasons", "Premium hotels have high peak season pricing"],
     suitability: {
-      family: REAL_DATA_ONLY ? "Live suitability insights unavailable" : "Very suitable with parks and family accommodations.",
-      solo: REAL_DATA_ONLY ? "Live suitability insights unavailable" : "Highly rated for solo safety and hostels availability.",
-      couple: REAL_DATA_ONLY ? "Live suitability insights unavailable" : "Scenic view spots make it perfect for couples.",
-      budget: REAL_DATA_ONLY ? "Live suitability insights unavailable" : "Affordable street dinings and hostels lower standard trip budgets."
+      family: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? "Live suitability insights unavailable" : "Very suitable with parks and family accommodations.",
+      solo: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? "Live suitability insights unavailable" : "Highly rated for solo safety and hostels availability.",
+      couple: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? "Live suitability insights unavailable" : "Scenic view spots make it perfect for couples.",
+      budget: REAL_DATA_ONLY || NO_MOCK_DATA_POLICY ? "Live suitability insights unavailable" : "Affordable street dinings and hostels lower standard trip budgets."
     },
     weatherForecast: weatherData ? weatherData.weatherForecast : [],
     transportOptions: {
@@ -748,6 +782,26 @@ export async function getDestinationDetails(destId: string): Promise<Destination
     tips: aiResult.tips,
     weather: facts.weather
   };
+
+  const validated = validateDestinationDetails(details, "destination details");
+  if (validated) {
+    return validated;
+  }
+
+  if (NO_MOCK_DATA_POLICY || REAL_DATA_ONLY) {
+    return {
+      id: cleanId,
+      name: resolvedName,
+      location: country,
+      rating,
+      startingBudget,
+      bestTime: aiResult.bestTime || "Live season data unavailable",
+      description: aiResult.description || "Live destination profile unavailable.",
+      image: await resolveDestinationPhoto(resolvedName, lat, lng)
+    } as DestinationDetails;
+  }
+
+  return generateDynamicMockDestination(resolvedName);
 }
 
 /**
@@ -881,7 +935,7 @@ function generateDynamicMockDestination(destId) {
     ]
   };
 
-  return {
+  const details = {
     id: destId.toLowerCase(),
     name: name,
     location: location,
@@ -937,6 +991,8 @@ function generateDynamicMockDestination(destId) {
     ],
     weather: { general: "Partly cloudy with pleasant evening breezes", temp: "18°C - 26°C" }
   };
+
+  return validateDestinationDetails(details, "dynamic fallback destination details") || details;
 }
 
 function cityHash(str: string): number {
@@ -975,7 +1031,7 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
       ].some(Boolean);
 
       if (hasAnyLiveData) {
-        return {
+        const locationData = {
           attractions: (attractions || []).map((a) => ({
             name: a.name,
             desc: a.desc || "Popular attraction near this destination.",
@@ -992,6 +1048,10 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
           evChargingStations: evChargingStations || [],
           updatedAt: new Date().toISOString()
         };
+        const validated = validateLocationData(locationData, "live location data");
+        if (validated) {
+          return validated;
+        }
       }
     }
   } catch (error) {
@@ -1034,37 +1094,53 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
         8. All prices in Indian Rupees (₹)
       `;
 
-      const response = await fetch(API_URL, {
+      const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "recommendation.gemini_locations",
+        timeoutMs: 15000,
+        retries: 1
       });
 
       if (response.ok) {
         const data = await response.json();
         const text = data.candidates[0].content.parts[0].text;
-        return JSON.parse(text.trim());
+        const validated = validateLocationData(JSON.parse(text.trim()), "Gemini location data");
+        if (validated) {
+          return validated;
+        }
       }
     } catch (e) {
       console.warn("Failed to fetch real location data from Gemini:", e);
     }
   }
 
-  if (REAL_DATA_ONLY) {
-    return {
+  if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
+    return validateLocationData({
       hotels: [],
       restaurants: [],
       hospitals: [],
       fuelStations: [],
+      attractions: [],
+      evChargingStations: []
+    }, "empty live-only location data") || {
+      hotels: [],
+      restaurants: [],
+      hospitals: [],
+      fuelStations: [],
+      attractions: [],
       evChargingStations: []
     };
   }
   
   // Fallback to mock location data with coordinates
-  return generateMockLocationData(destinationName);
+  const fallback = generateMockLocationData(destinationName);
+  return validateLocationData(fallback, "fallback location data") || fallback;
 }
 
 function generateMockLocationData(destinationName) {

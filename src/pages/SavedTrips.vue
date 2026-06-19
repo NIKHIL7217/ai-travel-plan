@@ -1,27 +1,59 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { defineAsyncComponent, ref, onMounted } from "vue";
 import { getSavedTripsFromDb, deleteTripFromDb } from "../services/firebase";
-import { resolveUnsplashImage } from "../services/gemini";
 import Icons from "../shared/icons/Icons.vue";
 import GlassPanel from "../shared/ui/GlassPanel.vue";
 import { formatPrice } from "../services/currency";
 import { useAuthStore } from "../stores/auth";
 
+const RoadtripIntelligencePanel = defineAsyncComponent(() => import("../features/roadtrip/RoadtripIntelligencePanel.vue"));
+
 const savedTrips = ref([]);
 const loading = ref(true);
+const loadError = ref("");
+const deleteError = ref("");
+const deletingTripId = ref("");
 const authStore = useAuthStore();
 
 // Modal states for full itinerary review
 const activeOverlayTrip = ref(null);
 const isOverlayOpen = ref(false);
+const overlayRoadtripLoading = ref(false);
+
+const coverImageMap = ref({});
+let geminiServicePromise;
+
+async function loadGeminiService() {
+  if (!geminiServicePromise) {
+    geminiServicePromise = import("../services/gemini");
+  }
+  return geminiServicePromise;
+}
+
+function getTripCoverImage(destination) {
+  return coverImageMap.value[destination] || "";
+}
 
 const fetchSavedTrips = async () => {
   loading.value = true;
+  loadError.value = "";
   try {
     const userId = authStore.user?.uid;
     savedTrips.value = userId ? await getSavedTripsFromDb(userId) : [];
+
+    if (savedTrips.value.length) {
+      const { resolveUnsplashImage } = await loadGeminiService();
+      coverImageMap.value = savedTrips.value.reduce((acc, trip) => {
+        acc[trip.destination] = resolveUnsplashImage(trip.destination);
+        return acc;
+      }, {});
+    } else {
+      coverImageMap.value = {};
+    }
   } catch (e) {
     console.error("Failed to load saved trips:", e);
+    savedTrips.value = [];
+    loadError.value = "Unable to load your saved trips right now.";
   } finally {
     loading.value = false;
   }
@@ -32,22 +64,34 @@ onMounted(() => {
 });
 
 const handleDelete = async (id) => {
+  deleteError.value = "";
   if (confirm("Are you sure you want to delete this trip from your archives?")) {
-    const success = await deleteTripFromDb(id, authStore.user?.uid);
-    if (success) {
-      savedTrips.value = savedTrips.value.filter(t => t.id !== id);
+    deletingTripId.value = id;
+    try {
+      const success = await deleteTripFromDb(id, authStore.user?.uid);
+      if (success) {
+        savedTrips.value = savedTrips.value.filter(t => t.id !== id);
+      } else {
+        deleteError.value = "Could not delete this trip. Please try again.";
+      }
+    } catch (error) {
+      deleteError.value = "Could not delete this trip. Please try again.";
+    } finally {
+      deletingTripId.value = "";
     }
   }
 };
 
 const openOverlay = (trip) => {
   activeOverlayTrip.value = trip;
+  overlayRoadtripLoading.value = false;
   isOverlayOpen.value = true;
 };
 
 const closeOverlay = () => {
   isOverlayOpen.value = false;
   activeOverlayTrip.value = null;
+  overlayRoadtripLoading.value = false;
 };
 </script>
 
@@ -59,6 +103,7 @@ const closeOverlay = () => {
       <span class="hud-badge">ARCHIVES</span>
       <h1>My Saved Plans</h1>
       <p class="subtitle">Access your stored AI itineraries, review itemized budgets, and load prior guides.</p>
+      <p v-if="deleteError" class="error-inline mt-2">{{ deleteError }}</p>
     </div>
 
     <!-- Loading Skeletons -->
@@ -67,6 +112,19 @@ const closeOverlay = () => {
     </div>
 
     <!-- Empty State -->
+    <div v-else-if="loadError" class="empty-archives glass-card mt-8">
+      <span>⚠️</span>
+      <h3>Unable to Load Saved Plans</h3>
+      <p>{{ loadError }}</p>
+      <button 
+        type="button" 
+        class="btn btn-primary mt-4" 
+        @click="fetchSavedTrips"
+      >
+        Retry
+      </button>
+    </div>
+
     <div v-else-if="savedTrips.length === 0" class="empty-archives glass-card mt-8">
       <span>❤️</span>
       <h3>No Saved Travel Plans</h3>
@@ -90,7 +148,7 @@ const closeOverlay = () => {
         <!-- Mock visual banner based on style -->
         <div 
           class="card-cover-art" 
-          :style="{ backgroundImage: 'url(' + resolveUnsplashImage(trip.destination) + ')' }"
+          :style="{ backgroundImage: 'url(' + getTripCoverImage(trip.destination) + ')' }"
         >
           <div class="cover-art-overlay"></div>
           <span class="saved-date-tag monospaced">{{ trip.savedAt }}</span>
@@ -121,9 +179,10 @@ const closeOverlay = () => {
               type="button" 
               class="btn btn-danger delete-icon-btn" 
               @click="handleDelete(trip.id)"
+              :disabled="deletingTripId === trip.id"
               title="Delete archived trip"
             >
-              🗑️
+              {{ deletingTripId === trip.id ? 'Deleting...' : '🗑️' }}
             </button>
           </div>
         </div>
@@ -181,6 +240,13 @@ const closeOverlay = () => {
                 </div>
               </div>
             </div>
+
+            <RoadtripIntelligencePanel
+              v-if="activeOverlayTrip.roadtripIntelligence"
+              class="mt-6"
+              :roadtrip="activeOverlayTrip.roadtripIntelligence"
+              :loading="overlayRoadtripLoading"
+            />
           </div>
 
         </div>
@@ -229,6 +295,11 @@ const closeOverlay = () => {
 .mt-6 { margin-top: 24px; }
 .mt-2 { margin-top: 8px; }
 .flex-grow { flex-grow: 1; }
+
+.error-inline {
+  color: #dc2626;
+  font-size: 0.9rem;
+}
 
 /* Skeletons */
 .skeletons-list {

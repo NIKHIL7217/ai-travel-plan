@@ -3,14 +3,26 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterView, RouterLink, useRoute, useRouter } from "vue-router";
 import { initUserCurrency } from "./services/currency";
 import { useAuthStore } from "./stores/auth";
+import { detectUserLocation, userLocation } from "./services/location";
 
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const profileMenuOpen = ref(false);
+const geoLoading = ref(true);
 
 const profileName = computed(() => authStore.displayName);
 const mobileProfilePath = computed(() => (authStore.isAuthenticated ? "/dashboard" : "/login"));
+const geoLabel = computed(() => {
+  if (geoLoading.value) return "Detecting";
+  if (!userLocation.value?.loaded) return "Unknown";
+  return userLocation.value.city || userLocation.value.country || "Unknown";
+});
+const geoTitle = computed(() => {
+  if (geoLoading.value) return "Detecting geolocation";
+  if (!userLocation.value?.loaded) return "Geolocation unavailable";
+  return `Geolocation active: ${geoLabel.value}`;
+});
 
 const toggleProfileMenu = () => {
   profileMenuOpen.value = !profileMenuOpen.value;
@@ -33,7 +45,11 @@ watch(
 );
 
 onMounted(() => {
-  initUserCurrency();
+  detectUserLocation()
+    .then(() => initUserCurrency(userLocation.value))
+    .finally(() => {
+      geoLoading.value = false;
+    });
   authStore.initAuth();
 });
 </script>
@@ -58,55 +74,62 @@ onMounted(() => {
           <RouterLink to="/saved-trips" class="nav-link" active-class="active">Saved Trips</RouterLink>
         </nav>
 
-        <!-- Profile Avatar -->
-        <div class="nav-profile-wrap">
-          <button
-            type="button"
-            class="profile-avatar-circle"
-            :title="authStore.isAuthenticated ? `${profileName} (Profile)` : 'Login / Signup'"
-            @click="toggleProfileMenu"
-          >
-            <span class="avatar-txt">{{ authStore.userInitials }}</span>
-          </button>
+        <div class="nav-right-cluster">
+          <div class="geo-indicator" :title="geoTitle">
+            <span class="geo-icon">📡</span>
+            <span class="geo-text">{{ geoLabel }}</span>
+          </div>
 
-          <transition name="fade-route">
-            <div v-if="profileMenuOpen" class="profile-menu glass-card">
-              <p class="profile-menu-name">{{ profileName }}</p>
-              <p class="profile-menu-email">{{ authStore.user?.email || 'Login to personalize dashboard' }}</p>
+          <!-- Profile Avatar -->
+          <div class="nav-profile-wrap">
+            <button
+              type="button"
+              class="profile-avatar-circle"
+              :title="authStore.isAuthenticated ? `${profileName} (Profile)` : 'Login / Signup'"
+              @click="toggleProfileMenu"
+            >
+              <span class="avatar-txt">{{ authStore.userInitials }}</span>
+            </button>
 
-              <div class="profile-actions">
-                <RouterLink
-                  v-if="authStore.isAuthenticated"
-                  to="/dashboard"
-                  class="profile-action-link"
-                >
-                  Open Dashboard
-                </RouterLink>
-                <RouterLink
-                  v-if="authStore.isAuthenticated"
-                  to="/saved-trips"
-                  class="profile-action-link"
-                >
-                  My Saved Trips
-                </RouterLink>
-                <RouterLink
-                  v-if="!authStore.isAuthenticated"
-                  to="/login"
-                  class="profile-action-link"
-                >
-                  Login / Signup
-                </RouterLink>
-                <button
-                  v-if="authStore.isAuthenticated"
-                  type="button"
-                  class="profile-action-link logout"
-                  @click="handleLogout"
-                >
-                  Logout
-                </button>
+            <transition name="fade-route">
+              <div v-if="profileMenuOpen" class="profile-menu glass-card">
+                <p class="profile-menu-name">{{ profileName }}</p>
+                <p class="profile-menu-email">{{ authStore.user?.email || 'Login to personalize dashboard' }}</p>
+
+                <div class="profile-actions">
+                  <RouterLink
+                    v-if="authStore.isAuthenticated"
+                    to="/dashboard"
+                    class="profile-action-link"
+                  >
+                    Open Dashboard
+                  </RouterLink>
+                  <RouterLink
+                    v-if="authStore.isAuthenticated"
+                    to="/saved-trips"
+                    class="profile-action-link"
+                  >
+                    My Saved Trips
+                  </RouterLink>
+                  <RouterLink
+                    v-if="!authStore.isAuthenticated"
+                    to="/login"
+                    class="profile-action-link"
+                  >
+                    Login / Signup
+                  </RouterLink>
+                  <button
+                    v-if="authStore.isAuthenticated"
+                    type="button"
+                    class="profile-action-link logout"
+                    @click="handleLogout"
+                  >
+                    Logout
+                  </button>
+                </div>
               </div>
-            </div>
-          </transition>
+            </transition>
+          </div>
         </div>
       </div>
     </header>
@@ -114,9 +137,23 @@ onMounted(() => {
     <!-- Main View Section -->
     <main class="app-main-viewport">
       <RouterView v-slot="{ Component }">
-        <transition name="fade-route" mode="out-in">
-          <component :is="Component" />
-        </transition>
+        <Suspense timeout="0">
+          <template #default>
+            <transition name="fade-route" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </template>
+          <template #fallback>
+            <section class="route-skeleton container" aria-live="polite">
+              <div class="skeleton-line skeleton-wide"></div>
+              <div class="skeleton-grid">
+                <div class="skeleton-card"></div>
+                <div class="skeleton-card"></div>
+                <div class="skeleton-card"></div>
+              </div>
+            </section>
+          </template>
+        </Suspense>
       </RouterView>
     </main>
 
@@ -138,10 +175,10 @@ onMounted(() => {
           </div>
           <div class="links-column">
             <h4>Support</h4>
-            <a href="#">Guides</a>
-            <a href="#">Security</a>
-            <a href="#">FAQ</a>
-            <a href="#">API Keys</a>
+            <RouterLink to="/guides">Guides</RouterLink>
+            <RouterLink to="/security">Security</RouterLink>
+            <RouterLink to="/faq">FAQ</RouterLink>
+            <RouterLink to="/api-keys">API Keys</RouterLink>
           </div>
         </div>
       </div>
@@ -190,6 +227,53 @@ onMounted(() => {
   flex-grow: 1;
 }
 
+.route-skeleton {
+  padding-top: 104px;
+  padding-bottom: 28px;
+}
+
+.skeleton-line {
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 240% 100%;
+  animation: skeleton-pulse 1.2s linear infinite;
+}
+
+.skeleton-wide {
+  width: min(580px, 92%);
+  margin-bottom: 14px;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skeleton-card {
+  height: 140px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 240% 100%;
+  animation: skeleton-pulse 1.2s linear infinite;
+}
+
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Navbar styles */
 .navbar-header {
   position: fixed;
@@ -231,6 +315,36 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 32px;
+}
+
+.nav-right-cluster {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.geo-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.geo-icon {
+  font-size: 0.82rem;
+}
+
+.geo-text {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-link {
@@ -456,6 +570,12 @@ onMounted(() => {
   }
   .nav-profile-wrap {
     display: none;
+  }
+  .geo-indicator {
+    padding: 6px 8px;
+  }
+  .geo-text {
+    max-width: 64px;
   }
 }
 

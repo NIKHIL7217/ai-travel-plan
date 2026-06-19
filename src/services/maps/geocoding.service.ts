@@ -1,4 +1,8 @@
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+
+const GEOCODE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 
 export interface Coordinates {
   lat: number;
@@ -105,33 +109,44 @@ export async function geocodePlace(placeName: string): Promise<GeocodeResult | n
     };
   }
 
-  // Try using Google Geocoding if API key is present
-  if (GOOGLE_MAPS_KEY) {
+  const cacheKey = trimmed.toLowerCase();
+  return withCache(CacheBuckets.search, `geocode:${cacheKey}`, GEOCODE_CACHE_TTL_MS, async () => {
+    // Try using Google Geocoding if API key is present
+    if (GOOGLE_MAPS_KEY) {
+      try {
+        const res = await requestWithRetry(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${GOOGLE_MAPS_KEY}`, {}, {
+          operation: "geocode.google",
+          timeoutMs: 7000,
+          retries: 0
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.results && data.results.length > 0) {
+            const loc = data.results[0].geometry.location;
+            return { lat: loc.lat, lng: loc.lng, formattedName: data.results[0].formatted_address };
+          }
+        }
+      } catch (e) {
+        console.warn("Google Geocoding failed, trying OSM fallback", e);
+      }
+    }
+
+    // Fallback OSM
     try {
-      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${GOOGLE_MAPS_KEY}`);
+      const res = await requestWithRetry(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1`, {}, {
+        operation: "geocode.osm",
+        timeoutMs: 7000,
+        retries: 0
+      });
       if (res.ok) {
         const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          const loc = data.results[0].geometry.location;
-          return { lat: loc.lat, lng: loc.lng, formattedName: data.results[0].formatted_address };
+        if (data && data.length > 0) {
+          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), formattedName: data[0].display_name };
         }
       }
     } catch (e) {
-      console.warn("Google Geocoding failed, trying OSM fallback", e);
+      console.error("OSM Geocoding failed:", e);
     }
-  }
-
-  // Fallback OSM
-  try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.length > 0) {
-        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), formattedName: data[0].display_name };
-      }
-    }
-  } catch (e) {
-    console.error("OSM Geocoding failed:", e);
-  }
-  return null;
+    return null;
+  });
 }

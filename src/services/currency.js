@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { requestWithRetry } from "../core/monitoring/request";
 
 export const userCurrency = ref({
   country: "Global",
@@ -31,6 +32,26 @@ const currencySymbols = {
   SGD: "S$"
 };
 
+const countryToCurrency = {
+  india: "INR",
+  "united states": "USD",
+  usa: "USD",
+  "united kingdom": "GBP",
+  uk: "GBP",
+  france: "EUR",
+  germany: "EUR",
+  italy: "EUR",
+  spain: "EUR",
+  netherlands: "EUR",
+  portugal: "EUR",
+  japan: "JPY",
+  "united arab emirates": "AED",
+  uae: "AED",
+  canada: "CAD",
+  australia: "AUD",
+  singapore: "SGD"
+};
+
 function getSymbol(code) {
   return currencySymbols[code] || code;
 }
@@ -39,18 +60,40 @@ function getRate(code) {
   return exchangeRates[code] || 1.0;
 }
 
-export async function initUserCurrency() {
+function resolveCurrencyFromCountry(country) {
+  const key = String(country || "").trim().toLowerCase();
+  return countryToCurrency[key] || null;
+}
+
+function setCurrencyByCode(code, country = "Global") {
+  const normalized = code && exchangeRates[code] ? code : "USD";
+  userCurrency.value = {
+    country,
+    currency: normalized,
+    symbol: getSymbol(normalized),
+    rate: getRate(normalized)
+  };
+}
+
+export async function initUserCurrency(locationHint = null) {
+  if (locationHint?.country) {
+    const fromCountry = resolveCurrencyFromCountry(locationHint.country);
+    if (fromCountry) {
+      setCurrencyByCode(fromCountry, locationHint.country);
+      return;
+    }
+  }
+
   try {
-    const res = await fetch("https://ipapi.co/json/");
+    const res = await requestWithRetry("https://ipapi.co/json/", {}, {
+      operation: "currency.ip_lookup",
+      timeoutMs: 7000,
+      retries: 1
+    });
     if (res.ok) {
       const data = await res.json();
       if (data.currency) {
-        userCurrency.value = {
-          country: data.country_name || "Global",
-          currency: data.currency,
-          symbol: getSymbol(data.currency),
-          rate: getRate(data.currency)
-        };
+        setCurrencyByCode(data.currency, data.country_name || "Global");
         console.log("Detected User Currency:", userCurrency.value);
         return;
       }
@@ -62,17 +105,17 @@ export async function initUserCurrency() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
   const tzLower = tz.toLowerCase();
   if (tzLower.includes("calcutta") || tzLower.includes("kolkata") || tzLower.includes("delhi") || tzLower.includes("bombay") || tzLower.includes("india")) {
-    userCurrency.value = { country: "India", currency: "INR", symbol: "₹", rate: 83.5 };
+    setCurrencyByCode("INR", "India");
   } else if (tzLower.includes("london") || tzLower.includes("gb") || tzLower.includes("europe/london")) {
-    userCurrency.value = { country: "United Kingdom", currency: "GBP", symbol: "£", rate: 0.79 };
+    setCurrencyByCode("GBP", "United Kingdom");
   } else if (tzLower.includes("europe") || tzLower.includes("paris") || tzLower.includes("berlin") || tzLower.includes("rome") || tzLower.includes("madrid") || tzLower.includes("amsterdam")) {
-    userCurrency.value = { country: "Europe", currency: "EUR", symbol: "€", rate: 0.92 };
+    setCurrencyByCode("EUR", "Europe");
   } else if (tzLower.includes("tokyo") || tzLower.includes("japan")) {
-    userCurrency.value = { country: "Japan", currency: "JPY", symbol: "¥", rate: 158.0 };
+    setCurrencyByCode("JPY", "Japan");
   } else if (tzLower.includes("dubai") || tzLower.includes("abu_dhabi") || tzLower.includes("uae") || tzLower.includes("asia/dubai")) {
-    userCurrency.value = { country: "United Arab Emirates", currency: "AED", symbol: "AED ", rate: 3.67 };
+    setCurrencyByCode("AED", "United Arab Emirates");
   } else {
-    userCurrency.value = { country: "Global", currency: "USD", symbol: "$", rate: 1.0 };
+    setCurrencyByCode("USD", "Global");
   }
   console.log("Timezone Resolved User Currency:", userCurrency.value);
 }

@@ -3,22 +3,15 @@ import { geocodePlace } from "../maps/geocoding.service";
 import { getRouteDistance } from "../maps/route.service";
 import { fetchNearbyPlaces } from "../travel/places.service";
 import { userLocation } from "../location";
+import { budgetEstimateSchema } from "../../schemas/budget.schema";
+import { parseWithSchema } from "../../schemas/parse";
+import type { BudgetEstimate, BudgetEstimateOptions } from "../../types/Budget";
+import { requestWithRetry } from "../../core/monitoring/request";
 
-export interface BudgetEstimateOptions {
-  userQuery?: string;
-  requireLive?: boolean;
-  stayPreference?: string;
-  foodPreference?: string;
-  budgetLimit?: number;
-}
+export type { BudgetEstimate, BudgetEstimateOptions } from "../../types/Budget";
 
-export interface BudgetEstimate {
-  flights: number;
-  accommodation: number;
-  food: number;
-  transportation: number;
-  activities: number;
-  total: number;
+function validateBudgetEstimate(value: unknown, context: string): BudgetEstimate | null {
+  return parseWithSchema(budgetEstimateSchema, value, context);
 }
 
 /**
@@ -91,12 +84,15 @@ function selectHotelsForPreference(hotels, stayPreference) {
 
 export async function generateBudgetEstimate(destination: string, days: number, travelers: number, style: string, travelMode = "Car", options: BudgetEstimateOptions = {}): Promise<BudgetEstimate> {
   const normalizedQuery = String(options.userQuery || "").trim();
+  const sourceQuery = String(options.sourceQuery || normalizedQuery || destination || "").trim();
+  const memoryContext = String(options.memoryContext || "").trim();
   const requireLive = Boolean(options.requireLive);
   const stayPreference = normalizeStayPreference(options.stayPreference);
   const foodPreference = normalizeFoodPreference(options.foodPreference);
   const budgetLimit = Number(options.budgetLimit || 0);
   const destinationInput = String(destination || "").trim();
   const planningInput = normalizedQuery || destinationInput;
+  const geoLookupInput = destinationInput || sourceQuery || planningInput;
 
   if (!planningInput) {
     throw new Error("Destination or trip query is required.");
@@ -112,7 +108,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   let restRateInUsd = 8;
 
   try {
-    const geo = await geocodePlace(planningInput);
+    const geo = await geocodePlace(geoLookupInput);
     const lat = geo ? geo.lat : 24.5854;
     const lng = geo ? geo.lng : 73.7125;
 
@@ -121,7 +117,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
       distanceKm = routeInfo.distance;
     }
 
-    const resolvedName = geo ? geo.formattedName.split(",")[0] : planningInput;
+    const resolvedName = geo ? geo.formattedName.split(",")[0] : geoLookupInput;
     const [hotels, restaurants] = await Promise.all([
       fetchNearbyPlaces(lat, lng, "lodging", resolvedName),
       fetchNearbyPlaces(lat, lng, "restaurant", resolvedName)
@@ -176,6 +172,10 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         Preferred hotel nightly baseline: ${effectiveHotelRateInUsd.toFixed(2)} USD
         Preferred meal baseline: ${effectiveMealRateInUsd.toFixed(2)} USD
         Live Request Timestamp: ${liveContextTag}
+        Source Query: ${sourceQuery || "N/A"}
+
+        Personalization Memory:
+        ${memoryContext || "No memory context available."}
 
         Constraints:
         - Reflect user's travel mode and stay/food preferences.
@@ -193,13 +193,17 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         }
       `;
 
-      const response = await fetch(API_URL, {
+      const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "budget.gemini_estimate",
+        timeoutMs: 9000,
+        retries: 0
       });
 
       if (response.ok) {
@@ -222,7 +226,10 @@ export async function generateBudgetEstimate(destination: string, days: number, 
           }
 
           if (normalized.total > 0) {
-            return normalized;
+            const validated = validateBudgetEstimate(normalized, "Gemini budget estimate");
+            if (validated) {
+              return validated;
+            }
           }
         }
       }
@@ -280,7 +287,14 @@ export async function generateBudgetEstimate(destination: string, days: number, 
       const reducedFood = Math.round(food * 0.92);
       const reducedActivities = Math.round(activities * 0.88);
       total = flights + reducedAccommodation + reducedFood + transportation + reducedActivities;
-      return {
+      return validateBudgetEstimate({
+        flights,
+        accommodation: reducedAccommodation,
+        food: reducedFood,
+        transportation,
+        activities: reducedActivities,
+        total
+      }, "reduced fallback budget estimate") || {
         flights,
         accommodation: reducedAccommodation,
         food: reducedFood,
@@ -291,7 +305,14 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     }
   }
 
-  return {
+  return validateBudgetEstimate({
+    flights,
+    accommodation,
+    food,
+    transportation,
+    activities,
+    total
+  }, "fallback budget estimate") || {
     flights,
     accommodation,
     food,

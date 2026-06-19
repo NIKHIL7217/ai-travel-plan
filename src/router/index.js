@@ -1,13 +1,18 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
-import Home from "../pages/Home.vue";
-import Destination from "../pages/Destination.vue";
-import DestinationDetails from "../pages/DestinationDetails.vue";
-import Planner from "../pages/Planner.vue";
-import SavedTrips from "../pages/SavedTrips.vue";
-import NotFound from "../pages/NotFound.vue";
-import Login from "../pages/Login.vue";
-import Dashboard from "../pages/Dashboard.vue";
+
+const Home = () => import("../pages/Home.vue");
+const Destination = () => import("../pages/Destination.vue");
+const DestinationDetails = () => import("../pages/DestinationDetails.vue");
+const Planner = () => import("../pages/Planner.vue");
+const SavedTrips = () => import("../pages/SavedTrips.vue");
+const NotFound = () => import("../pages/NotFound.vue");
+const Login = () => import("../pages/Login.vue");
+const Dashboard = () => import("../pages/Dashboard.vue");
+const Guides = () => import("../pages/Guides.vue");
+const Security = () => import("../pages/Security.vue");
+const Faq = () => import("../pages/Faq.vue");
+const ApiKeys = () => import("../pages/ApiKeys.vue");
 
 const routes = [
   {
@@ -53,6 +58,26 @@ const routes = [
     meta: {
       requiresAuth: true
     }
+  },
+  {
+    path: "/guides",
+    name: "Guides",
+    component: Guides
+  },
+  {
+    path: "/security",
+    name: "Security",
+    component: Security
+  },
+  {
+    path: "/faq",
+    name: "Faq",
+    component: Faq
+  },
+  {
+    path: "/api-keys",
+    name: "ApiKeys",
+    component: ApiKeys
   },
   {
     path: "/:pathMatch(.*)*",

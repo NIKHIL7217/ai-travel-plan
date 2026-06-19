@@ -6,11 +6,13 @@
 export { isGeminiConfigured } from "./ai/planner.service";
 export { generateTravelPlan } from "./ai/itinerary.service";
 export { generateBudgetEstimate } from "./ai/budget.service";
+export { extractTripIntent } from "./ai/intent.service";
 export {
   generateDestinationSuggestions,
   getDestinationDetails,
   getRealLocationData,
-  resolveUnsplashImage
+  resolveUnsplashImage,
+  resolveDestinationPhoto
 } from "./ai/recommendation.service";
 export { parseMapsInput, geocodePlace } from "./maps/geocoding.service";
-export { getRouteIntelligence, normalizeRouteData } from "./maps/route.service";
+export { getRouteDistance, getRouteIntelligence, normalizeRouteData } from "./maps/route.service";

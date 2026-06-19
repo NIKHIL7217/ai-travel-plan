@@ -1,10 +1,12 @@
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getDestinationDetails, resolveUnsplashImage, getRouteIntelligence, getRealLocationData } from "../services/gemini";
 import { formatPrice } from "../services/currency";
 import GlassPanel from "../shared/ui/GlassPanel.vue";
 import Icons from "../shared/icons/Icons.vue";
+import { getTrafficInsights } from "../services/routes";
+import { getFriendlyErrorMessage } from "../core/errors";
 
 const route = useRoute();
 const router = useRouter();
@@ -12,6 +14,7 @@ const router = useRouter();
 const destId = ref("");
 const destData = ref(null);
 const loading = ref(true);
+const detailsError = ref("");
 const activeTab = ref("overview"); // overview | attractions | hotels | food | transport | weather
 
 // Route Intelligence State
@@ -22,28 +25,111 @@ const routeAnalyzed = ref(false);
 const activeVehicle = ref("car"); // flight | train | bus | car | bike
 const selectedVehicleMode = ref(null);
 const showFuelStops = ref(false);
+const trafficInsights = ref(null);
+const routeError = ref("");
+let autoRefreshIntervalId = null;
 
 // Real Location Data
 const realLocations = ref(null);
 const locationsLoading = ref(false);
+const locationsError = ref("");
+const mapsQuery = computed(() => String(route.query.mapsQuery || "").trim());
 
-onMounted(async () => {
+const attractionsToShow = computed(() => {
+  if (realLocations.value?.attractions?.length) {
+    return realLocations.value.attractions;
+  }
+  return destData.value?.attractions || [];
+});
+
+const nearbyHospitals = computed(() => realLocations.value?.hospitals || destData.value?.nearbyExplorer?.hospitals || []);
+const nearbyFuelStations = computed(() => realLocations.value?.fuelStations || destData.value?.nearbyExplorer?.fuelStations || []);
+const nearbyRestaurants = computed(() => realLocations.value?.restaurants || destData.value?.nearbyExplorer?.restaurants || []);
+const restaurantOptions = computed(() => realLocations.value?.restaurants || destData.value?.foodCostAnalysis?.popularRestaurants || []);
+
+const loadDestinationDetails = async () => {
   destId.value = route.params.id;
+  const sourceInput = mapsQuery.value || String(destId.value || "");
+  if (!sourceInput) return;
+
   loading.value = true;
+  detailsError.value = "";
+  locationsError.value = "";
   try {
-    destData.value = await getDestinationDetails(destId.value);
+    destData.value = await getDestinationDetails(sourceInput);
+    if (!destData.value) {
+      throw new Error("No destination details returned.");
+    }
+
     // Load real location data in parallel
     locationsLoading.value = true;
-    getRealLocationData(destData.value.name).then(data => {
-      realLocations.value = data;
+    try {
+      realLocations.value = await getRealLocationData(destData.value.name);
+    } catch (locationError) {
+      realLocations.value = null;
+      locationsError.value = getFriendlyErrorMessage(locationError, "Live location intelligence is unavailable right now.");
+    } finally {
       locationsLoading.value = false;
-    }).catch(() => { locationsLoading.value = false; });
+    }
   } catch (e) {
     console.error("Failed to load details:", e);
+    destData.value = null;
+    detailsError.value = getFriendlyErrorMessage(e, "Failed to load destination details right now.");
   } finally {
     loading.value = false;
   }
+};
+
+onMounted(async () => {
+  await loadDestinationDetails();
+
+  // Auto-refresh live destination intelligence every 90 seconds.
+  autoRefreshIntervalId = window.setInterval(async () => {
+    if (!destData.value?.name || locationsLoading.value) return;
+    await refreshLiveLocationData();
+    if (routeAnalyzed.value && originCity.value.trim()) {
+      await refreshTrafficInsights();
+    }
+  }, 90000);
 });
+
+watch(
+  () => [route.params.id, route.query.mapsQuery],
+  async () => {
+    await loadDestinationDetails();
+  }
+);
+
+onUnmounted(() => {
+  if (autoRefreshIntervalId) {
+    clearInterval(autoRefreshIntervalId);
+    autoRefreshIntervalId = null;
+  }
+});
+
+const refreshLiveLocationData = async () => {
+  if (!destData.value?.name) return;
+  locationsLoading.value = true;
+  locationsError.value = "";
+  try {
+    realLocations.value = await getRealLocationData(destData.value.name);
+  } catch (error) {
+    console.error("Failed to refresh live location data:", error);
+    locationsError.value = getFriendlyErrorMessage(error, "Unable to refresh live location data right now.");
+  } finally {
+    locationsLoading.value = false;
+  }
+};
+
+const refreshTrafficInsights = async () => {
+  if (!originCity.value.trim() || !destData.value?.name) return;
+  try {
+    trafficInsights.value = await getTrafficInsights(originCity.value.trim(), destData.value.name);
+  } catch (error) {
+    console.error("Failed to refresh live traffic insights:", error);
+    routeError.value = getFriendlyErrorMessage(error, "Unable to refresh traffic insights right now.");
+  }
+};
 
 const handlePlanClick = () => {
   if (destData.value) {
@@ -54,20 +140,31 @@ const handlePlanClick = () => {
 const analyzeRoute = async () => {
   if (!originCity.value.trim() || !destData.value) return;
   routeLoading.value = true;
+  routeError.value = "";
   routeAnalyzed.value = false;
   selectedVehicleMode.value = null;
+  trafficInsights.value = null;
   try {
-    routeData.value = await getRouteIntelligence(originCity.value.trim(), destData.value.name);
-    routeAnalyzed.value = true;
+    const [routeResult, trafficResult] = await Promise.all([
+      getRouteIntelligence(originCity.value.trim(), destData.value.name),
+      getTrafficInsights(originCity.value.trim(), destData.value.name)
+    ]);
+
+    routeData.value = routeResult;
+    trafficInsights.value = trafficResult;
+    routeAnalyzed.value = Boolean(routeResult);
   } catch (e) {
     console.error("Route intelligence failed:", e);
+    routeData.value = null;
+    routeError.value = getFriendlyErrorMessage(e, "Route intelligence is unavailable right now.");
   } finally {
     routeLoading.value = false;
   }
 };
 
 const openGoogleMaps = (lat, lng, name) => {
-  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}&query_place_id=${encodeURIComponent(name || '')}`;
+  const query = name ? `${name} ${lat},${lng}` : `${lat},${lng}`;
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
   window.open(url, '_blank');
 };
 
@@ -127,6 +224,13 @@ const hotelsByTier = computed(() => {
     <div class="details-skeleton-grid mt-8">
       <div class="skeleton side-sk"></div>
       <div class="skeleton main-sk"></div>
+    </div>
+  </div>
+  <div v-else-if="detailsError" class="container" style="padding-top: 120px;">
+    <div class="tab-state-card error">
+      <h3>Unable to Load Destination</h3>
+      <p>{{ detailsError }}</p>
+      <button type="button" class="btn btn-primary mt-4" @click="loadDestinationDetails">Retry</button>
     </div>
   </div>
 
@@ -350,10 +454,32 @@ const hotelsByTier = computed(() => {
 
           <!-- Tab 2: Attractions & Nearby -->
           <div v-if="activeTab === 'attractions'" class="tab-pane">
-            <h3>Top Attractions</h3>
-            <div class="attractions-gallery mt-4">
+            <div class="section-title-wrap">
+              <h3>Top Attractions</h3>
+              <button type="button" class="btn btn-outline btn-sm" @click="refreshLiveLocationData" :disabled="locationsLoading">
+                {{ locationsLoading ? 'Refreshing...' : 'Refresh Live Data' }}
+              </button>
+            </div>
+
+            <div v-if="locationsError" class="tab-state-card error mt-4">
+              <h4>Live Location Feed Unavailable</h4>
+              <p>{{ locationsError }}</p>
+              <button type="button" class="btn btn-outline mt-4" @click="refreshLiveLocationData">Retry Live Feed</button>
+            </div>
+
+            <div v-if="locationsLoading" class="tab-state-card loading mt-4">
+              <h4>Refreshing Live Data</h4>
+              <p>Fetching updated nearby attractions and geo points.</p>
+            </div>
+
+            <div v-else-if="!attractionsToShow.length" class="tab-state-card empty mt-4">
+              <h4>No Attractions Available</h4>
+              <p>No live attractions were found for this destination.</p>
+            </div>
+
+            <div v-else class="attractions-gallery mt-4">
               <div 
-                v-for="att in destData.attractions" 
+                v-for="att in attractionsToShow" 
                 :key="att.name" 
                 class="gallery-item glass-card"
               >
@@ -363,6 +489,13 @@ const hotelsByTier = computed(() => {
                 <div class="gallery-info">
                   <h4>{{ att.name }}</h4>
                   <p>{{ att.desc }}</p>
+                  <button
+                    v-if="att.lat && att.lng"
+                    class="coord-badge small mt-2"
+                    @click="openGoogleMaps(att.lat, att.lng, att.name)"
+                  >
+                    🗺️ {{ att.lat?.toFixed(4) }}, {{ att.lng?.toFixed(4) }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -378,7 +511,7 @@ const hotelsByTier = computed(() => {
                 <div class="nearby-category-card glass-card">
                   <h5>🏥 Hospitals & Clinics</h5>
                   <ul class="nearby-list">
-                    <li v-for="hosp in (realLocations?.hospitals || destData.nearbyExplorer?.hospitals)" :key="hosp.name">
+                    <li v-for="hosp in nearbyHospitals" :key="hosp.name">
                       <div class="nearby-item-main">
                         <span class="item-name">{{ hosp.name }}</span>
                         <span v-if="hosp.address" class="item-address">{{ hosp.address }}</span>
@@ -395,6 +528,7 @@ const hotelsByTier = computed(() => {
                         </button>
                       </div>
                     </li>
+                    <li v-if="!nearbyHospitals.length" class="nearby-empty-item">No nearby hospital data available.</li>
                   </ul>
                 </div>
 
@@ -402,7 +536,7 @@ const hotelsByTier = computed(() => {
                 <div class="nearby-category-card glass-card">
                   <h5>⛽ Fuel Stations</h5>
                   <ul class="nearby-list">
-                    <li v-for="fuel in (realLocations?.fuelStations || destData.nearbyExplorer?.fuelStations)" :key="fuel.name">
+                    <li v-for="fuel in nearbyFuelStations" :key="fuel.name">
                       <div class="nearby-item-main">
                         <span class="item-name">{{ fuel.name }}</span>
                         <span v-if="fuel.types" class="item-types">{{ fuel.types.join(' • ') }}</span>
@@ -418,6 +552,7 @@ const hotelsByTier = computed(() => {
                         </button>
                       </div>
                     </li>
+                    <li v-if="!nearbyFuelStations.length" class="nearby-empty-item">No nearby fuel station data available.</li>
                   </ul>
                 </div>
 
@@ -448,7 +583,7 @@ const hotelsByTier = computed(() => {
                 <div class="nearby-category-card glass-card">
                   <h5>🍽️ Restaurants & Cafes</h5>
                   <ul class="nearby-list">
-                    <li v-for="rest in (realLocations?.restaurants || destData.nearbyExplorer?.restaurants)" :key="rest.name">
+                    <li v-for="rest in nearbyRestaurants" :key="rest.name">
                       <div class="nearby-item-main">
                         <span class="item-name">{{ rest.name }}</span>
                         <span v-if="rest.type" class="item-types">{{ rest.type }}</span>
@@ -464,6 +599,7 @@ const hotelsByTier = computed(() => {
                         </button>
                       </div>
                     </li>
+                    <li v-if="!nearbyRestaurants.length" class="nearby-empty-item">No nearby restaurant data available.</li>
                   </ul>
                 </div>
               </div>
@@ -559,8 +695,8 @@ const hotelsByTier = computed(() => {
             </div>
 
             <h3 class="mt-8">Popular Restaurants with Locations</h3>
-            <div class="restaurant-list mt-4">
-              <div v-for="rest in (realLocations?.restaurants || destData.foodCostAnalysis?.popularRestaurants)" :key="rest.name" class="restaurant-card glass-card">
+            <div v-if="restaurantOptions.length" class="restaurant-list mt-4">
+              <div v-for="rest in restaurantOptions" :key="rest.name" class="restaurant-card glass-card">
                 <div class="rest-details">
                   <h4>🍽️ {{ rest.name }}</h4>
                   <span class="rest-cuisine">{{ rest.type }}</span>
@@ -579,6 +715,10 @@ const hotelsByTier = computed(() => {
                 </div>
               </div>
             </div>
+            <div v-else class="tab-state-card empty mt-4">
+              <h4>No Restaurant Data Available</h4>
+              <p>Live nearby dining data is currently unavailable for this destination.</p>
+            </div>
 
             <h3 class="mt-8">Must-Try Local Delicacies</h3>
             <div class="food-list mt-4">
@@ -591,6 +731,11 @@ const hotelsByTier = computed(() => {
 
           <!-- Tab 5: Transport & Fuel (COMPLETE REDESIGN) -->
           <div v-if="activeTab === 'transport'" class="tab-pane">
+            <div v-if="routeError" class="tab-state-card error mb-4">
+              <h4>Route Intelligence Error</h4>
+              <p>{{ routeError }}</p>
+              <button type="button" class="btn btn-outline mt-4" @click="analyzeRoute">Retry Route Analysis</button>
+            </div>
             
             <!-- No route analyzed prompt -->
             <div v-if="!routeAnalyzed" class="transport-prompt glass-card">
@@ -648,6 +793,19 @@ const hotelsByTier = computed(() => {
                       <span class="rd-item">✈️ Air: <strong>{{ routeData.flightDistance }} km</strong></span>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="trafficInsights" class="traffic-card glass-card mt-4">
+                  <div class="traffic-head">
+                    <h4>Live Traffic Update</h4>
+                    <span class="traffic-level" :class="`traffic-${trafficInsights.level?.toLowerCase() || 'unknown'}`">{{ trafficInsights.level || 'Unknown' }}</span>
+                  </div>
+                  <div class="traffic-metrics">
+                    <span>Current Avg Speed: <strong>{{ trafficInsights.averageCurrentSpeed }} km/h</strong></span>
+                    <span>Free Flow Speed: <strong>{{ trafficInsights.averageFreeFlowSpeed }} km/h</strong></span>
+                    <span>Congestion: <strong>{{ trafficInsights.congestionPercent }}%</strong></span>
+                  </div>
+                  <p v-if="trafficInsights.updatedAt" class="traffic-updated">Updated: {{ new Date(trafficInsights.updatedAt).toLocaleString() }}</p>
                 </div>
 
                 <!-- Vehicle Type Tab Strip (Quick switcher) -->
@@ -1058,6 +1216,13 @@ const hotelsByTier = computed(() => {
       </div>
     </div>
 
+  </div>
+  <div v-else class="container" style="padding-top: 120px;">
+    <div class="tab-state-card empty">
+      <h3>Destination Not Found</h3>
+      <p>We could not find live details for this destination right now.</p>
+      <button type="button" class="btn btn-outline mt-4" @click="$router.push('/destination')">Back to Directory</button>
+    </div>
   </div>
 </template>
 
@@ -1688,6 +1853,11 @@ const hotelsByTier = computed(() => {
   padding-bottom: 0;
 }
 
+.nearby-empty-item {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .nearby-item-main {
   display: flex;
   flex-direction: column;
@@ -2297,6 +2467,66 @@ const hotelsByTier = computed(() => {
   padding: 5px 12px;
 }
 
+.traffic-card {
+  padding: 14px;
+  border: 1px solid var(--color-border);
+}
+
+.traffic-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.traffic-level {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+
+.traffic-low {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.traffic-moderate {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.traffic-high {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.traffic-unknown {
+  color: #1e3a8a;
+  background: #dbeafe;
+}
+
+.traffic-metrics {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  font-size: 0.84rem;
+  color: var(--color-text-secondary);
+}
+
+.traffic-updated {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 840px) {
+  .traffic-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
 .fuel-stops-timeline {
   position: relative;
   padding-left: 32px;
@@ -2772,5 +3002,25 @@ const hotelsByTier = computed(() => {
 
 .font-bold {
   font-weight: 700;
+}
+
+.tab-state-card {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  background: #ffffff;
+}
+
+.tab-state-card p {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+}
+
+.tab-state-card.error {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.tab-state-card.loading {
+  border-color: rgba(37, 99, 235, 0.3);
 }
 </style>

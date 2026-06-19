@@ -3,29 +3,15 @@ import { geocodePlace } from "../maps/geocoding.service";
 import { fetchWeather } from "../travel/weather.service";
 import { fetchNearbyPlaces } from "../travel/places.service";
 import { MOCK_DESTINATIONS } from "./recommendation.service";
+import { travelPlanSchema } from "../../schemas/itinerary.schema";
+import { parseWithSchema } from "../../schemas/parse";
+import type { TravelPlan, TravelPlanOptions } from "../../types/Itinerary";
+import { requestWithRetry } from "../../core/monitoring/request";
 
-export interface TravelPlanOptions {
-  userQuery?: string;
-  requireLive?: boolean;
-  stayPreference?: string;
-  foodPreference?: string;
-}
+export type { TravelPlan, TravelPlanDay, TravelPlanOptions } from "../../types/Itinerary";
 
-export interface TravelPlanDay {
-  day: number;
-  theme: string;
-  morning: string;
-  afternoon: string;
-  evening: string;
-  foodRecommendation: string;
-}
-
-export interface TravelPlan {
-  destination: string;
-  tagline: string;
-  summary: string;
-  itinerary: TravelPlanDay[];
-  [key: string]: any;
+function validateTravelPlan(value: unknown, context: string): TravelPlan | null {
+  return parseWithSchema(travelPlanSchema, value, context);
 }
 
 /**
@@ -33,11 +19,14 @@ export interface TravelPlan {
  */
 export async function generateTravelPlan(destination: string, style: string, days: number, travelers: number, budgetLimit: number, travelMode = "Car", options: TravelPlanOptions = {}): Promise<TravelPlan> {
   const normalizedQuery = String(options.userQuery || "").trim();
+  const sourceQuery = String(options.sourceQuery || normalizedQuery || destination || "").trim();
+  const memoryContext = String(options.memoryContext || "").trim();
   const requireLive = Boolean(options.requireLive);
   const stayPreference = String(options.stayPreference || "mid-range").toLowerCase();
   const foodPreference = String(options.foodPreference || "mixed").toLowerCase();
   const destinationInput = String(destination || "").trim();
   const planningInput = normalizedQuery || destinationInput;
+  const geoLookupInput = destinationInput || sourceQuery || planningInput;
 
   if (!planningInput) {
     throw new Error("Destination or trip query is required.");
@@ -55,13 +44,17 @@ export async function generateTravelPlan(destination: string, style: string, day
   let currentTemp = "24°C";
 
   try {
-    const geo = await geocodePlace(planningInput);
+    const geo = await geocodePlace(geoLookupInput);
     const lat = geo ? geo.lat : 24.5854;
     const lng = geo ? geo.lng : 73.7125;
     
-    const isCoords = planningInput.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/) || (geo && geo.formattedName.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/));
+    const isCoords = geoLookupInput.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/) || (geo && geo.formattedName.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/));
     if (isCoords) {
-      const revRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`);
+      const revRes = await requestWithRetry(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`, {}, {
+        operation: "itinerary.reverse_geocode",
+        timeoutMs: 9000,
+        retries: 1
+      });
       if (revRes.ok) {
         const revData = await revRes.json();
         if (revData.address) {
@@ -105,6 +98,10 @@ export async function generateTravelPlan(destination: string, style: string, day
         Preferred Food Type: ${foodPreference}
         Maximum Budget Limit: ${budgetLimit} USD
         Live Request Timestamp: ${liveContextTag}
+        Source Query: ${sourceQuery || "N/A"}
+
+        Personalization Memory:
+        ${memoryContext || "No memory context available."}
 
         Real facts for context:
         - Weather: ${currentTemp}
@@ -131,13 +128,17 @@ export async function generateTravelPlan(destination: string, style: string, day
         }
       `;
 
-      const response = await fetch(API_URL, {
+      const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "itinerary.gemini_plan",
+        timeoutMs: 9000,
+        retries: 0
       });
 
       if (response.ok) {
@@ -145,8 +146,9 @@ export async function generateTravelPlan(destination: string, style: string, day
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const parsed = extractJsonObject(text);
 
-        if (parsed?.itinerary && Array.isArray(parsed.itinerary) && parsed.itinerary.length > 0) {
-          return parsed;
+        const validated = validateTravelPlan(parsed, "Gemini travel plan");
+        if (validated) {
+          return validated;
         }
       }
     } catch (e) {
@@ -195,10 +197,19 @@ export async function generateTravelPlan(destination: string, style: string, day
     };
   });
 
-  return {
+  return validateTravelPlan({
     destination: countryName !== "Global Destination" ? `${resolvedName}, ${countryName}` : resolvedName,
     tagline: `Unlocking the Wonders of ${resolvedName}`,
     summary: `A customized ${days}-day ${style} trip by ${travelMode} designed for ${travelers} travelers. Optimized for budget, sights, and comforts.`,
-    itinerary
+    itinerary,
+    sourceQuery,
+    memoryContext
+  }, "fallback travel plan") || {
+    destination: countryName !== "Global Destination" ? `${resolvedName}, ${countryName}` : resolvedName,
+    tagline: `Unlocking the Wonders of ${resolvedName}`,
+    summary: `A customized ${days}-day ${style} trip by ${travelMode} designed for ${travelers} travelers. Optimized for budget, sights, and comforts.`,
+    itinerary,
+    sourceQuery,
+    memoryContext
   };
 }

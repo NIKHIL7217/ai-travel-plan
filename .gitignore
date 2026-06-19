@@ -10,6 +10,16 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.cache
+.cache/
+.vite
+.vite/
+.turbo
+.parcel-cache
+.eslintcache
+.stylelintcache
+.sass-cache/
+.nyc_output
 *.local
 .env
 .env.*
@@ -30,6 +40,9 @@ firebase-adminsdk*.json
 service-account*.json
 .npmrc
 .yarnrc.yml
+.pnpm-store/
+.vercel/
+.netlify/
 coverage
 playwright-report
 test-results

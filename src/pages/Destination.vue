@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { generateDestinationSuggestions, parseMapsInput } from "../services/gemini";
 import { formatPrice } from "../services/currency";
+import { getFriendlyErrorMessage } from "../core/errors";
 
 const route = useRoute();
 const router = useRouter();
@@ -13,15 +13,26 @@ const selectedTime = ref("all");
 
 const destinations = ref([]);
 const loading = ref(false);
+const directoryError = ref("");
 
 const mapsInput = ref("");
 const analyzing = ref(false);
 const analyzerError = ref("");
 
+let geminiServicePromise;
+
+async function loadGeminiService() {
+  if (!geminiServicePromise) {
+    geminiServicePromise = import("../services/gemini");
+  }
+  return geminiServicePromise;
+}
+
 const handleAnalyze = async () => {
   analyzerError.value = "";
   if (!mapsInput.value.trim()) return;
 
+  const { parseMapsInput } = await loadGeminiService();
   const parsed = parseMapsInput(mapsInput.value);
   if (!parsed) {
     analyzerError.value = "Invalid input. Please enter valid coordinates (e.g. 24.5854, 73.7125) or a Google Maps URL link.";
@@ -31,9 +42,14 @@ const handleAnalyze = async () => {
   analyzing.value = true;
   try {
     const searchSlug = parsed.query.toLowerCase().replace(/\s+/g, "-").replace(/,/g, "");
-    router.push(`/destination/${searchSlug}`);
+    router.push({
+      path: `/destination/${searchSlug}`,
+      query: {
+        mapsQuery: parsed.query
+      }
+    });
   } catch (e) {
-    analyzerError.value = "Failed to analyze location.";
+    analyzerError.value = getFriendlyErrorMessage(e, "Failed to analyze location.");
   } finally {
     analyzing.value = false;
   }
@@ -41,7 +57,9 @@ const handleAnalyze = async () => {
 
 const fetchDestinations = async () => {
   loading.value = true;
+  directoryError.value = "";
   try {
+    const { generateDestinationSuggestions } = await loadGeminiService();
     const list = await generateDestinationSuggestions(searchQuery.value);
     
     // Apply filters
@@ -63,6 +81,8 @@ const fetchDestinations = async () => {
     });
   } catch (e) {
     console.error("Failed to load destinations:", e);
+    destinations.value = [];
+    directoryError.value = getFriendlyErrorMessage(e, "Failed to load destinations right now.");
   } finally {
     loading.value = false;
   }
@@ -183,6 +203,15 @@ const goToDetails = (id) => {
           <div class="skeleton text-sk"></div>
         </div>
       </div>
+    </div>
+
+    <div v-else-if="directoryError" class="empty-directory glass-card">
+      <span>⚠️</span>
+      <h3>Unable to Load Destinations</h3>
+      <p>{{ directoryError }}</p>
+      <button type="button" class="btn btn-primary mt-4" @click="fetchDestinations">
+        Retry
+      </button>
     </div>
 
     <div v-else-if="destinations.length > 0" class="directory-grid">

@@ -1,6 +1,7 @@
 /**
  * Shared Gemini AI client utilities for travel planning services.
  */
+import { requestWithRetry } from "../../core/monitoring/request";
 
 export interface GeminiJsonRequest {
   prompt: string;
@@ -9,7 +10,8 @@ export interface GeminiJsonRequest {
 
 export const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 export const REAL_DATA_ONLY = import.meta.env.VITE_REAL_DATA_ONLY !== "false";
-export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
+export const NO_MOCK_DATA_POLICY = import.meta.env.VITE_NO_MOCK_DATA_POLICY !== "false";
+export const DEMO_MODE = !NO_MOCK_DATA_POLICY && import.meta.env.VITE_DEMO_MODE === "true";
 export const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 export function isGeminiConfigured(): boolean {
@@ -60,7 +62,7 @@ export async function requestGeminiJson<T = unknown>({ prompt, signal }: GeminiJ
     return null;
   }
 
-  const response = await fetch(GEMINI_API_URL, {
+  const response = await requestWithRetry(GEMINI_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal,
@@ -68,6 +70,10 @@ export async function requestGeminiJson<T = unknown>({ prompt, signal }: GeminiJ
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { responseMimeType: "application/json" }
     })
+  }, {
+    operation: "ai.gemini_json",
+    timeoutMs: 15000,
+    retries: 1
   });
 
   if (!response.ok) {

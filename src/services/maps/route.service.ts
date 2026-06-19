@@ -1,37 +1,55 @@
 import { GEMINI_API_KEY as API_KEY, GEMINI_API_URL as API_URL, REAL_DATA_ONLY } from "../ai/planner.service";
 import { geocodePlace } from "./geocoding.service";
+import {
+  routeDistanceSchema,
+  routeIntelligenceSchema,
+  trafficInsightsSchema
+} from "../../schemas/trip.schema";
+import { parseWithSchema } from "../../schemas/parse";
+import type {
+  RouteDistance,
+  RouteIntelligence,
+  RoutePoint,
+  TrafficInsights
+} from "../../types/Trip";
+import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
 
-export type RoutePoint = string | { lat: number; lng: number; city?: string };
-
-export interface RouteDistance {
-  distance: number;
-  durationSeconds: Record<string, number>;
-  originCoords: { lat: number; lng: number };
-  destCoords: { lat: number; lng: number };
-}
-
-export interface TrafficInsights {
-  level: string;
-  averageCurrentSpeed: number;
-  averageFreeFlowSpeed: number;
-  congestionPercent: number;
-  snapshots: Array<Record<string, unknown>>;
-  updatedAt: string;
-}
-
-export interface RouteIntelligence {
-  origin?: string;
-  destination?: string;
-  roadDistance?: number;
-  flightDistance?: number;
-  routeSummary?: string;
-  vehicleBreakdown?: Record<string, any>;
-  fuelStops?: Array<Record<string, any>>;
-  [key: string]: any;
-}
+export type {
+  RouteDistance,
+  RouteIntelligence,
+  RoutePoint,
+  TrafficInsights
+} from "../../types/Trip";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const TOMTOM_API_KEY = import.meta.env.VITE_TOMTOM_API_KEY || "";
+const NO_MOCK_DATA_POLICY = import.meta.env.VITE_NO_MOCK_DATA_POLICY !== "false";
+const ROUTE_CACHE_TTL_MS = 1000 * 60 * 30;
+
+function routePointKey(point: RoutePoint): string {
+  if (!point) {
+    return "unknown";
+  }
+
+  if (typeof point === "string") {
+    return point.trim().toLowerCase();
+  }
+
+  return `${Number(point.lat).toFixed(3)},${Number(point.lng).toFixed(3)}`;
+}
+
+function validateRouteDistance(value: unknown, context: string): RouteDistance | null {
+  return parseWithSchema(routeDistanceSchema, value, context);
+}
+
+function validateTrafficInsights(value: unknown, context: string): TrafficInsights | null {
+  return parseWithSchema(trafficInsightsSchema, value, context);
+}
+
+function validateRouteIntelligence(value: unknown, context: string): RouteIntelligence | null {
+  return parseWithSchema(routeIntelligenceSchema, value, context);
+}
 
 /**
  * Calculates straight-line distance in km using Haversine formula
@@ -52,6 +70,8 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
  * Calculates travel distance and duration between two locations
  */
 export async function getRouteDistance(origin: RoutePoint, destination: RoutePoint): Promise<RouteDistance | null> {
+  const cacheKey = `${routePointKey(origin)}->${routePointKey(destination)}`;
+  return withCache(CacheBuckets.route, cacheKey, ROUTE_CACHE_TTL_MS, async () => {
   let originLat = null, originLng = null;
   let destLat = null, destLng = null;
 
@@ -81,16 +101,16 @@ export async function getRouteDistance(origin: RoutePoint, destination: RoutePoi
 
   // If we can't find coordinates, use default fallback values
   if (originLat === null || destLat === null) {
-    if (REAL_DATA_ONLY) {
+    if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
       return null;
     }
 
-    return {
+    return validateRouteDistance({
       distance: 650, 
       durationSeconds: { car: 33400, flight: 5400, train: 43200, bike: 43200, bus: 48600 },
       originCoords: { lat: 28.6139, lng: 77.2090 },
       destCoords: { lat: 15.2993, lng: 74.1240 }
-    };
+    }, "fallback route distance");
   }
 
   // If Google API key exists, try Distance Matrix API
@@ -98,7 +118,11 @@ export async function getRouteDistance(origin: RoutePoint, destination: RoutePoi
     try {
       const originParam = `${originLat},${originLng}`;
       const destParam = `${destLat},${destLng}`;
-      const res = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originParam}&destinations=${destParam}&key=${GOOGLE_MAPS_KEY}`);
+      const res = await requestWithRetry(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originParam}&destinations=${destParam}&key=${GOOGLE_MAPS_KEY}`, {}, {
+        operation: "route.distance_matrix",
+        timeoutMs: 10000,
+        retries: 1
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.rows && data.rows.length > 0 && data.rows[0].elements && data.rows[0].elements.length > 0) {
@@ -106,7 +130,7 @@ export async function getRouteDistance(origin: RoutePoint, destination: RoutePoi
           if (elem.status === "OK") {
             const distanceKm = Math.round(elem.distance.value / 1000);
             const durationSec = elem.duration.value;
-            return {
+            const routeDistance = {
               distance: distanceKm,
               durationSeconds: {
                 car: durationSec,
@@ -118,6 +142,10 @@ export async function getRouteDistance(origin: RoutePoint, destination: RoutePoi
               originCoords: { lat: originLat, lng: originLng },
               destCoords: { lat: destLat, lng: destLng }
             };
+            const validated = validateRouteDistance(routeDistance, "Google Distance Matrix response");
+            if (validated) {
+              return validated;
+            }
           }
         }
       }
@@ -147,12 +175,13 @@ export async function getRouteDistance(origin: RoutePoint, destination: RoutePoi
     bus: Math.round((distance / speeds.bus) * 3600)
   };
 
-  return {
+  return validateRouteDistance({
     distance,
     durationSeconds,
     originCoords: { lat: originLat, lng: originLng },
     destCoords: { lat: destLat, lng: destLng }
-  };
+  }, "heuristic route distance");
+  });
 }
 
 function normalizeTrafficLevel(currentSpeed, freeFlowSpeed) {
@@ -169,7 +198,11 @@ async function fetchTomTomFlowByPoint(lat, lng) {
   }
 
   const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?point=${lat},${lng}&unit=KMPH&openLr=false&key=${TOMTOM_API_KEY}`;
-  const res = await fetch(url);
+  const res = await requestWithRetry(url, {}, {
+    operation: "route.tomtom_flow",
+    timeoutMs: 9000,
+    retries: 1
+  });
   if (!res.ok) {
     return null;
   }
@@ -227,14 +260,14 @@ export async function getTrafficInsights(origin: RoutePoint, destination: RouteP
   const avgFree = snapshots.reduce((sum, s) => sum + s.freeFlowSpeed, 0) / snapshots.length;
   const level = normalizeTrafficLevel(avgCurrent, avgFree);
 
-  return {
+  return validateTrafficInsights({
     level,
     averageCurrentSpeed: Math.round(avgCurrent),
     averageFreeFlowSpeed: Math.round(avgFree),
     congestionPercent: avgFree > 0 ? Math.max(0, Math.round((1 - avgCurrent / avgFree) * 100)) : 0,
     snapshots,
     updatedAt: new Date().toISOString()
-  };
+  }, "TomTom traffic insights");
 }
 
 // ==========================================
@@ -657,20 +690,28 @@ export async function getRouteIntelligence(origin: string, destination: string):
         7. Current fuel prices: Petrol ₹104.21/L, Diesel ₹92.15/L, CNG ₹76.59/kg, Electricity ₹8.5/kWh
       `;
 
-      const response = await fetch(API_URL, {
+      const response = await requestWithRetry(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
+      }, {
+        operation: "route.gemini_intelligence",
+        timeoutMs: 15000,
+        retries: 1
       });
 
       if (response.ok) {
         const data = await response.json();
         const text = data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text.trim());
-        return normalizeRouteData(parsed);
+        const normalized = normalizeRouteData(parsed);
+        const validated = validateRouteIntelligence(normalized, "Gemini route intelligence");
+        if (validated) {
+          return validated;
+        }
       }
     } catch (e) {
       console.warn("Failed to fetch route intelligence from Gemini:", e);
@@ -682,5 +723,8 @@ export async function getRouteIntelligence(origin: string, destination: string):
   }
   
   // Fallback to deterministic mock
-  return normalizeRouteData(generateRouteIntelligenceMock(origin, destination));
+  return validateRouteIntelligence(
+    normalizeRouteData(generateRouteIntelligenceMock(origin, destination)),
+    "fallback route intelligence"
+  );
 }

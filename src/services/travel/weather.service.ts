@@ -1,39 +1,55 @@
-export interface WeatherForecastDay {
-  day: string;
-  temp: string;
-  general: string;
-  aqi: number | null;
-}
+import { weatherReportSchema } from "../../schemas/trip.schema";
+import { parseWithSchema } from "../../schemas/parse";
+import type { WeatherReport } from "../../types/Trip";
+import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
 
-export interface WeatherReport {
-  temp: string;
-  humidity: string;
-  windSpeed: string;
-  rainProbability: string;
-  aqi: number | null;
-  weatherForecast: WeatherForecastDay[];
-}
+export type { WeatherForecastDay, WeatherReport } from "../../types/Trip";
 
 const OPENWEATHER_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY || "";
 const REAL_DATA_ONLY = import.meta.env.VITE_REAL_DATA_ONLY !== "false";
+const NO_MOCK_DATA_POLICY = import.meta.env.VITE_NO_MOCK_DATA_POLICY !== "false";
+const WEATHER_CACHE_TTL_MS = 1000 * 60 * 10;
+
+function validateWeatherReport(value: unknown, context: string): WeatherReport | null {
+  return parseWithSchema(weatherReportSchema, value, context);
+}
 
 export async function fetchWeather(lat: number, lng: number): Promise<WeatherReport | null> {
   if (lat === null || lng === null || lat === undefined || lng === undefined) return null;
 
+  const cacheKey = `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
+  return withCache(CacheBuckets.weather, cacheKey, WEATHER_CACHE_TTL_MS, async () => {
+
   // If OpenWeather Key is available, try OpenWeather API
   if (OPENWEATHER_KEY) {
     try {
-      // Current Weather
-      const curRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${OPENWEATHER_KEY}`);
-      // Air Pollution (AQI)
-      const aqiRes = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lng}&appid=${OPENWEATHER_KEY}`);
-      // 5-day / 3-hour forecast
-      const foreRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${OPENWEATHER_KEY}`);
+      const [curResult, aqiResult, foreResult] = await Promise.allSettled([
+        requestWithRetry(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${OPENWEATHER_KEY}`, {}, {
+          operation: "weather.current",
+          timeoutMs: 6500,
+          retries: 0
+        }),
+        requestWithRetry(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lng}&appid=${OPENWEATHER_KEY}`, {}, {
+          operation: "weather.aqi",
+          timeoutMs: 6500,
+          retries: 0
+        }),
+        requestWithRetry(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${OPENWEATHER_KEY}`, {}, {
+          operation: "weather.forecast",
+          timeoutMs: 6500,
+          retries: 0
+        })
+      ]);
+
+      const curRes = curResult.status === "fulfilled" ? curResult.value : null;
+      const aqiRes = aqiResult.status === "fulfilled" ? aqiResult.value : null;
+      const foreRes = foreResult.status === "fulfilled" ? foreResult.value : null;
       
       if (curRes.ok) {
         const curData = await curRes.json();
         let aqi = 30; // default good
-        if (aqiRes.ok) {
+        if (aqiRes?.ok) {
           const aqiData = await aqiRes.json();
           // OpenWeather AQI is 1-5 (1: Good, 5: Very Poor). Scale to standard US AQI scale (0-500)
           const aqiMap = { 1: 25, 2: 65, 3: 125, 4: 175, 5: 350 };
@@ -41,7 +57,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
         }
 
         const weatherForecast = [];
-        if (foreRes.ok) {
+        if (foreRes?.ok) {
           const foreData = await foreRes.json();
           // Group by day (every 8th item is ~24 hours later)
           const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -57,7 +73,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
           }
         }
 
-        return {
+        const report = {
           temp: `${Math.round(curData.main.temp)}°C`,
           humidity: `${curData.main.humidity}%`,
           windSpeed: `${Math.round(curData.wind.speed * 3.6)} km/h`, // convert m/s to km/h
@@ -65,6 +81,10 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
           aqi: aqi,
           weatherForecast: weatherForecast.length > 0 ? weatherForecast : generateDefaultForecast(curData.weather[0].main, curData.main.temp)
         };
+        const validated = validateWeatherReport(report, "OpenWeather response");
+        if (validated) {
+          return validated;
+        }
       }
     } catch (e) {
       console.warn("OpenWeather API query failed, falling back to Open-Meteo", e);
@@ -73,7 +93,11 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
 
   // Fallback to keyless Open-Meteo API
   try {
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`);
+    const res = await requestWithRetry(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`, {}, {
+      operation: "weather.open_meteo",
+      timeoutMs: 6500,
+      retries: 0
+    });
     if (res.ok) {
       const data = await res.json();
       const current = data.current;
@@ -108,7 +132,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
         }
       }
 
-      return {
+      const report = {
         temp: `${Math.round(current.temperature_2m)}°C`,
         humidity: `${current.relative_humidity_2m}%`,
         windSpeed: `${Math.round(current.wind_speed_10m)} km/h`,
@@ -116,17 +140,21 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
         aqi: null,
         weatherForecast
       };
+      const validated = validateWeatherReport(report, "Open-Meteo response");
+      if (validated) {
+        return validated;
+      }
     }
   } catch (e) {
     console.error("Open-Meteo API query failed:", e);
   }
 
-  if (REAL_DATA_ONLY) {
+  if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
     return null;
   }
 
   // Final static fallback
-  return {
+  return validateWeatherReport({
     temp: "24°C",
     humidity: "62%",
     windSpeed: "12 km/h",
@@ -141,7 +169,8 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
       { day: "Saturday", temp: "23°C - 29°C", general: "Partly Cloudy", aqi: 50 },
       { day: "Sunday", temp: "22°C - 28°C", general: "Sunny", aqi: 42 }
     ]
-  };
+  }, "fallback weather response");
+  });
 }
 
 function generateDefaultForecast(general, baseTemp) {

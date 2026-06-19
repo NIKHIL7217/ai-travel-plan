@@ -1,24 +1,21 @@
-export type PlaceType = "lodging" | "restaurant" | "attraction" | "fuel" | "ev" | "hospital";
+import { nearbyPlaceSchema } from "../../schemas/trip.schema";
+import { parseArrayWithSchema } from "../../schemas/parse";
+import type { NearbyPlace, PlaceType } from "../../types/Trip";
+import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
 
-export interface NearbyPlace {
-  name: string;
-  rating?: number;
-  reviews?: number;
-  distance?: string;
-  lat?: number;
-  lng?: number;
-  address?: string;
-  price?: number;
-  averagePrice?: number;
-  tier?: string;
-  type?: string;
-  [key: string]: any;
-}
+export type { NearbyPlace, PlaceType } from "../../types/Trip";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const REAL_DATA_ONLY = import.meta.env.VITE_REAL_DATA_ONLY !== "false";
+const NO_MOCK_DATA_POLICY = import.meta.env.VITE_NO_MOCK_DATA_POLICY !== "false";
 
 const GOOGLE_PLACES_API_URL = "https://places.googleapis.com/v1/places:searchNearby";
+const PLACES_CACHE_TTL_MS = 1000 * 60 * 20;
+
+function validatePlaces(value: unknown, context: string): NearbyPlace[] {
+  return parseArrayWithSchema(nearbyPlaceSchema, value, context);
+}
 
 const OVERPASS_FILTERS = {
   lodging: [
@@ -69,7 +66,7 @@ function haversineDistanceKm(lat1, lon1, lat2, lon2) {
 }
 
 function normalizeOverpassPlaces(elements, type, lat, lng) {
-  return elements
+  return validatePlaces(elements
     .filter((el) => el?.lat !== undefined && el?.lon !== undefined && el?.tags?.name)
     .slice(0, 8)
     .map((el) => {
@@ -98,7 +95,7 @@ function normalizeOverpassPlaces(elements, type, lat, lng) {
         types: type === "fuel" ? ["Petrol", "Diesel"] : undefined,
         desc: type === "attraction" ? (el.tags.tourism || el.tags.historic || "Popular local attraction") : undefined
       };
-    });
+    }), `Overpass ${type} places`);
 }
 
 async function fetchFromOverpass(lat, lng, type) {
@@ -107,10 +104,14 @@ async function fetchFromOverpass(lat, lng, type) {
   const filter = filters.map((f) => `${f}(around:${radius},${lat},${lng});`).join("");
 
   const query = `[out:json][timeout:20];(${filter});out body;`;
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
+  const res = await requestWithRetry("https://overpass-api.de/api/interpreter", {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
     body: query
+  }, {
+    operation: "places.overpass",
+    timeoutMs: 7000,
+    retries: 0
   });
 
   if (!res.ok) {
@@ -175,7 +176,7 @@ function estimateRestaurantMealInr(rating, priceLevel) {
 
 function normalizeGooglePlaces(data, type, lat, lng) {
   const places = Array.isArray(data?.places) ? data.places : [];
-  return places.slice(0, 10).map((place) => {
+  return validatePlaces(places.slice(0, 10).map((place) => {
     const pLat = place.location?.latitude;
     const pLng = place.location?.longitude;
     const distanceKm = (pLat !== undefined && pLng !== undefined)
@@ -204,7 +205,7 @@ function normalizeGooglePlaces(data, type, lat, lng) {
       phone: place.nationalPhoneNumber || undefined,
       desc: type === "attraction" ? (place.editorialSummary?.text || place.primaryTypeDisplayName?.text || "Top local attraction") : undefined
     };
-  });
+  }), `Google ${type} places`);
 }
 
 async function fetchFromGooglePlaces(lat, lng, type) {
@@ -228,7 +229,7 @@ async function fetchFromGooglePlaces(lat, lng, type) {
     }
   };
 
-  const res = await fetch(GOOGLE_PLACES_API_URL, {
+  const res = await requestWithRetry(GOOGLE_PLACES_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -236,6 +237,10 @@ async function fetchFromGooglePlaces(lat, lng, type) {
       "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.nationalPhoneNumber,places.editorialSummary,places.priceLevel"
     },
     body: JSON.stringify(body)
+  }, {
+    operation: "places.google_nearby",
+    timeoutMs: 7000,
+    retries: 0
   });
 
   if (!res.ok) {
@@ -251,6 +256,10 @@ async function fetchFromGooglePlaces(lat, lng, type) {
  */
 export async function fetchNearbyPlaces(lat: number, lng: number, type: PlaceType, destinationName = ""): Promise<NearbyPlace[]> {
   if (lat === null || lng === null || lat === undefined || lng === undefined) return [];
+
+  const normalizedType = String(type || "restaurant").toLowerCase();
+  const cacheKey = `${normalizedType}:${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
+  return withCache(CacheBuckets.search, cacheKey, PLACES_CACHE_TTL_MS, async () => {
 
   // Prefer Google Places if key exists to get latest, high-fidelity place data.
   try {
@@ -272,12 +281,13 @@ export async function fetchNearbyPlaces(lat: number, lng: number, type: PlaceTyp
     console.warn("Overpass place lookup failed:", e);
   }
 
-  if (REAL_DATA_ONLY) {
+  if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
     return [];
   }
 
   // Fallback to local database mapping
-  return getFallbackPlaces(destinationName, type, lat, lng);
+  return validatePlaces(getFallbackPlaces(destinationName, type, lat, lng), `fallback ${type} places`);
+  });
 }
 
 function cityHash(str) {
