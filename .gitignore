@@ -14,7 +14,26 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.envrc
+.direnv/
+.secrets/
+secrets/
+*.secret
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+firebase-adminsdk*.json
+service-account*.json
+.npmrc
+.yarnrc.yml
 coverage
+playwright-report
+test-results
+.lighthouseci
 *.tsbuildinfo
 
 # Editor directories and files
