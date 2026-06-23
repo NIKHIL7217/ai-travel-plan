@@ -612,6 +612,7 @@ export async function getRouteIntelligence(origin: string, destination: string):
     try {
       const prompt = `
         You are an expert Indian travel logistics analyst. Calculate the complete route intelligence between "${origin}" and "${destination}" in India.
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text.
         
         CRITICAL: Use your knowledge of REAL road distances, flight routes, and train routes between these cities. The data must be as accurate as possible.
         

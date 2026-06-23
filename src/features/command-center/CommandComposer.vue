@@ -53,8 +53,6 @@ const updatePrompt = (event) => {
       @input="updatePrompt"
     ></textarea>
 
-    <p v-if="!liveAiReady" class="warning">Live AI is not configured. Add VITE_GEMINI_API_KEY in .env.</p>
-
     <div class="mode-toggle-row">
       <span class="mode-label">Response Mode</span>
       <button
@@ -75,7 +73,6 @@ const updatePrompt = (event) => {
       </button>
     </div>
 
-    <p v-if="!loading && !canGenerate" class="warning">Prompt ya destination add karke generate karo.</p>
   </GlassPanel>
 </template>
 

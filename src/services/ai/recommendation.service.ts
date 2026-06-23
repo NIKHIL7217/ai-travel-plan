@@ -325,12 +325,6 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
     };
   };
 
-  const cleanedQ = q
-    .replace(/\b(mujhe|chahiye|trip|plan|please|buddy|bhai|ke|ka|ki|mein|me|jana|jaana|for|from|to|near|around)\b/gi, " ")
-    .replace(/[^a-z0-9\s,-]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
   const geocodeCandidates = [
     q,
     cleanedQ,
@@ -374,7 +368,7 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
         try {
       const prompt = `
         You are a travel discovery assistant. For user query "${q}", return real destination suggestions.
-        Respond with a single valid JSON array only, no markdown.
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text. Respond with a single valid JSON array only, no markdown.
         Each item must follow this schema:
         {
           "id": "lowercase-slug",
@@ -626,6 +620,7 @@ export async function getDestinationDetails(destId: string): Promise<Destination
     try {
       const prompt = `
         You are a premium travel concierge. We have fetched the following real-time facts for "${resolvedName}, ${country}":
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text.
         Coordinates: ${lat}, ${lng}
         Weather: Temp ${facts.weather.temp}, AQI ${facts.weather.aqi}
         Local Stays: ${facts.hotels.slice(0,3).join(", ")}
@@ -1062,6 +1057,7 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
     try {
       const prompt = `
         You are a travel location intelligence system. For the destination "${destinationName}", provide REAL, well-known establishments.
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text.
         
         Return a single valid JSON object (no markdown):
         {

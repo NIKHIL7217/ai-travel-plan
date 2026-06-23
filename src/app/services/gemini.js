@@ -53,6 +53,7 @@ export async function generateRoadtripPlan(promptText, travelers = 2, style = "A
     try {
       const systemInstructions = `
         You are RoamAI, a premium Roadtrip Operating System AI. Generate a complete, high-fidelity JSON roadtrip plan for:
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text.
         Prompt: "${promptText}"
         Duration: ${days} days
         Travelers: ${travelers} people

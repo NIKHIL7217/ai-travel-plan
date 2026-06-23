@@ -20,6 +20,10 @@ defineProps({
       <div class="metric-grid">
         <div class="metric"><span>Safety Score</span><strong>{{ data.safetyScore }}/100</strong></div>
         <div class="metric"><span>Risk Drivers</span><strong>{{ data.riskDrivers?.length || 0 }}</strong></div>
+        <div class="metric"><span>Night Safety</span><strong>{{ data.dimensions?.nightSafety ?? "-" }}/100</strong></div>
+        <div class="metric"><span>Solo Female Safety</span><strong>{{ data.dimensions?.soloFemaleSafety ?? "-" }}/100</strong></div>
+        <div class="metric"><span>Family Safety</span><strong>{{ data.dimensions?.familySafety ?? "-" }}/100</strong></div>
+        <div class="metric"><span>Scam Risk</span><strong>{{ data.dimensions?.scamRisk ?? "-" }}/100</strong></div>
       </div>
       <div class="drivers" v-if="data.riskDrivers?.length">
         <span v-for="driver in data.riskDrivers" :key="driver" class="driver-chip">{{ driver }}</span>

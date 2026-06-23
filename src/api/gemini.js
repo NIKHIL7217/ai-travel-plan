@@ -377,6 +377,7 @@ export async function generateTravelPlan(destination, budget, days, travelers, s
     try {
       const prompt = `
         You are an expert AI Travel Planner. Generate a comprehensive, beautiful travel plan for:
+        RESPOND ONLY IN ENGLISH. Do not output Hinglish or Hindi text.
         Destination: ${destination}
         Duration: ${days} days
         Travelers: ${travelers} people

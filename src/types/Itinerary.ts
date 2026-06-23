@@ -1,6 +1,8 @@
 export interface TravelPlanOptions {
   userQuery?: string;
   requireLive?: boolean;
+  fastPath?: boolean;
+  allowFallbackWithoutLive?: boolean;
   stayPreference?: string;
   foodPreference?: string;
   sourceQuery?: string;
