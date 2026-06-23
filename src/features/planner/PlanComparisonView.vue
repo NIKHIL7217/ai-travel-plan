@@ -28,6 +28,37 @@ function perDayCost(option) {
   const days = Math.max(1, Number(option?.itinerary?.itinerary?.length || 1));
   return formatPrice(Math.round(total / days));
 }
+
+function hotelPreview(option) {
+  const hotels = Array.isArray(option?.hotels) ? option.hotels : [];
+  if (hotels.length === 0) {
+    return "Hotels assigned by AI plan";
+  }
+
+  return hotels
+    .slice(0, 2)
+    .map((item) => item?.name)
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function activityPreview(option) {
+  const activities = Array.isArray(option?.activities) ? option.activities : [];
+  if (activities.length === 0) {
+    return "Balanced city + local experiences";
+  }
+
+  return activities.slice(0, 3).join(" | ");
+}
+
+function listOrDefault(values = [], fallback = "No details") {
+  const filtered = values.map((value) => String(value || "").trim()).filter(Boolean);
+  if (filtered.length === 0) {
+    return [fallback];
+  }
+
+  return filtered.slice(0, 3);
+}
 </script>
 
 <template>
@@ -63,6 +94,21 @@ function perDayCost(option) {
           <span>Per day: <strong>{{ perDayCost(option) }}</strong></span>
         </div>
 
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span>Transportation</span>
+            <strong>{{ option.transportation || "Car" }}</strong>
+          </div>
+          <div class="detail-item">
+            <span>Hotels</span>
+            <strong>{{ hotelPreview(option) }}</strong>
+          </div>
+          <div class="detail-item full">
+            <span>Activities</span>
+            <strong>{{ activityPreview(option) }}</strong>
+          </div>
+        </div>
+
         <div class="score-grid">
           <div class="score-item">
             <span>Budget Fit</span>
@@ -83,6 +129,21 @@ function perDayCost(option) {
         </div>
 
         <p class="reason">{{ option.rankingReason }}</p>
+
+        <div class="tradeoff-grid">
+          <div>
+            <span class="tradeoff-head">Pros</span>
+            <ul class="tradeoff-list">
+              <li v-for="pro in listOrDefault(option.pros, 'Good overall fit')" :key="`pro-${option.id}-${pro}`">{{ pro }}</li>
+            </ul>
+          </div>
+          <div>
+            <span class="tradeoff-head">Cons</span>
+            <ul class="tradeoff-list">
+              <li v-for="con in listOrDefault(option.cons, 'Minor trade-offs')" :key="`con-${option.id}-${con}`">{{ con }}</li>
+            </ul>
+          </div>
+        </div>
 
         <button
           type="button"
@@ -196,6 +257,37 @@ function perDayCost(option) {
   color: var(--color-text);
 }
 
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.detail-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  background: #f8fafc;
+}
+
+.detail-item.full {
+  grid-column: span 2;
+}
+
+.detail-item span {
+  display: block;
+  font-size: 0.66rem;
+  color: var(--color-text-muted);
+}
+
+.detail-item strong {
+  margin-top: 2px;
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
 .score-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -226,8 +318,46 @@ function perDayCost(option) {
   line-height: 1.45;
 }
 
+.tradeoff-grid {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tradeoff-head {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.tradeoff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.tradeoff-list li {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
 @media (max-width: 1080px) {
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-item.full {
+    grid-column: auto;
+  }
+
+  .tradeoff-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -5,14 +5,15 @@ const Home = () => import("../pages/Home.vue");
 const Destination = () => import("../pages/Destination.vue");
 const DestinationDetails = () => import("../pages/DestinationDetails.vue");
 const Planner = () => import("../pages/Planner.vue");
+const RoadtripPlanner = () => import("../pages/RoadtripPlanner.vue");
 const SavedTrips = () => import("../pages/SavedTrips.vue");
 const NotFound = () => import("../pages/NotFound.vue");
 const Login = () => import("../pages/Login.vue");
 const Dashboard = () => import("../pages/Dashboard.vue");
-const Guides = () => import("../pages/Guides.vue");
-const Security = () => import("../pages/Security.vue");
-const Faq = () => import("../pages/Faq.vue");
-const ApiKeys = () => import("../pages/ApiKeys.vue");
+const Community = () => import("../pages/Community.vue");
+const Documents = () => import("../pages/Documents.vue");
+const GroupTravel = () => import("../pages/GroupTravel.vue");
+const Help = () => import("../pages/Help.vue");
 
 const routes = [
   {
@@ -36,6 +37,11 @@ const routes = [
     component: Planner
   },
   {
+    path: "/roadtrips",
+    name: "RoadtripPlanner",
+    component: RoadtripPlanner
+  },
+  {
     path: "/login",
     name: "Login",
     component: Login,
@@ -52,6 +58,14 @@ const routes = [
     }
   },
   {
+    path: "/community",
+    name: "Community",
+    component: Community,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
     path: "/saved-trips",
     name: "SavedTrips",
     component: SavedTrips,
@@ -60,24 +74,45 @@ const routes = [
     }
   },
   {
+    path: "/documents",
+    name: "Documents",
+    component: Documents,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: "/group-trips",
+    name: "GroupTravel",
+    component: GroupTravel,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: "/group-travel",
+    redirect: "/group-trips"
+  },
+  {
+    path: "/help",
+    name: "Help",
+    component: Help
+  },
+  {
     path: "/guides",
-    name: "Guides",
-    component: Guides
+    redirect: { path: "/help", query: { topic: "overview" } }
   },
   {
     path: "/security",
-    name: "Security",
-    component: Security
+    redirect: { path: "/help", query: { topic: "security" } }
   },
   {
     path: "/faq",
-    name: "Faq",
-    component: Faq
+    redirect: { path: "/help", query: { topic: "overview" } }
   },
   {
     path: "/api-keys",
-    name: "ApiKeys",
-    component: ApiKeys
+    redirect: { path: "/help", query: { topic: "api" } }
   },
   {
     path: "/:pathMatch(.*)*",

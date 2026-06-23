@@ -1,6 +1,8 @@
 export interface BudgetEstimateOptions {
   userQuery?: string;
   requireLive?: boolean;
+  fastPath?: boolean;
+  allowFallbackWithoutLive?: boolean;
   stayPreference?: string;
   foodPreference?: string;
   budgetLimit?: number;

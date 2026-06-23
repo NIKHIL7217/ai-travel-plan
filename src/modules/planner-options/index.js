@@ -107,7 +107,7 @@ function scorePreferenceAlignment(option, preferences = {}) {
   }
 
   if (option.id === "balanced") {
-    if (includesAny(userStyle, ["comfort", "adventure"])) score += 20;
+    if (includesAny(userStyle, ["balanced", "comfort", "adventure"])) score += 20;
     if (includesAny(stayPreference, ["mid", "range", "premium"])) score += 14;
     if (includesAny(foodPreference, ["mixed", "local"])) score += 11;
     if (includesAny(travelMode, ["car", "flight", "train"])) score += 6;

@@ -25,10 +25,20 @@ function safetyAdvisory({ safetyScore, crowdLevel, trafficLevel, aqi, weatherRis
 }
 
 export function createFallbackSafetyIntelligence() {
+  const dimensions = {
+    overall: 70,
+    nightSafety: 64,
+    soloFemaleSafety: 66,
+    familySafety: 74,
+    scamRisk: 42,
+    healthRisk: 38
+  };
+
   return {
-    safetyScore: 70,
+    safetyScore: dimensions.overall,
     level: "Moderate",
     riskDrivers: ["crowd-variance", "transit-delay"],
+    dimensions,
     advisory: "Baseline safety signals are moderate. Maintain routine travel precautions.",
     updatedAt: new Date().toISOString()
   };
@@ -57,6 +67,33 @@ export function getSafetyIntelligence({ weather = null, traffic = null, crowd = 
   const safetyScore = clamp(Math.round(96 - crowdPenalty - trafficPenalty - weatherPenalty), 18, 96);
   const level = safetyScore >= 82 ? "High" : safetyScore >= 62 ? "Moderate" : "Watch";
 
+  const crowdIndex = Number(crowd?.crowdIndex || 0);
+  const congestionPercent = Number(traffic?.congestionPercent || 0);
+  const scamRisk = clamp(Math.round(28 + crowdIndex * 0.34 + congestionPercent * 0.22), 12, 92);
+  const healthRisk = clamp(
+    Math.round(
+      16 +
+      rainProbability * 0.3 +
+      Math.max(0, temperature - 32) * 2.1 +
+      (aqi !== null ? Math.max(0, aqi - 90) * 0.24 : 0)
+    ),
+    8,
+    90
+  );
+
+  const nightSafety = clamp(Math.round(safetyScore - (crowdLevel === "High" ? 12 : 7) - (trafficLevel === "High" ? 9 : 4)), 10, 95);
+  const soloFemaleSafety = clamp(Math.round(nightSafety - (crowdLevel === "High" ? 8 : 4)), 8, 92);
+  const familySafety = clamp(Math.round(safetyScore + (crowdLevel === "Low" ? 6 : 1) - Math.round(healthRisk * 0.15)), 10, 96);
+
+  const dimensions = {
+    overall: safetyScore,
+    nightSafety,
+    soloFemaleSafety,
+    familySafety,
+    scamRisk,
+    healthRisk
+  };
+
   const riskDrivers = [];
   if (crowdLevel === "High") {
     riskDrivers.push("high-crowd-density");
@@ -70,6 +107,12 @@ export function getSafetyIntelligence({ weather = null, traffic = null, crowd = 
   if (aqi !== null && aqi >= 140) {
     riskDrivers.push("air-quality-stress");
   }
+  if (scamRisk >= 58) {
+    riskDrivers.push("scam-risk-elevated");
+  }
+  if (healthRisk >= 55) {
+    riskDrivers.push("health-risk-watch");
+  }
   if (riskDrivers.length === 0) {
     riskDrivers.push("normal-urban-variance");
   }
@@ -78,6 +121,7 @@ export function getSafetyIntelligence({ weather = null, traffic = null, crowd = 
     safetyScore,
     level,
     riskDrivers,
+    dimensions,
     advisory: safetyAdvisory({ safetyScore, crowdLevel, trafficLevel, aqi, weatherRisk }),
     updatedAt: new Date().toISOString()
   };

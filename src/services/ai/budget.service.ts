@@ -87,6 +87,8 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   const sourceQuery = String(options.sourceQuery || normalizedQuery || destination || "").trim();
   const memoryContext = String(options.memoryContext || "").trim();
   const requireLive = Boolean(options.requireLive);
+  const fastPath = Boolean(options.fastPath);
+  const allowFallbackWithoutLive = Boolean(options.allowFallbackWithoutLive);
   const stayPreference = normalizeStayPreference(options.stayPreference);
   const foodPreference = normalizeFoodPreference(options.foodPreference);
   const budgetLimit = Number(options.budgetLimit || 0);
@@ -98,7 +100,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     throw new Error("Destination or trip query is required.");
   }
 
-  if ((requireLive || REAL_DATA_ONLY) && !API_KEY) {
+  if ((requireLive || REAL_DATA_ONLY) && !API_KEY && !allowFallbackWithoutLive) {
     throw new Error("Live AI is disabled. Add VITE_GEMINI_API_KEY in your .env to get real-time responses.");
   }
 
@@ -107,41 +109,43 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   let hotelRateInUsd = 60;
   let restRateInUsd = 8;
 
-  try {
-    const geo = await geocodePlace(geoLookupInput);
-    const lat = geo ? geo.lat : 24.5854;
-    const lng = geo ? geo.lng : 73.7125;
+  if (!fastPath) {
+    try {
+      const geo = await geocodePlace(geoLookupInput);
+      const lat = geo ? geo.lat : 24.5854;
+      const lng = geo ? geo.lng : 73.7125;
 
-    const routeInfo = await getRouteDistance(userLocation.value, { lat, lng });
-    if (routeInfo) {
-      distanceKm = routeInfo.distance;
-    }
-
-    const resolvedName = geo ? geo.formattedName.split(",")[0] : geoLookupInput;
-    const [hotels, restaurants] = await Promise.all([
-      fetchNearbyPlaces(lat, lng, "lodging", resolvedName),
-      fetchNearbyPlaces(lat, lng, "restaurant", resolvedName)
-    ]);
-
-    if (Array.isArray(hotels) && hotels.length > 0) {
-      const allWithPrice = hotels.filter((h) => Number(h?.price || 0) > 0);
-      const preferredHotels = selectHotelsForPreference(allWithPrice, stayPreference);
-      const chosenHotels = preferredHotels.length ? preferredHotels : allWithPrice;
-      if (chosenHotels.length > 0) {
-        const avgInr = chosenHotels.reduce((sum, h) => sum + Number(h.price || 0), 0) / chosenHotels.length;
-        hotelRateInUsd = avgInr / 83.5;
+      const routeInfo = await getRouteDistance(userLocation.value, { lat, lng });
+      if (routeInfo) {
+        distanceKm = routeInfo.distance;
       }
-    }
 
-    if (Array.isArray(restaurants) && restaurants.length > 0) {
-      const restaurantsWithPrice = restaurants.filter((r) => Number(r?.averagePrice || 0) > 0);
-      if (restaurantsWithPrice.length > 0) {
-        const avgInr = restaurantsWithPrice.reduce((sum, r) => sum + Number(r.averagePrice || 0), 0) / restaurantsWithPrice.length;
-        restRateInUsd = avgInr / 83.5;
+      const resolvedName = geo ? geo.formattedName.split(",")[0] : geoLookupInput;
+      const [hotels, restaurants] = await Promise.all([
+        fetchNearbyPlaces(lat, lng, "lodging", resolvedName),
+        fetchNearbyPlaces(lat, lng, "restaurant", resolvedName)
+      ]);
+
+      if (Array.isArray(hotels) && hotels.length > 0) {
+        const allWithPrice = hotels.filter((h) => Number(h?.price || 0) > 0);
+        const preferredHotels = selectHotelsForPreference(allWithPrice, stayPreference);
+        const chosenHotels = preferredHotels.length ? preferredHotels : allWithPrice;
+        if (chosenHotels.length > 0) {
+          const avgInr = chosenHotels.reduce((sum, h) => sum + Number(h.price || 0), 0) / chosenHotels.length;
+          hotelRateInUsd = avgInr / 83.5;
+        }
       }
+
+      if (Array.isArray(restaurants) && restaurants.length > 0) {
+        const restaurantsWithPrice = restaurants.filter((r) => Number(r?.averagePrice || 0) > 0);
+        if (restaurantsWithPrice.length > 0) {
+          const avgInr = restaurantsWithPrice.reduce((sum, r) => sum + Number(r.averagePrice || 0), 0) / restaurantsWithPrice.length;
+          restRateInUsd = avgInr / 83.5;
+        }
+      }
+    } catch (e) {
+      console.warn("Error calculating real budget fallback:", e);
     }
-  } catch (e) {
-    console.warn("Error calculating real budget fallback:", e);
   }
 
   const effectiveHotelRateInUsd = hotelRateInUsd * getStayTierMultiplier(stayPreference);
@@ -202,7 +206,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         })
       }, {
         operation: "budget.gemini_estimate",
-        timeoutMs: 9000,
+        timeoutMs: fastPath ? 5200 : 9000,
         retries: 0
       });
 
@@ -235,13 +239,13 @@ export async function generateBudgetEstimate(destination: string, days: number, 
       }
     } catch (e) {
       console.warn("Gemini live budget estimation failed, using computed fallback.", e);
-      if (REAL_DATA_ONLY) {
+      if (REAL_DATA_ONLY && !allowFallbackWithoutLive) {
         throw new Error("Live AI budget request failed. Please retry in a moment.");
       }
     }
   }
 
-  if (REAL_DATA_ONLY) {
+  if (REAL_DATA_ONLY && !allowFallbackWithoutLive) {
     throw new Error("Live AI budget response unavailable right now. Try again shortly.");
   }
 

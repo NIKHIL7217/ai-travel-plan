@@ -3,13 +3,17 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterView, RouterLink, useRoute, useRouter } from "vue-router";
 import { initUserCurrency } from "./services/currency";
 import { useAuthStore } from "./stores/auth";
+import { useOfflineStore } from "./stores/offline";
 import { detectUserLocation, userLocation } from "./services/location";
+import TravelCopilotWidget from "./features/copilot/TravelCopilotWidget.vue";
 
 const authStore = useAuthStore();
+const offlineStore = useOfflineStore();
 const route = useRoute();
 const router = useRouter();
 const profileMenuOpen = ref(false);
 const geoLoading = ref(true);
+const currentYear = new Date().getFullYear();
 
 const profileName = computed(() => authStore.displayName);
 const mobileProfilePath = computed(() => (authStore.isAuthenticated ? "/dashboard" : "/login"));
@@ -22,6 +26,17 @@ const geoTitle = computed(() => {
   if (geoLoading.value) return "Detecting geolocation";
   if (!userLocation.value?.loaded) return "Geolocation unavailable";
   return `Geolocation active: ${geoLabel.value}`;
+});
+const offlineLabel = computed(() => (offlineStore.isOnline ? "Online Sync" : "Offline Mode"));
+const offlineTitle = computed(() => {
+  const pending = Number(offlineStore.pendingCount || 0);
+  if (offlineStore.isOnline) {
+    return pending > 0 ? `${pending} offline draft(s) pending sync` : "All offline drafts synced";
+  }
+
+  return pending > 0
+    ? `${pending} draft(s) queued while offline`
+    : "Offline mode active";
 });
 
 const toggleProfileMenu = () => {
@@ -44,6 +59,14 @@ watch(
   }
 );
 
+watch(
+  () => authStore.user?.uid,
+  (nextUserId) => {
+    offlineStore.initForUser(nextUserId || "guest");
+  },
+  { immediate: true }
+);
+
 onMounted(() => {
   detectUserLocation()
     .then(() => initUserCurrency(userLocation.value))
@@ -51,6 +74,7 @@ onMounted(() => {
       geoLoading.value = false;
     });
   authStore.initAuth();
+  offlineStore.initForUser(authStore.user?.uid || "guest");
 });
 </script>
 
@@ -70,7 +94,11 @@ onMounted(() => {
           <RouterLink to="/" class="nav-link" active-class="active">Home</RouterLink>
           <RouterLink to="/destination" class="nav-link" active-class="active">Destinations</RouterLink>
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
+          <RouterLink to="/roadtrips" class="nav-link" active-class="active">Roadtrips</RouterLink>
+          <RouterLink v-if="authStore.isAuthenticated" to="/group-trips" class="nav-link" active-class="active">Group Trips</RouterLink>
+          <RouterLink v-if="authStore.isAuthenticated" to="/community" class="nav-link" active-class="active">Community</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/dashboard" class="nav-link" active-class="active">Dashboard</RouterLink>
+          <RouterLink v-if="authStore.isAuthenticated" to="/documents" class="nav-link" active-class="active">Documents</RouterLink>
           <RouterLink to="/saved-trips" class="nav-link" active-class="active">Saved Trips</RouterLink>
         </nav>
 
@@ -78,6 +106,11 @@ onMounted(() => {
           <div class="geo-indicator" :title="geoTitle">
             <span class="geo-icon">📡</span>
             <span class="geo-text">{{ geoLabel }}</span>
+          </div>
+
+          <div class="offline-indicator" :class="{ offline: !offlineStore.isOnline }" :title="offlineTitle">
+            <span class="offline-dot"></span>
+            <span class="offline-text">{{ offlineLabel }}</span>
           </div>
 
           <!-- Profile Avatar -->
@@ -110,6 +143,39 @@ onMounted(() => {
                     class="profile-action-link"
                   >
                     My Saved Trips
+                  </RouterLink>
+                  <RouterLink
+                    v-if="authStore.isAuthenticated"
+                    to="/documents"
+                    class="profile-action-link"
+                  >
+                    Document Vault
+                  </RouterLink>
+                  <RouterLink
+                    v-if="authStore.isAuthenticated"
+                    to="/group-trips"
+                    class="profile-action-link"
+                  >
+                    Group Trips
+                  </RouterLink>
+                  <RouterLink
+                    v-if="authStore.isAuthenticated"
+                    to="/community"
+                    class="profile-action-link"
+                  >
+                    Community Hub
+                  </RouterLink>
+                  <RouterLink
+                    to="/roadtrips"
+                    class="profile-action-link"
+                  >
+                    Roadtrip Mode
+                  </RouterLink>
+                  <RouterLink
+                    to="/help"
+                    class="profile-action-link"
+                  >
+                    Help Center
                   </RouterLink>
                   <RouterLink
                     v-if="!authStore.isAuthenticated"
@@ -171,22 +237,25 @@ onMounted(() => {
             <RouterLink to="/">Home</RouterLink>
             <RouterLink to="/destination">Destinations</RouterLink>
             <RouterLink to="/planner">Trip Planner</RouterLink>
+            <RouterLink to="/roadtrips">Roadtrip Planner</RouterLink>
             <RouterLink to="/saved-trips">Saved Archives</RouterLink>
+            <RouterLink to="/documents">Document Vault</RouterLink>
+            <RouterLink to="/group-trips">Group Trips</RouterLink>
+            <RouterLink to="/community">Community Hub</RouterLink>
           </div>
           <div class="links-column">
             <h4>Support</h4>
-            <RouterLink to="/guides">Guides</RouterLink>
-            <RouterLink to="/security">Security</RouterLink>
-            <RouterLink to="/faq">FAQ</RouterLink>
-            <RouterLink to="/api-keys">API Keys</RouterLink>
+            <RouterLink to="/help">Help Center</RouterLink>
           </div>
         </div>
       </div>
       
       <div class="container footer-bottom">
-        <p class="copyright">&copy; 2026 AI Travel Planner. All rights reserved.</p>
+        <p class="copyright">&copy; {{ currentYear }} AI Travel Planner. All rights reserved.</p>
       </div>
     </footer>
+
+    <TravelCopilotWidget />
 
     <!-- Section 10: Mobile Bottom Navigation -->
     <nav class="mobile-bottom-navbar glass-navbar">
@@ -202,9 +271,17 @@ onMounted(() => {
         <span class="mob-icon">📆</span>
         <span class="mob-lbl">Planner</span>
       </RouterLink>
+      <RouterLink to="/roadtrips" class="mobile-nav-link" active-class="active">
+        <span class="mob-icon">🚗</span>
+        <span class="mob-lbl">Roadtrip</span>
+      </RouterLink>
       <RouterLink to="/saved-trips" class="mobile-nav-link" active-class="active">
         <span class="mob-icon">❤️</span>
         <span class="mob-lbl">Saved</span>
+      </RouterLink>
+      <RouterLink to="/community" class="mobile-nav-link" active-class="active">
+        <span class="mob-icon">🧭</span>
+        <span class="mob-lbl">Community</span>
       </RouterLink>
       <RouterLink :to="mobileProfilePath" class="mobile-nav-link" active-class="active">
         <span class="mob-avatar">{{ authStore.userInitials }}</span>
@@ -344,6 +421,36 @@ onMounted(() => {
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.offline-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(5, 150, 105, 0.25);
+  background: rgba(209, 250, 229, 0.52);
+  color: #047857;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.offline-indicator.offline {
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(254, 226, 226, 0.72);
+  color: #b91c1c;
+}
+
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.offline-text {
   white-space: nowrap;
 }
 
@@ -554,7 +661,7 @@ onMounted(() => {
   height: 64px;
   z-index: 1000;
   display: none;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   align-items: center;
   justify-items: center;
   border-top: 1px solid var(--color-border);
@@ -576,6 +683,9 @@ onMounted(() => {
   }
   .geo-text {
     max-width: 64px;
+  }
+  .offline-indicator {
+    display: none;
   }
 }
 

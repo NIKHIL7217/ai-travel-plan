@@ -1,6 +1,7 @@
 import { isGeminiConfigured, requestGeminiJson } from "./planner.service";
 
 const STYLE_MAP = [
+  { match: ["balanced", "normal", "regular"], value: "Balanced" },
   { match: ["luxury", "premium", "high-end"], value: "Luxury" },
   { match: ["adventure", "trek", "hiking", "camping"], value: "Adventure" },
   { match: ["budget", "cheap", "low cost", "affordable"], value: "Budget" },
@@ -49,8 +50,36 @@ const STOP_WORDS = new Set([
   "days",
   "day",
   "people",
-  "person"
+  "person",
+  "balanced",
+  "normal",
+  "regular",
+  "budget",
+  "comfort",
+  "luxury",
+  "premium",
+  "adventure",
+  "flight",
+  "train",
+  "bus",
+  "bike",
+  "car",
+  "by"
 ]);
+
+const HINGLISH_NORMALIZATION_MAP: Array<[RegExp, string]> = [
+  [/\bghoomna\b/gi, "ghumna"],
+  [/\bghumne\b/gi, "ghumna"],
+  [/\bjaane\b/gi, "jana"],
+  [/\bjaana\b/gi, "jana"],
+  [/\bjaane ka plan\b/gi, "trip to"],
+  [/\bjane ka plan\b/gi, "trip to"],
+  [/\bki trip\b/gi, "trip to"],
+  [/\bka trip\b/gi, "trip to"],
+  [/\btrip plan\b/gi, "trip"],
+  [/\byatra\b/gi, "trip"],
+  [/\bsafar\b/gi, "trip"]
+];
 
 function containsAny(text: string, candidates: string[]) {
   return candidates.some((item) => text.includes(item));
@@ -65,9 +94,23 @@ function titleCase(value: string) {
     .trim();
 }
 
+function normalizeMultilingualPrompt(rawPrompt: string) {
+  let normalized = String(rawPrompt || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  for (const [pattern, replacement] of HINGLISH_NORMALIZATION_MAP) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  return normalized
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeDestination(raw: string) {
   const cleaned = String(raw || "")
-    .replace(/[^a-zA-Z\s-]/g, " ")
+    .replace(/[^\p{L}\p{M}\s-]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -106,7 +149,7 @@ function parseBudget(rawValue: string, suffix = "") {
 }
 
 function parseHeuristicIntent(prompt: string) {
-  const text = String(prompt || "").trim();
+  const text = normalizeMultilingualPrompt(prompt);
   const lower = text.toLowerCase();
   const patch: Record<string, unknown> = {};
   const explicitFields: string[] = [];
@@ -158,6 +201,72 @@ function parseHeuristicIntent(prompt: string) {
     const jaanePattern = text.match(/([a-zA-Z\s-]{2,35})\s+(?:jaane|jana|jaana|visit|ghumne|ghumna|ghoomne)/i);
     if (jaanePattern?.[1]) {
       const destination = normalizeDestination(jaanePattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const beforeTripPattern = text.match(/([\p{L}\p{M}\s-]{2,35})\s+trip/iu);
+    if (beforeTripPattern?.[1]) {
+      const destination = normalizeDestination(beforeTripPattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const singlePlacePattern = text.match(/^\s*([\p{L}\p{M}\s-]{2,35})\s*$/iu);
+    if (singlePlacePattern?.[1]) {
+      const destination = normalizeDestination(singlePlacePattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const destinationBeforeBudgetPattern = text.match(/^\s*([\p{L}\p{M}\s-]{2,35})\s+(?:₹|rs\.?|inr|\$|usd|\d)/iu);
+    if (destinationBeforeBudgetPattern?.[1]) {
+      const destination = normalizeDestination(destinationBeforeBudgetPattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const kiTripPattern = text.match(/([\p{L}\p{M}\s-]{2,35})\s+(?:ki|ka)\s+trip/iu);
+    if (kiTripPattern?.[1]) {
+      const destination = normalizeDestination(kiTripPattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const ghumnaHaiPattern = text.match(/([\p{L}\p{M}\s-]{2,35})\s+(?:ghumna|ghumna hai|visit|dekhna hai)/iu);
+    if (ghumnaHaiPattern?.[1]) {
+      const destination = normalizeDestination(ghumnaHaiPattern[1]);
+      if (destination) {
+        patch.destination = destination;
+        explicitFields.push("destination");
+      }
+    }
+  }
+
+  if (!patch.destination) {
+    const janeKaPlanPattern = text.match(/([\p{L}\p{M}\s-]{2,35})\s+(?:jana|jane)\s+ka\s+plan/iu);
+    if (janeKaPlanPattern?.[1]) {
+      const destination = normalizeDestination(janeKaPlanPattern[1]);
       if (destination) {
         patch.destination = destination;
         explicitFields.push("destination");
@@ -306,7 +415,7 @@ Return a strict JSON object only:
   "days": "number or null",
   "travelers": "number or null",
   "maxBudget": "number or null",
-  "style": "Budget|Comfort|Luxury|Adventure|null",
+  "style": "Budget|Balanced|Comfort|Luxury|Adventure|null",
   "travelMode": "Flight|Train|Bus|Car|Bike|null",
   "stayPreference": "hostel|budget|mid-range|premium|luxury|null",
   "foodPreference": "street|local|mixed|fine-dining|null",
@@ -337,7 +446,7 @@ Return a strict JSON object only:
 }
 
 export async function extractTripIntent(prompt: string, currentControls: Record<string, unknown> = {}) {
-  const sourcePrompt = String(prompt || "").trim();
+  const sourcePrompt = normalizeMultilingualPrompt(prompt);
 
   if (!sourcePrompt) {
     return {

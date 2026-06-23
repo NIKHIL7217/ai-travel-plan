@@ -22,6 +22,8 @@ export async function generateTravelPlan(destination: string, style: string, day
   const sourceQuery = String(options.sourceQuery || normalizedQuery || destination || "").trim();
   const memoryContext = String(options.memoryContext || "").trim();
   const requireLive = Boolean(options.requireLive);
+  const fastPath = Boolean(options.fastPath);
+  const allowFallbackWithoutLive = Boolean(options.allowFallbackWithoutLive);
   const stayPreference = String(options.stayPreference || "mid-range").toLowerCase();
   const foodPreference = String(options.foodPreference || "mixed").toLowerCase();
   const destinationInput = String(destination || "").trim();
@@ -32,7 +34,7 @@ export async function generateTravelPlan(destination: string, style: string, day
     throw new Error("Destination or trip query is required.");
   }
 
-  if ((requireLive || REAL_DATA_ONLY) && !API_KEY) {
+  if ((requireLive || REAL_DATA_ONLY) && !API_KEY && !allowFallbackWithoutLive) {
     throw new Error("Live AI is disabled. Add VITE_GEMINI_API_KEY in your .env to get real-time responses.");
   }
 
@@ -43,41 +45,43 @@ export async function generateTravelPlan(destination: string, style: string, day
   let realRests = [];
   let currentTemp = "24°C";
 
-  try {
-    const geo = await geocodePlace(geoLookupInput);
-    const lat = geo ? geo.lat : 24.5854;
-    const lng = geo ? geo.lng : 73.7125;
-    
-    const isCoords = geoLookupInput.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/) || (geo && geo.formattedName.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/));
-    if (isCoords) {
-      const revRes = await requestWithRetry(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`, {}, {
-        operation: "itinerary.reverse_geocode",
-        timeoutMs: 9000,
-        retries: 1
-      });
-      if (revRes.ok) {
-        const revData = await revRes.json();
-        if (revData.address) {
-          resolvedName = revData.address.city || revData.address.town || revData.address.suburb || revData.address.village || "Analyzed Location";
-          countryName = revData.address.country || "Global Destination";
-        }
-      }
-    } else if (geo) {
-      resolvedName = geo.formattedName.split(',')[0];
-      countryName = geo.formattedName.split(',').pop().trim();
-    }
+  if (!fastPath) {
+    try {
+      const geo = await geocodePlace(geoLookupInput);
+      const lat = geo ? geo.lat : 24.5854;
+      const lng = geo ? geo.lng : 73.7125;
 
-    const [weatherData, hotels, restaurants] = await Promise.all([
-      fetchWeather(lat, lng),
-      fetchNearbyPlaces(lat, lng, "lodging", resolvedName),
-      fetchNearbyPlaces(lat, lng, "restaurant", resolvedName)
-    ]);
-    
-    if (weatherData) currentTemp = weatherData.temp;
-    if (hotels) realHotels = hotels;
-    if (restaurants) realRests = restaurants;
-  } catch (e) {
-    console.warn("Real-world fetch inside planner itinerary failed:", e);
+      const isCoords = geoLookupInput.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/) || (geo && geo.formattedName.match(/^(-?\d+\.\d+)[\s,-]+(-?\d+\.\d+)$/));
+      if (isCoords) {
+        const revRes = await requestWithRetry(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`, {}, {
+          operation: "itinerary.reverse_geocode",
+          timeoutMs: 9000,
+          retries: 1
+        });
+        if (revRes.ok) {
+          const revData = await revRes.json();
+          if (revData.address) {
+            resolvedName = revData.address.city || revData.address.town || revData.address.suburb || revData.address.village || "Analyzed Location";
+            countryName = revData.address.country || "Global Destination";
+          }
+        }
+      } else if (geo) {
+        resolvedName = geo.formattedName.split(",")[0];
+        countryName = geo.formattedName.split(",").pop().trim();
+      }
+
+      const [weatherData, hotels, restaurants] = await Promise.all([
+        fetchWeather(lat, lng),
+        fetchNearbyPlaces(lat, lng, "lodging", resolvedName),
+        fetchNearbyPlaces(lat, lng, "restaurant", resolvedName)
+      ]);
+
+      if (weatherData) currentTemp = weatherData.temp;
+      if (hotels) realHotels = hotels;
+      if (restaurants) realRests = restaurants;
+    } catch (e) {
+      console.warn("Real-world fetch inside planner itinerary failed:", e);
+    }
   }
 
   if (API_KEY) {
@@ -137,7 +141,7 @@ export async function generateTravelPlan(destination: string, style: string, day
         })
       }, {
         operation: "itinerary.gemini_plan",
-        timeoutMs: 9000,
+        timeoutMs: fastPath ? 5200 : 9000,
         retries: 0
       });
 
@@ -153,13 +157,13 @@ export async function generateTravelPlan(destination: string, style: string, day
       }
     } catch (e) {
       console.warn("Gemini API call failed, falling back to local simulation.", e);
-      if (REAL_DATA_ONLY) {
+      if (REAL_DATA_ONLY && !allowFallbackWithoutLive) {
         throw new Error("Live AI request failed. Please retry in a moment.");
       }
     }
   }
 
-  if (REAL_DATA_ONLY) {
+  if (REAL_DATA_ONLY && !allowFallbackWithoutLive) {
     throw new Error("Live AI response unavailable right now. Try again shortly.");
   }
 

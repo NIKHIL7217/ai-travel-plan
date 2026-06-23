@@ -54,6 +54,7 @@ function patchNumber(field, value, fallback) {
       <label class="cell">
         <span>Style</span>
         <select class="form-select" :value="controls.style" @change="patch('style', $event.target.value)">
+          <option value="Balanced">Balanced</option>
           <option value="Budget">Budget</option>
           <option value="Comfort">Comfort</option>
           <option value="Luxury">Luxury</option>
