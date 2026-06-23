@@ -5,21 +5,30 @@ const Home = () => import("../pages/Home.vue");
 const Destination = () => import("../pages/Destination.vue");
 const DestinationDetails = () => import("../pages/DestinationDetails.vue");
 const Planner = () => import("../pages/Planner.vue");
+const Trips = () => import("../pages/Trips.vue");
 const RoadtripPlanner = () => import("../pages/RoadtripPlanner.vue");
-const SavedTrips = () => import("../pages/SavedTrips.vue");
 const NotFound = () => import("../pages/NotFound.vue");
 const Login = () => import("../pages/Login.vue");
-const Dashboard = () => import("../pages/Dashboard.vue");
 const Community = () => import("../pages/Community.vue");
-const Documents = () => import("../pages/Documents.vue");
 const GroupTravel = () => import("../pages/GroupTravel.vue");
 const Help = () => import("../pages/Help.vue");
+const Profile = () => import("../pages/Profile.vue");
+const Admin = () => import("../pages/Admin.vue");
+
+function isAdminUser(user) {
+  const email = String(user?.email || "").toLowerCase();
+  return email.includes("admin") || email.endsWith("@wanderai.local");
+}
 
 const routes = [
   {
     path: "/",
-    name: "Home",
+    name: "Explore",
     component: Home
+  },
+  {
+    path: "/explore",
+    redirect: "/"
   },
   {
     path: "/destination",
@@ -37,6 +46,14 @@ const routes = [
     component: Planner
   },
   {
+    path: "/trips",
+    name: "Trips",
+    component: Trips,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
     path: "/roadtrips",
     name: "RoadtripPlanner",
     component: RoadtripPlanner
@@ -50,33 +67,9 @@ const routes = [
     }
   },
   {
-    path: "/dashboard",
-    name: "Dashboard",
-    component: Dashboard,
-    meta: {
-      requiresAuth: true
-    }
-  },
-  {
     path: "/community",
     name: "Community",
     component: Community,
-    meta: {
-      requiresAuth: true
-    }
-  },
-  {
-    path: "/saved-trips",
-    name: "SavedTrips",
-    component: SavedTrips,
-    meta: {
-      requiresAuth: true
-    }
-  },
-  {
-    path: "/documents",
-    name: "Documents",
-    component: Documents,
     meta: {
       requiresAuth: true
     }
@@ -90,8 +83,41 @@ const routes = [
     }
   },
   {
+    path: "/profile",
+    name: "Profile",
+    component: Profile,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: "/admin",
+    name: "Admin",
+    component: Admin,
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true
+    }
+  },
+  {
     path: "/group-travel",
     redirect: "/group-trips"
+  },
+  {
+    path: "/dashboard",
+    redirect: { path: "/trips", query: { section: "stats" } }
+  },
+  {
+    path: "/saved-trips",
+    redirect: { path: "/trips", query: { section: "past" } }
+  },
+  {
+    path: "/travel-os",
+    redirect: { path: "/trips", query: { section: "offline" } }
+  },
+  {
+    path: "/documents",
+    redirect: { path: "/profile", query: { section: "vault" } }
   },
   {
     path: "/help",
@@ -147,7 +173,16 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta?.guestOnly && authStore.isAuthenticated) {
-    return "/dashboard";
+    return "/trips";
+  }
+
+  if (to.meta?.requiresAdmin && !isAdminUser(authStore.user)) {
+    return {
+      path: "/trips",
+      query: {
+        denied: "admin"
+      }
+    };
   }
 
   return true;

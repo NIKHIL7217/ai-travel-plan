@@ -20,8 +20,8 @@ const titleText = computed(() => (isSignup.value ? "Create Your Travel Profile" 
 
 watchEffect(() => {
   if (authStore.isAuthenticated) {
-    const redirect = String(route.query.redirect || "/dashboard");
-    router.replace(redirect.startsWith("/") ? redirect : "/dashboard");
+    const redirect = String(route.query.redirect || "/trips");
+    router.replace(redirect.startsWith("/") ? redirect : "/trips");
   }
 });
 
@@ -61,8 +61,8 @@ const handleSubmit = async () => {
       await authStore.login(email.value.trim(), password.value);
     }
 
-    const redirect = String(route.query.redirect || "/dashboard");
-    router.replace(redirect.startsWith("/") ? redirect : "/dashboard");
+    const redirect = String(route.query.redirect || "/trips");
+    router.replace(redirect.startsWith("/") ? redirect : "/trips");
   } catch (error) {
     errorText.value = error?.message || "Login failed. Please try again.";
   }
@@ -76,10 +76,10 @@ const handleSubmit = async () => {
         <span class="pill">PROFILE ACCESS</span>
         <h1>{{ titleText }}</h1>
         <p>
-          Secure your account, track personalized itineraries, and access your private travel dashboard.
+          Secure your account, track personalized itineraries, and access your private travel hub.
         </p>
         <ul class="auth-points">
-          <li>Personal dashboard for your trip activity</li>
+          <li>Personal trip hub for your travel activity</li>
           <li>Saved plans synced with your profile</li>
           <li>Fast switch between planning and archives</li>
         </ul>

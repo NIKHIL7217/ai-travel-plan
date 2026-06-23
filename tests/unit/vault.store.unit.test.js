@@ -9,6 +9,8 @@ function resetVaultStorage() {
 
   localStorage.removeItem("travel_os_vault_docs_guest");
   localStorage.removeItem("travel_os_vault_docs_tester");
+  localStorage.removeItem("travel_os_vault_encryption_guest");
+  localStorage.removeItem("travel_os_vault_encryption_tester");
 }
 
 describe("vault store", () => {
@@ -45,5 +47,36 @@ describe("vault store", () => {
 
     expect(store.documents[0].emergencyPack).toBe(true);
     expect(store.emergencyPackCount).toBe(1);
+  });
+
+  it("rotates key metadata for encrypted documents", () => {
+    const store = useVaultStore();
+    store.initForUser("tester");
+
+    const file = new File(["abc"], "ticket.pdf", { type: "application/pdf" });
+    store.addDocument(file, { tag: "travel" });
+
+    const initialVersion = store.encryptionMeta.keyVersion;
+    expect(store.documents[0].isEncrypted).toBe(true);
+
+    store.rotateKey();
+
+    expect(store.encryptionMeta.keyVersion).toBe(initialVersion + 1);
+    expect(store.documents[0].keyVersion).toBe(initialVersion + 1);
+    expect(store.documents[0].encryptionAlgorithm).toBe("AES-256-GCM");
+  });
+
+  it("can disable encryption metadata for future docs", () => {
+    const store = useVaultStore();
+    store.initForUser("tester");
+
+    store.setEncryptionEnabled(false);
+
+    const file = new File(["abc"], "hotel.png", { type: "image/png" });
+    store.addDocument(file, { tag: "travel" });
+
+    expect(store.encryptionMeta.enabled).toBe(false);
+    expect(store.documents[0].isEncrypted).toBe(false);
+    expect(store.encryptionStatusLabel).toBe("Metadata Only");
   });
 });

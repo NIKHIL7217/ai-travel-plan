@@ -1,1017 +1,1048 @@
-# AI Travel App - Detailed Project Analysis
+﻿# AI Travel App - Detailed Page Overview README
 
-Last updated: 2026-06-22
+Last updated: 2026-06-23
 
-This README is a deep technical analysis of the current codebase, including:
-
-- project requirements and how they were implemented
-- architecture and data flow
-- what is active now vs what is legacy/parked
-- page/service/module level behavior
-- quality, testing, CI, and current verification status
-- file-by-file responsibility index
+This README is intentionally detailed and written for day-to-day development.
+Main focus: every page overview in depth, including what is shown on the page and where it appears in the layout.
 
 ---
 
-## 1. Project Intent and Requirement History
+## 1. Project Snapshot
 
-This project started as an AI travel planning app and has been evolving toward a production-grade, live-data travel platform.
+AI Travel App is a Vue 3 + Vite based Travel OS style application.
+It combines:
 
-### Core product goal
+- AI trip planning
+- destination intelligence
+- roadtrip planning
+- user profile memory
+- community and group collaboration
+- document vault and offline packs
+- admin operations panel
 
-Build a practical Travel OS that can:
+Core stack:
 
-1. take natural language prompts
-2. generate itinerary + budget
-3. enrich plans with real-world data (route, weather, nearby places, photos)
-4. allow account-based save/revisit flows
-5. operate safely with strict no-mock policy controls
-
-### Important requirement tracks implemented
-
-#### A) Data migration requirements (live-data first)
-
-- no-mock policy and live-data preference flags
-- shared cache buckets for major data domains
-- live destination photos, dynamic trending, and lifecycle-state coverage on key pages
-
-#### B) Planner UX and behavior requirements (latest)
-
-Recent user-driven requirements were:
-
-1. planner should feel normal prompt-first, not overloaded
-2. quick controls should not clutter main planner area
-3. preferences should open from a button near planner chat area
-4. plan output must actually follow user preferences
-
-Current implementation satisfies this with:
-
-- prompt-first planner flow in `src/pages/Planner.vue`
-- preferences modal invoked by `Trip Preferences` / `Edit Preferences` button
-- preference lock behavior to prevent parser overrides of user-applied values
-- explicit preference context injection into itinerary and budget generation prompts
+- Vue 3 + Vite
+- Vue Router
+- Pinia
+- Firebase (with local fallback in services)
+- Vitest + Playwright + ESLint
 
 ---
 
-## 2. What Has Been Built (Scope and Size)
+## 2. App Shell (Global Layout)
 
-Implementation footprint in current repository snapshot:
+Global shell file: [src/App.vue](src/App.vue)
 
-| Area | File Count |
-| --- | ---: |
-| `src/pages` | 13 |
-| `src/services` | 17 |
-| `src/services/ai` | 5 |
-| `src/services/maps` | 2 |
-| `src/services/travel` | 2 |
-| `src/services/photo` | 1 |
-| `src/modules` | 22 |
-| `src/features` | 22 |
-| `src/core` | 8 |
-| `src/schemas` | 5 |
-| `src/types` | 4 |
-| `tests/unit` | 7 |
-| `tests/component` | 7 |
-| `tests/integration` | 1 |
-| `tests/e2e` | 1 |
-| `docs` | 4 |
+Every routed page is rendered inside this shell.
 
-This is not a small demo anymore. It has production-oriented quality gates, service layering, caching, observability, validation schemas, and multiple runtime modules.
+### 2.1 Top Area (Sticky Navbar)
 
----
+Location in UI: very top, fixed/sticky.
 
-## 3. Architecture at a Glance
+Contains:
 
-### Active runtime path
+- Brand logo (left)
+- Desktop nav links (center)
+- Geo indicator (right cluster)
+- Offline sync indicator (right cluster)
+- Profile avatar menu toggle (right cluster)
 
-`src/main.js` -> `src/App.vue` -> `src/router/index.js` -> routed pages under `src/pages`
+Desktop nav links include:
 
-### Runtime initialization sequence
+- Home
+- Destinations
+- Planner
+- Roadtrips
+- Group Trips (auth)
+- Community (auth)
+- Dashboard (auth)
+- Profile (auth)
+- Travel OS (auth)
+- Admin (auth + admin)
+- Documents (auth)
+- Saved Trips
 
-1. Create Vue app + Pinia + Router in `src/main.js`
-2. Initialize network monitor + global error handlers (`src/core/monitoring`)
-3. Initialize auth session through `src/stores/auth.js`
-4. Mount app
+### 2.2 Profile Dropdown Menu
 
-### End-to-end planning flow (active)
+Location in UI: top-right avatar click.
 
-```mermaid
-flowchart TD
-  A[User Prompt in Planner] --> B[Intent Extraction]
-  B --> C[Merge with Controls]
-  C --> D[Apply Intelligent Defaults]
-  D --> E[Inject Strict Preference Context]
-  E --> F[Generate Itinerary]
-  E --> G[Generate Budget]
-  F --> H[Generate Snapshot Distance Weather Places]
-  G --> H
-  H --> I[Render Assistant Reply + Suggestions]
-  I --> J[Save Trip to Firebase or Local Fallback]
-```
+Contains quick links to:
 
-### Service layering strategy
+- Profile Center
+- Open Dashboard
+- Travel OS Panel
+- Admin Console (admin only)
+- My Saved Trips
+- Document Vault
+- Group Trips
+- Community Hub
+- Roadtrip Mode
+- Help Center
+- Login/Signup (guest)
+- Logout (auth)
 
-- Compatibility facades in `src/services/*.js` keep old imports stable.
-- Real logic is mostly in:
-  - `src/services/ai/*.ts`
-  - `src/services/maps/*.ts`
-  - `src/services/travel/*.ts`
-  - `src/services/photo/*.ts`
-- Core cross-cutting infra:
-  - `src/core/cache`
-  - `src/core/errors`
-  - `src/core/logger`
-  - `src/core/monitoring`
+### 2.3 Main Content View
 
----
+Location in UI: center page body.
 
-## 4. Routes and Access Rules
+Contains:
 
-Active route registry is in `src/router/index.js`.
+- RouterView content
+- Suspense fallback skeleton while async page components load
 
-| Path | Page | Access |
-| --- | --- | --- |
-| `/` | Home | public |
-| `/destination` | Destination directory | public |
-| `/destination/:id` | Destination details | public |
-| `/planner` | Planner workspace | public |
-| `/login` | Login/signup | guest-only |
-| `/dashboard` | Dashboard | requires auth |
-| `/saved-trips` | Saved trips | requires auth |
-| `/help` | Help center | public |
-| `/guides` | redirect to `/help?topic=overview` | public |
-| `/security` | redirect to `/help?topic=security` | public |
-| `/faq` | redirect to `/help?topic=overview` | public |
-| `/api-keys` | redirect to `/help?topic=api` | public |
-| `/:pathMatch(.*)*` | NotFound | public |
+### 2.4 Footer
 
-Auth guards:
+Location in UI: bottom area above mobile nav.
 
-- if route has `requiresAuth` and user not authenticated -> redirect to `/login?redirect=<target>`
-- if route has `guestOnly` and user authenticated -> redirect to `/dashboard`
+Contains:
+
+- Brand block and app description
+- Application links
+- Support links (Help Center)
+- Conditional auth/admin links
+
+### 2.5 Global Floating Widget
+
+Location in UI: floating overlay.
+
+Contains:
+
+- `TravelCopilotWidget`
+
+### 2.6 Mobile Bottom Navigation
+
+Location in UI: fixed bottom on mobile.
+
+Contains:
+
+- Home
+- Explore
+- Planner
+- Roadtrip
+- Saved
+- Community
+- Profile (routes to `/profile` when authenticated, `/login` otherwise)
 
 ---
 
-## 5. Detailed Page Responsibilities
+## 3. Routing and Access Control
 
-### Home (`src/pages/Home.vue`)
+Router file: [src/router/index.js](src/router/index.js)
+
+### 3.1 Public Routes
+
+- `/` -> Home
+- `/destination` -> Destination directory
+- `/destination/:id` -> Destination details
+- `/planner` -> Planner
+- `/roadtrips` -> Roadtrip planner
+- `/help` -> Help center
+- Catch-all -> NotFound
+
+### 3.2 Authenticated Routes (`requiresAuth`)
+
+- `/dashboard`
+- `/community`
+- `/saved-trips`
+- `/documents`
+- `/group-trips`
+- `/profile`
+- `/travel-os`
+
+### 3.3 Admin Route (`requiresAuth + requiresAdmin`)
+
+- `/admin`
+
+Admin check rule in router:
+
+- user email contains `admin`
+- or ends with `@wanderai.local`
+
+### 3.4 Redirect Routes
+
+- `/group-travel` -> `/group-trips`
+- `/guides` -> `/help?topic=overview`
+- `/security` -> `/help?topic=security`
+- `/faq` -> `/help?topic=overview`
+- `/api-keys` -> `/help?topic=api`
+
+---
+
+## 4. Page-by-Page Detailed Overview
+
+Each subsection explains:
+
+- purpose
+- layout order (top to bottom)
+- important actions
+- data dependencies
+- state handling
+- route/query assumptions
+
+---
+
+### 4.1 Home Page
+
+File: [src/pages/Home.vue](src/pages/Home.vue)
+Route: `/`
 
 Purpose:
 
-- entry command center for prompt-based planning
-- show dynamic live trending categories
-- show popular live destination cards with lazy photo hydration and route distance labels
+- Main landing command center for prompt-led trip discovery and planning.
 
-Data behavior:
+Layout flow (top to bottom):
 
-- detects user location
-- initializes currency
-- loads trending + destination suggestions in parallel
-- resolves route distances to popular destinations
+1. Hero section with headline and planning CTA
+2. Prompt/search input area with quick chips
+3. Trending destination section
+4. Popular destination cards section
+
+What is where:
+
+- Prompt and CTA controls are at the top hero area.
+- Live destination cards are in middle content blocks.
+- Individual destination card actions sit inside each card.
+
+Key actions:
+
+- Start planning from prompt
+- Apply quick prompt chips
+- Open destination details
+- Open planner with selected destination context
+
+Dependencies:
+
+- location service
+- currency formatting
+- Gemini-based suggestion/photo helpers
+- trending engine
 
 State handling:
 
-- separate loading/error handling for trending and popular destination sections
+- loading skeletons for trending/popular lists
+- explicit error cards/messages
+- empty list fallback text
 
-### Destination Directory (`src/pages/Destination.vue`)
+Route/query behavior:
+
+- pushes route to planner or destination based on selected action
+
+---
+
+### 4.2 Destination Directory Page
+
+File: [src/pages/Destination.vue](src/pages/Destination.vue)
+Route: `/destination`
 
 Purpose:
 
-- discover and filter destinations
-- analyze Google Maps URL or coordinates input
+- Destination discovery and filtering hub.
 
-Behavior:
+Layout flow:
 
-- local filters: budget cap and season text
-- maps analyzer parses URL/coordinates and routes to destination details with query context
+1. Page header and intro
+2. Maps analyzer input card
+3. Filter/search controls
+4. Destination listing grid
 
-### Destination Details (`src/pages/DestinationDetails.vue`)
+What is where:
+
+- Maps URL/coordinates analyzer is near top.
+- Filters are above list area.
+- Destination cards are main body.
+
+Key actions:
+
+- Analyze Google Maps input and jump to details
+- Search/filter destinations
+- Reset filters
+- Open selected destination details
+
+Dependencies:
+
+- Gemini destination suggestion service
+- map input parser
+- currency formatter
+
+State handling:
+
+- loading section for list
+- error message/card for fetch/analyze failures
+- empty state when no matching destinations
+
+Route/query behavior:
+
+- reads `route.query.search` to initialize search text
+
+---
+
+### 4.3 Destination Details Page
+
+File: [src/pages/DestinationDetails.vue](src/pages/DestinationDetails.vue)
+Route: `/destination/:id`
 
 Purpose:
 
-- destination intelligence workspace with tabs
+- Full destination intelligence workspace (travel signals + planning context).
 
-Tabs:
+Layout flow:
 
-- overview
-- attractions
-- hotels
-- food
-- transport
-- weather
+1. Top gate states (loading/error)
+2. Destination hero banner
+3. Route origin analyzer strip
+4. Main content with tabbed sections
+5. Right-side utility/sidebar blocks
 
-Behavior:
+Tabs/sections include:
 
-- loads comprehensive details from AI/recommendation service
-- fetches real location data in parallel
-- route analysis from user origin city
-- traffic insights integration
-- auto-refresh every 90 seconds for live location intelligence (and traffic if route analyzed)
+- Overview
+- Attractions
+- Hotels
+- Food
+- Transport
+- Weather
 
-### Planner (`src/pages/Planner.vue`)
+What is where:
+
+- Core destination summary is top hero.
+- Tab switcher is above tab content body.
+- Community/scam/gems/visa/live intelligence appear in tab content blocks.
+- Route + budget helpers appear in side blocks.
+
+Key actions:
+
+- Analyze route from origin
+- Switch tabs
+- Refresh live intelligence
+- Submit destination review
+- Open map links
+- Jump to planner
+
+Dependencies:
+
+- destination detail generation
+- route/traffic intelligence
+- visa intelligence module
+- scam alerts + hidden gems modules
+- community store
+
+State handling:
+
+- multiple nested loading/error/empty states per panel
+- top-level fallback when destination fails or missing
+
+Route/query behavior:
+
+- uses `route.params.id`
+- can also handle map-derived query context
+
+---
+
+### 4.4 Planner Page
+
+File: [src/pages/Planner.vue](src/pages/Planner.vue)
+Route: `/planner`
 
 Purpose:
 
-- core prompt-first trip generation + refinement + save flow
+- Primary AI planner workspace with prompt conversation, plan comparison, save/offline/group actions.
 
-Current design behavior:
+Layout flow:
 
-- single prompt input drives generation
-- conversation timeline for user/assistant messages
-- recent trip reuse support
-- trip snapshot generation (distance/weather/nearby attractions/hotels/restaurants)
-- save plan flow with auth-aware redirection
+1. Planner header
+2. Two-column body
+3. Left column:
+   - prompt input card
+   - offline/personalization strips
+   - memory nudge card
+   - recent trips card
+   - conversation card
+4. Right column:
+   - loading/empty/result container
+   - result card with selected plan details
+   - budget/itinerary/snapshot/roadtrip panels
+5. Preferences modal overlay
 
-Preference UX behavior (latest implementation):
+What is where:
 
-- preferences live in modal (not inline quick-controls block)
-- modal opens from button near planner interaction area
-- apply preferences sets `preferencesLocked = true`
-- when locked, intent patch cannot override key fields
-- strict preference block is appended to generation prompt
-- applied preferences panel rendered in results
+- Prompt and generation button are at top-left card.
+- Plan result action buttons are in result header right area.
+- Day-wise itinerary is lower in result card.
+- Preference form is modal, not inline.
 
-### Dashboard (`src/pages/Dashboard.vue`)
+Key actions:
+
+- Generate trip plan
+- Open/apply/reset preferences
+- Save trip
+- Save offline draft
+- Save itinerary/maps/hotels/emergency packs
+- Create group trip
+- Select plan option
+- Refine plan via suggestion prompts
+
+Dependencies:
+
+- auth, profileMemory, offline, plannerSession, groupTravel stores
+- AI itinerary + budget generation
+- firebase save/load
+- travel weather/places snapshot services
+- planner-options and roadtrip modules
+
+State handling:
+
+- global generation loading
+- no-results empty block
+- planner error message
+- save status and transient messages
+- snapshot loading/error behavior
+
+Route/query behavior:
+
+- supports incoming query parameters like destination/origin/prompt
+- save/group action redirects to login if unauthenticated
+
+---
+
+### 4.5 Roadtrip Planner Page
+
+File: [src/pages/RoadtripPlanner.vue](src/pages/RoadtripPlanner.vue)
+Route: `/roadtrips`
 
 Purpose:
 
-- account-level planning overview and intelligence dashboard
+- Dedicated roadtrip intelligence generation workspace.
 
-Features:
+Layout flow:
 
-- totals for trips, planned days, and budget footprint
-- recent trip list
-- live geo snapshot (weather/hotels/restaurants near current location)
-- travel intelligence widget grid loaded via async feature module
+1. Header with offline status strip
+2. Main grid
+3. Input control card
+4. Recent trip reuse card
+5. Roadtrip intelligence output panel
 
-### Saved Trips (`src/pages/SavedTrips.vue`)
+What is where:
+
+- Origin/destination/travel-mode/day/traveler inputs are in first main card.
+- Offline save controls are in the same action row.
+- Intelligence output is full-width below grid.
+
+Key actions:
+
+- Generate roadtrip intelligence
+- Load controls from recent trips
+- Save offline draft
+- Save maps/hotels/emergency offline packs
+
+Dependencies:
+
+- auth + offline + plannerSession stores
+- saved trip retrieval
+- roadtrip module generation
+
+State handling:
+
+- generation loading state
+- planner error text
+- transient offline draft message
+
+Route/query behavior:
+
+- no query-driven initialization logic currently
+
+---
+
+### 4.6 Login Page
+
+File: [src/pages/Login.vue](src/pages/Login.vue)
+Route: `/login` (guest-only)
 
 Purpose:
 
-- persistent trip archive with full itinerary modal review
+- Login and signup interface with redirect support.
 
-Features:
+Layout flow:
 
-- list + delete saved plans
-- destination cover image mapping
-- detailed itinerary modal overlay
-- optional roadtrip intelligence panel render when trip payload includes roadtrip data
+1. Auth container split layout
+2. Left info/art panel
+3. Right form panel
+4. Footer mode toggle controls
 
-### Help (`src/pages/Help.vue`)
+What is where:
+
+- Credentials form appears right side.
+- mode switch (login/signup) appears below form.
+
+Key actions:
+
+- Login with email/password
+- Signup with name/email/password + confirm validation
+- Switch modes
+
+Dependencies:
+
+- auth store
+- route/router for redirect target
+
+State handling:
+
+- form validation errors
+- auth errors
+- loading/disabled submit button state
+
+Route/query behavior:
+
+- after success, navigates to query redirect path or dashboard
+
+---
+
+### 4.7 Dashboard Page
+
+File: [src/pages/Dashboard.vue](src/pages/Dashboard.vue)
+Route: `/dashboard` (auth)
 
 Purpose:
 
-- consolidated support center for usage, security, and API setup topics
+- Authenticated traveler cockpit with stats, recommendations, live intelligence, and community pulse.
 
-### Login (`src/pages/Login.vue`)
+Layout flow:
+
+1. Welcome header
+2. Top-level loading/error wrapper
+3. Stats cards grid
+4. Quick actions + recent trips
+5. Profile memory and history cards
+6. Recommendations block
+7. Phase-3 live signals block
+8. Live geo snapshot block
+9. Travel intelligence widgets block
+10. Community pulse/reviews section
+
+What is where:
+
+- aggregate KPIs are high on page.
+- intelligence and community sections are lower in page flow.
+
+Key actions:
+
+- open planner/documents/community/group flows
+- retry specific failed blocks
+- navigate to detailed pages from action buttons
+
+Dependencies:
+
+- auth/profileMemory/community stores
+- saved trips
+- weather/places/location services
+- travel-intelligence module
+- recommendations + scam + hidden gems modules
+
+State handling:
+
+- layered state handling by section (not only single global flag)
+- loading/error/empty/success variations for several panels
+
+Route/query behavior:
+
+- authenticated route
+- redirects to login if session unavailable in page init
+
+---
+
+### 4.8 Community Page
+
+File: [src/pages/Community.vue](src/pages/Community.vue)
+Route: `/community` (auth)
 
 Purpose:
 
-- user authentication entry (login/signup)
+- Community hub for posts, comments, reviews, and destination-level sentiment.
 
-### NotFound (`src/pages/NotFound.vue`)
+Layout flow:
+
+1. Hero with destination context controls
+2. UI status banner/message
+3. Pulse cards area
+4. Three-column main area:
+   - composer
+   - posts feed
+   - reviews feed
+
+What is where:
+
+- destination refresh controls at top.
+- content creation form in first column.
+- feed and review streams in adjacent columns.
+
+Key actions:
+
+- create post
+- comment/like posts
+- submit review
+- helpful vote on reviews
+- reload destination community signals
+
+Dependencies:
+
+- auth + community store
+- scam/hidden gems services
+
+State handling:
+
+- page loading
+- insights loading
+- page error and ui feedback message
+- empty feed/review states
+
+Route/query behavior:
+
+- unauthenticated users redirected to `/login?redirect=/community`
+
+---
+
+### 4.9 Saved Trips Page
+
+File: [src/pages/SavedTrips.vue](src/pages/SavedTrips.vue)
+Route: `/saved-trips` (auth)
 
 Purpose:
 
-- fallback page for unmatched routes
+- Persisted trip archive with modal review and deletion.
 
-### Legacy support pages still present in codebase
+Layout flow:
 
-- `src/pages/Guides.vue`
-- `src/pages/Security.vue`
-- `src/pages/Faq.vue`
-- `src/pages/ApiKeys.vue`
+1. Header section
+2. Loading/error/empty gates
+3. Trip cards grid
+4. Full itinerary modal overlay on selection
 
-These are currently replaced by Help route redirects.
+What is where:
 
----
+- list cards in main body
+- detailed day-wise itinerary appears only in modal overlay
 
-## 6. Planner Requirement Mapping (What Was Asked vs What Was Built)
+Key actions:
 
-### Requirement 1
+- retry fetching trips
+- open trip details modal
+- close modal
+- delete trip with confirmation
 
-"planner ko normal prompt based banao"
+Dependencies:
 
-Implemented as:
+- auth store
+- firebase trip get/delete
+- destination image resolver
+- optional roadtrip panel in modal
 
-- prompt-first generation path in `handleGenerate`
-- assistant response + actionable suggestions + refinement prompts
-- reduced control clutter in primary planner layout
+State handling:
 
-### Requirement 2
+- top-level loading/error/empty states
+- per-item deleting guard
 
-"quick control wali chiz hatao"
+Route/query behavior:
 
-Implemented as:
-
-- inline quick controls removed from main planner flow
-- preferences moved to modal UX
-
-### Requirement 3
-
-"chat ke pass ek button ho jahan se fields fill ho"
-
-Implemented as:
-
-- `Trip Preferences` / `Edit Preferences` buttons around planner interaction context
-- full preferences modal with all major fields
-
-### Requirement 4
-
-"preferences ke hisab se plan modify hona chahiye"
-
-Implemented as:
-
-- preferences lock mode
-- lock-aware merge that blocks intent-parser override of locked keys
-- strict preference context injected into both itinerary and budget generation calls
-- visible applied preferences in output section
+- auth protected by router meta
 
 ---
 
-## 7. Service Architecture (Detailed)
+### 4.10 Documents Page
 
-## 7.1 Compatibility Facades
+File: [src/pages/Documents.vue](src/pages/Documents.vue)
+Route: `/documents` (auth)
 
-- `src/services/gemini.js`
-- `src/services/weather.js`
-- `src/services/places.js`
-- `src/services/routes.js`
+Purpose:
 
-These files preserve old import paths while forwarding calls to newer domain services.
+- Local metadata-based travel document vault with offline bundle support.
 
-## 7.2 AI Domain (`src/services/ai`)
+Layout flow:
 
-### `planner.service.ts`
+1. Page header
+2. Stats grid
+3. Upload/actions card
+4. Vault list card
 
-- central flags and Gemini request helpers
-- exports:
-  - `GEMINI_API_KEY`
-  - `REAL_DATA_ONLY`
-  - `NO_MOCK_DATA_POLICY`
-  - `DEMO_MODE`
-  - JSON extraction and Gemini JSON request utilities
+What is where:
 
-### `intent.service.ts`
+- vault stats (count, size, emergency, encryption) near top.
+- upload/category and utility actions in middle card.
+- document list/removal controls in lower card.
 
-- hybrid parser:
-  - heuristic extraction
-  - optional Gemini parsing when configured
-- supports multilingual/Hinglish normalization patterns
-- extracts destination, days, travelers, budget, style, travel mode, stay and food preferences
+Key actions:
 
-### `itinerary.service.ts`
+- upload files
+- assign category
+- toggle emergency pack per doc
+- remove doc
+- clear all docs
+- save offline document pack
+- rotate vault key metadata
 
-- generates travel itinerary using:
-  - destination geocode
-  - weather + nearby places enrichment
-  - Gemini JSON generation (when key exists)
-- fallback behavior:
-  - computed local simulation if allowed by policy/options
+Dependencies:
 
-### `budget.service.ts`
+- auth store
+- vault store
+- offline store
 
-- generates itemized budget using:
-  - route distance
-  - hotels + restaurants context
-  - style/stay/food multipliers
-  - optional Gemini budget response
-- fallback behavior:
-  - deterministic computed budget if allowed by policy/options
+State handling:
 
-### `recommendation.service.ts`
+- transient message banner for upload/key/pack actions
+- empty vault message when no docs
 
-- destination suggestion and detail pipeline
-- uses cache buckets for search and destination details
-- supports demo mode paths when policy allows
-- resolves live destination photos through photo provider
+Route/query behavior:
 
-## 7.3 Maps Domain (`src/services/maps`)
-
-### `geocoding.service.ts`
-
-- maps input parser + geocode helper
-- provider strategy includes external geocoding providers with fallback
-
-### `route.service.ts`
-
-- route distance + route intelligence + traffic insights
-- tries API provider data when available
-- uses haversine + heuristic fallbacks based on policy and key availability
-- route cache integration (`route_cache`)
-
-## 7.4 Travel Domain (`src/services/travel`)
-
-### `weather.service.ts`
-
-- provider order:
-  1. OpenWeather (if key)
-  2. Open-Meteo (keyless)
-  3. static fallback only when policy allows
-
-### `places.service.ts`
-
-- provider order:
-  1. Google Places API (if key)
-  2. Overpass API (keyless)
-  3. local fallback only when policy allows
-
-## 7.5 Photo Domain (`src/services/photo`)
-
-### `provider.service.ts`
-
-- live destination photo resolver
-- provider order:
-  1. Google Places photo path
-  2. Unsplash live URL fallback
-- photo cache integration (`photo_cache`)
-
-## 7.6 Platform Services
-
-### `firebase.js`
-
-- cloud-first auth + trip persistence when Firebase env configured
-- localStorage fallback mode when Firebase unavailable
-- supports login/signup/logout/session observe + trip save/list/delete
-
-### `location.js`
-
-- user location detection with optional geolocation prompt
-- IP fallback via `ipapi.co`
-- strict-mode behavior can return Unknown instead of fake defaults
-
-### `currency.js`
-
-- currency inference from location/IP/timezone
-- conversion + formatting utility for UI values
+- redirects to login with redirect query when unauthenticated
 
 ---
 
-## 8. Core Platform and Observability
+### 4.11 Group Travel Page
 
-Core folder: `src/core`
+File: [src/pages/GroupTravel.vue](src/pages/GroupTravel.vue)
+Route: `/group-trips` (auth)
 
-### Cache (`src/core/cache/dataCache.js`)
+Purpose:
 
-- memory + localStorage hybrid cache
-- in-flight request dedupe
-- buckets implemented:
-  - `destination_cache`
-  - `search_cache`
-  - `weather_cache`
-  - `photo_cache`
-  - `route_cache`
+- Group collaboration workspace for shared planning and execution.
 
-### Errors (`src/core/errors/index.js`)
+Layout flow:
 
-- normalized AppError model
-- user-friendly error text derivation
+1. Header and planner-context quick actions
+2. Join by code card
+3. Split workspace:
+   - left: group list
+   - right: active group details
+4. Active group panel sections:
+   - snapshot
+   - shared budget and itinerary
+   - comments and tasks
+   - members and invites
+   - polls and voting
+   - activity timeline
 
-### Logger (`src/core/logger/index.js`)
+What is where:
 
-- namespaced level-based logging
-- controlled by `VITE_LOG_LEVEL`
+- left sidebar is group navigation.
+- collaborative editing cards are centered in main area.
+- timeline and member controls lower in right panel.
 
-### Monitoring (`src/core/monitoring/*`)
+Key actions:
 
-- global error capture
-- request timeout/retry wrapper
-- online/offline tracking
-- reusable loading state primitive
+- create group from planner context
+- join by invite code
+- invite members by email
+- create poll and vote
+- update shared budget
+- add/update itinerary items
+- post comments
+- add/toggle tasks
 
-Bootstrap integration:
+Dependencies:
 
-- `initNetworkMonitoring()` and `installGlobalErrorHandlers(app)` are called in `src/main.js`
+- auth store
+- groupTravel store
+- plannerSession store
 
----
+State handling:
 
-## 9. State, Storage, and Data Contracts
+- ui message alerts
+- empty group list and no-active-group placeholders
+- action disable while store loading
 
-### Active store
+Route/query behavior:
 
-- `src/stores/auth.js` is active Pinia store for auth/session data
-
-### Persistence modes
-
-- Firebase mode: cloud auth + Firestore trips
-- Local fallback mode: localStorage auth session/users/trips
-
-### Type contracts (`src/types`)
-
-- `Trip.ts`
-- `Destination.ts`
-- `Itinerary.ts`
-- `Budget.ts`
-
-### Runtime schema validation (`src/schemas`)
-
-- `trip.schema.ts`
-- `destination.schema.ts`
-- `itinerary.schema.ts`
-- `budget.schema.ts`
-- `parse.ts` helper for safe schema parsing and fallback handling
+- reads/watches `query.group` to auto-open selected group
+- redirects unauthenticated users to login with redirect
 
 ---
 
-## 10. Modules and Features: Active vs Parked vs Legacy
+### 4.12 Profile Page
 
-## 10.1 Active modules in routed runtime
+File: [src/pages/Profile.vue](src/pages/Profile.vue)
+Route: `/profile` (auth)
 
-### Trending engine
+Purpose:
 
-- `src/modules/trending/engine.js`
-- active usage: Home page
+- Personalized profile center based on travel memory and saved trips.
 
-### Travel intelligence aggregator
+Layout flow:
 
-- `src/modules/travel-intelligence/service.js`
-- active usage: Dashboard page
+1. Header
+2. Loading/error gates
+3. Profile info + personality cards
+4. Stats cards
+5. Preferences + achievements cards
+6. Visited destinations chip section
+7. Travel timeline section
 
-### Travel intelligence widgets
+What is where:
 
-- `src/features/travel-intelligence/widgets/*`
-- active usage: Dashboard widget grid
+- account and personality are top major blocks.
+- preferences and achievements are middle.
+- timeline is lower section.
 
-### Roadtrip panel (conditional render)
+Key actions:
 
-- `src/features/roadtrip/RoadtripIntelligencePanel.vue`
-- active usage: SavedTrips modal only when saved trip contains roadtrip payload
+- primarily read-only insights (no major editing controls)
 
-## 10.2 Present but currently not wired in active routed pages
+Dependencies:
 
-### Planner options module
+- auth store
+- profileMemory store
+- saved trips for aggregation
 
-- `src/modules/planner-options/index.js`
-- scoring/ranking engine for Budget/Balanced/Premium options
-- comparison UI exists in `src/features/planner/PlanComparisonView.vue`
+State handling:
 
-### Profile-memory module
+- loading state
+- load error state
+- empty fallback for destinations/timeline
 
-- `src/modules/profile-memory/*`
-- includes memory storage, scoring, personalization planning
-- architecture documented, but active planner currently does not import this module directly
+Route/query behavior:
 
-### Command-center memory module
-
-- `src/modules/command-center/prompt-memory.js`
-- prompt history/saved prompts persistence API
-
-### Roadtrip engine module
-
-- `src/modules/roadtrip/*`
-- generation engine with TTL in-memory cache
-- no direct active import from routed pages for generation in current snapshot
-
-## 10.3 Legacy-linked feature components
-
-Several feature components still align with old `src/app` store architecture and are not part of the active routed shell.
-
-Examples:
-
-- `src/features/assistant/CopilotPanel.vue`
-- `src/features/budget/BudgetForecaster.vue`
-- `src/features/weather/WeatherIntelligence.vue`
-- `src/features/maps/RoadtripMap.vue`
-- `src/features/dashboard/RecentPrompts.vue`
-- `src/features/roadtrip/RoadtripEngine.vue`
+- redirects unauthenticated users to `/login?redirect=/profile`
 
 ---
 
-## 11. Legacy Runtime Tree (`src/app`) vs Active Runtime (`src/`)
+### 4.13 Travel OS Page
 
-### Active runtime
+File: [src/pages/TravelOS.vue](src/pages/TravelOS.vue)
+Route: `/travel-os` (auth)
 
-- entry: `src/main.js`
-- shell: `src/App.vue`
-- router: `src/router/index.js`
-- pages: `src/pages/*`
+Purpose:
 
-### Legacy runtime tree present but not mounted by current entrypoint
+- Unified operational panel with compact widget-style travel controls.
 
-- `src/app/App.vue`
-- `src/app/router/index.js`
-- `src/app/pages/Home.vue`
-- `src/app/stores/*`
-- `src/app/services/*`
+Layout flow:
 
-This legacy tree is useful historical context but not the currently mounted app shell.
+1. Header
+2. Error/loading wrapper
+3. Main layout:
+   - left sidebar navigation
+   - right widgets grid
 
----
+Widget groups include:
 
-## 12. Environment Variables and Flags
+- Upcoming Trips
+- Recent Trips
+- Travel Statistics
+- Offline Readiness
+- Budget Summary
+- Recommendations
+- Travel Intelligence highlights
+- Weather Snapshot
+- Activity Feed
 
-Template file: `.env.example`
+What is where:
 
-### Required
+- sidebar quick nav left side.
+- all operational mini cards in right 2-column widget grid.
 
-- `VITE_GEMINI_API_KEY`
+Key actions:
 
-### Recommended live-data providers
+- jump to major modules from sidebar
+- open admin via sidebar (with non-admin fallback to dashboard)
 
-- `VITE_GOOGLE_MAPS_API_KEY`
-- `VITE_OPENWEATHER_API_KEY`
-- `VITE_TOMTOM_API_KEY`
+Dependencies:
 
-### Firebase (optional, required for cloud auth/trip persistence)
+- auth/profileMemory/community/offline stores
+- saved trips
+- weather + location services
+- recommendation engine
 
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
+State handling:
 
-### Behavior flags
+- top-level loading and error blocks
+- per-widget empty text fallbacks
 
-- `VITE_REAL_DATA_ONLY=true`
-  - true: prefer live-only behaviors in critical flows
-  - false: allow relevant fallback paths
+Route/query behavior:
 
-- `VITE_NO_MOCK_DATA_POLICY=true`
-  - true: globally enforce no-mock policy where implemented
-  - false: allow demo/mock paths
-
-- `VITE_DEMO_MODE=false`
-  - only effective when `VITE_NO_MOCK_DATA_POLICY=false`
-
-- `VITE_LOG_LEVEL=info`
-  - `debug | info | warn | error | off`
+- redirects unauthenticated users to `/login?redirect=/travel-os`
 
 ---
 
-## 13. Build, Test, and Quality Stack
+### 4.14 Admin Page
 
-### Tooling
+File: [src/pages/Admin.vue](src/pages/Admin.vue)
+Route: `/admin` (auth + admin)
 
-- Vite build: `vite.config.js`
-- ESLint flat config: `eslint.config.js`
-- Vitest config + thresholds: `vitest.config.js`
-- Playwright e2e config: `playwright.config.js`
-- Lighthouse quality assertions: `lighthouserc.json`
-- CI pipeline: `.github/workflows/ci.yml`
+Purpose:
 
-### Available scripts
+- SaaS-style operations panel for management and monitoring.
 
-```bash
-npm run dev
-npm run build
-npm run preview
-npm run analyze:bundle
+Layout flow:
 
-npm run lint
-npm run test
-npm run test:unit
-npm run test:component
-npm run test:integration
-npm run test:coverage
-npm run test:e2e
-npm run test:e2e:ui
+1. Header
+2. Loading or restricted-access gate
+3. Tabs row
+4. Active tab content panel
 
-npm run lighthouse
-npm run quality:check
-```
+Tabs currently:
 
-### Coverage policy (enforced)
+- Dashboard metrics
+- Users
+- Trips
+- Destinations
+- Community moderation
+- Analytics bars
+- AI Monitoring
+- Settings placeholder
 
-Thresholds in `vitest.config.js`:
+What is where:
 
-- statements >= 80
-- branches >= 80
-- functions >= 80
-- lines >= 80
+- tab switch buttons top of workspace.
+- each tab renders its own table/cards in central panel.
 
----
+Key actions:
 
-## 14. Current Verification Snapshot (Executed on 2026-06-22)
+- suspend/ban/activate/delete users
+- feature/unfeature/delete destinations
+- moderation approve/remove placeholders
+- tab navigation
 
-### Build
+Dependencies:
 
-- `npm run build`: PASS
+- auth store
+- community store
+- trips data source
 
-### Tests
+State handling:
 
-- `npm run test`: PASS
-  - test files: 15
-  - tests: 77
+- loading gate
+- restricted gate for non-admin
+- transient admin action message
+- empty states for sections with no data
 
-### Coverage
+Route/query behavior:
 
-- `npm run test:coverage`: PASS
-  - statements: 95.11%
-  - branches: 82.22%
-  - functions: 100%
-  - lines: 95.62%
-
-### Lint
-
-- `npm run lint`: FAIL
-  - file: `src/services/ai/intent.service.ts`
-  - 7 errors: `no-misleading-character-class`
-  - issue context: multilingual regex character classes
-
-### E2E and Lighthouse
-
-- not re-run in this documentation update session
-- configured in scripts and CI workflow
+- admin route guard in router + in-page auth redirect safety
 
 ---
 
-## 15. CI/CD Pipeline
+### 4.15 Help Page
 
-Workflow file: `.github/workflows/ci.yml`
+File: [src/pages/Help.vue](src/pages/Help.vue)
+Route: `/help`
 
-Jobs:
+Purpose:
 
-1. `quality`
-   - install
-   - lint
-   - unit/component/integration tests
-   - coverage threshold gate
-   - build
-2. `e2e`
-   - Playwright smoke tests
-3. `lighthouse`
-   - Lighthouse score assertions on `/` and `/planner`
+- Consolidated support center for overview, security, and API guidance.
 
-Artifacts uploaded:
+Layout flow:
 
-- `coverage-report`
-- `playwright-report`
-- `lighthouse-report`
+1. Header
+2. Action button strip
+3. Support cards grid
 
----
+What is where:
 
-## 16. Security, SEO, and UX Baselines
+- topic actions near top.
+- support article cards in main body grid.
 
-### SEO basics
+Key actions:
 
-- `index.html` includes `meta description`
-- `public/robots.txt` allows crawling (`Disallow:` empty)
+- navigate to planner
+- navigate to destination directory
+- force API topic query
 
-### Auth and data safety
+Dependencies:
 
-- protected routes guarded in router
-- auth session abstraction supports cloud and local fallback
-- no hardcoded secrets in source; key use through env vars
+- route/router only
 
-### Error and network resilience
+State handling:
 
-- global + request-level error capture
-- retry and timeout strategy in request wrapper
-- offline state awareness
+- no explicit loading/error blocks
+
+Route/query behavior:
+
+- query `topic` controls ordering/priority of help sections
 
 ---
 
-## 17. Documentation Index
+### 4.16 NotFound Page
 
-- `docs/data-os-migration-roadmap.md`
-  - migration phases and no-mock policy direction
-- `docs/deployment-production.md`
-  - release gates and deployment checklist
-- `docs/observability-architecture.md`
-  - logger/errors/monitoring/request architecture
-- `docs/profile-memory-architecture.md`
-  - profile-memory module design and intended integration
+File: [src/pages/NotFound.vue](src/pages/NotFound.vue)
+Route: catch-all
 
----
+Purpose:
 
-## 18. Known Gaps and Open Work
+- 404 fallback page for unknown paths.
 
-1. Resolve lint issues in multilingual regex implementation (`intent.service.ts`).
-2. Align docs and active wiring for profile-memory integration (architecture exists, active import currently absent in planner).
-3. Continue de-duplication between active `src/` runtime and legacy `src/app` tree.
-4. Consider either wiring or pruning parked modules (`planner-options`, `command-center`, roadtrip generator) to reduce ambiguity.
-5. Re-run and maintain e2e + lighthouse gates after major UI text/structure changes.
+Layout flow:
 
----
+1. Centered card with icon/title/message
+2. Return-home button
 
-## 19. Detailed File Responsibility Index
+Key actions:
 
-This section maps key files to responsibilities for quick audit and onboarding.
+- route back to home page
 
-### Root and config
+Dependencies:
 
-- `package.json`: scripts, dependencies, quality command surface.
-- `vite.config.js`: Vue plugin, manual chunking, optional bundle analyzer.
-- `vitest.config.js`: test environment, include/exclude, coverage thresholds.
-- `playwright.config.js`: e2e setup, retries, web server settings.
-- `lighthouserc.json`: lighthouse route targets and minimum score gates.
-- `eslint.config.js`: lint policy for JS/Vue/TS and ignored paths.
-- `index.html`: app mount point, viewport and meta description.
-- `.env.example`: required and optional env variables plus behavior flags.
-- `public/robots.txt`: crawler policy baseline.
+- router link only
 
-### Core runtime
+State handling:
 
-- `src/main.js`: app bootstrap, monitoring install, auth init.
-- `src/App.vue`: active shell (navbar, profile menu, mobile nav, route transitions).
-- `src/router/index.js`: active routes + auth guards + support redirects.
-
-### Core platform (`src/core`)
-
-- `src/core/cache/dataCache.js`: shared TTL cache + bucket management + in-flight dedupe.
-- `src/core/errors/index.js`: AppError normalization and friendly messaging.
-- `src/core/logger/index.js`: namespaced logger with log-level controls.
-- `src/core/monitoring/index.js`: monitoring event bus.
-- `src/core/monitoring/request.js`: retryable request wrapper with timeout and telemetry.
-- `src/core/monitoring/global.js`: global runtime error hooks.
-- `src/core/monitoring/network.js`: network online/offline state tracking.
-- `src/core/monitoring/loading.js`: loading-state utility composable.
-
-### Pages (`src/pages`)
-
-- `src/pages/Home.vue`: landing command center + trending + popular cards.
-- `src/pages/Destination.vue`: searchable destination directory + maps analyzer.
-- `src/pages/DestinationDetails.vue`: destination deep intelligence tabs.
-- `src/pages/Planner.vue`: prompt-first planner, preference modal lock, generation pipeline.
-- `src/pages/Login.vue`: login/signup UI and auth handoff.
-- `src/pages/Dashboard.vue`: user metrics + live snapshot + intelligence widgets.
-- `src/pages/SavedTrips.vue`: saved trip archive + itinerary overlay + delete flow.
-- `src/pages/Help.vue`: consolidated support/help center.
-- `src/pages/NotFound.vue`: fallback unmatched-route page.
-- `src/pages/Guides.vue`: legacy support page (redirected route path).
-- `src/pages/Security.vue`: legacy support page (redirected route path).
-- `src/pages/Faq.vue`: legacy support page (redirected route path).
-- `src/pages/ApiKeys.vue`: legacy support page (redirected route path).
-
-### Services (`src/services`)
-
-- `src/services/gemini.js`: compatibility exports for AI/maps/travel APIs.
-- `src/services/weather.js`: compatibility export for weather service.
-- `src/services/places.js`: compatibility export for places service.
-- `src/services/routes.js`: compatibility export for route service.
-- `src/services/firebase.js`: auth and trip persistence (Firebase/local fallback).
-- `src/services/location.js`: geolocation/IP lookup and user location state.
-- `src/services/currency.js`: currency detection and conversion/formatting.
-
-#### AI services
-
-- `src/services/ai/planner.service.ts`: Gemini endpoint helpers and policy flags.
-- `src/services/ai/intent.service.ts`: intent extraction with multilingual heuristics.
-- `src/services/ai/itinerary.service.ts`: itinerary generation and fallback simulation.
-- `src/services/ai/budget.service.ts`: budget generation with preference-aware economics.
-- `src/services/ai/recommendation.service.ts`: destination search/details/location intelligence.
-
-#### Maps and travel services
-
-- `src/services/maps/geocoding.service.ts`: maps input parsing and geocoding.
-- `src/services/maps/route.service.ts`: route distance, route intelligence, traffic insights.
-- `src/services/travel/weather.service.ts`: weather fetch pipeline and fallbacks.
-- `src/services/travel/places.service.ts`: nearby places fetch pipeline and fallbacks.
-- `src/services/photo/provider.service.ts`: live destination photo provider strategy.
-
-### Modules (`src/modules`)
-
-#### Trending
-
-- `src/modules/trending/engine.js`: dynamic category generation and enrichment.
-
-#### Travel intelligence
-
-- `src/modules/travel-intelligence/index.js`: module export surface.
-- `src/modules/travel-intelligence/service.js`: dashboard aggregation orchestration.
-- `src/modules/travel-intelligence/services/weather-intelligence.js`: weather intelligence score model.
-- `src/modules/travel-intelligence/services/traffic-intelligence.js`: traffic intelligence score model.
-- `src/modules/travel-intelligence/services/crowd-intelligence.js`: crowd intelligence score model.
-- `src/modules/travel-intelligence/services/season-intelligence.js`: season recommendation logic.
-- `src/modules/travel-intelligence/services/safety-intelligence.js`: safety signal synthesis.
-- `src/modules/travel-intelligence/services/cost-intelligence.js`: cost signal synthesis.
-- `src/modules/travel-intelligence/services/utils.js`: shared utility helpers.
-
-#### Roadtrip
-
-- `src/modules/roadtrip/index.js`: module export surface.
-- `src/modules/roadtrip/service.js`: roadtrip engine orchestration and cache.
-- `src/modules/roadtrip/constants.js`: roadtrip constants and mode metadata.
-- `src/modules/roadtrip/estimators.js`: fuel/toll/ev estimators.
-- `src/modules/roadtrip/scenic.js`: scenic and road condition planning.
-- `src/modules/roadtrip/spots.js`: sunrise/sunset and photo stop builders.
-
-#### Planner options
-
-- `src/modules/planner-options/index.js`: profile generation + scoring/ranking engine.
-
-#### Profile memory
-
-- `src/modules/profile-memory/index.js`: module export surface.
-- `src/modules/profile-memory/storage.js`: profile memory persistence and updates.
-- `src/modules/profile-memory/scoring.js`: memory confidence scoring.
-- `src/modules/profile-memory/personalization.js`: memory-based input personalization.
-
-#### Command center
-
-- `src/modules/command-center/prompt-memory.js`: prompt history/saved prompt persistence.
-
-### Features (`src/features`)
-
-#### Active or conditionally active features
-
-- `src/features/travel-intelligence/index.js`: widget export surface.
-- `src/features/travel-intelligence/widgets/WeatherIntelligenceWidget.vue`: weather intelligence card.
-- `src/features/travel-intelligence/widgets/TrafficIntelligenceWidget.vue`: traffic intelligence card.
-- `src/features/travel-intelligence/widgets/CrowdIntelligenceWidget.vue`: crowd intelligence card.
-- `src/features/travel-intelligence/widgets/SeasonIntelligenceWidget.vue`: season intelligence card.
-- `src/features/travel-intelligence/widgets/SafetyIntelligenceWidget.vue`: safety intelligence card.
-- `src/features/travel-intelligence/widgets/CostIntelligenceWidget.vue`: cost intelligence card.
-- `src/features/roadtrip/RoadtripIntelligencePanel.vue`: roadtrip telemetry panel UI.
-- `src/features/roadtrip/RoadtripMiniMap.vue`: canvas mini-map visualization.
-- `src/features/planner/PlanComparisonView.vue`: 3-plan comparison widget (currently parked in active planner flow).
-
-#### Legacy-linked feature UI (not primary active runtime path)
-
-- `src/features/assistant/CopilotPanel.vue`: old assistant side panel.
-- `src/features/budget/BudgetForecaster.vue`: old budget forecasting panel.
-- `src/features/weather/WeatherIntelligence.vue`: old weather intelligence panel.
-- `src/features/maps/RoadtripMap.vue`: old map rendering feature.
-- `src/features/dashboard/RecentPrompts.vue`: old dashboard prompt list.
-- `src/features/roadtrip/RoadtripEngine.vue`: old roadtrip engine component.
-- `src/features/command-center/CommandComposer.vue`: command center input composer.
-- `src/features/command-center/ControlMatrix.vue`: command center controls layout.
-- `src/features/command-center/PromptCollection.vue`: prompt list/persistence UI.
-- `src/features/command-center/QuickTemplates.vue`: ready prompt template cards.
-- `src/features/command-center/RecentTripsPanel.vue`: recent trip helper panel.
-- `src/features/command-center/SuggestedActions.vue`: suggested action chips/buttons.
-
-### Schemas and types
-
-- `src/schemas/trip.schema.ts`: route/weather/location/traffic contracts.
-- `src/schemas/destination.schema.ts`: destination list/details contracts.
-- `src/schemas/itinerary.schema.ts`: itinerary structure contract.
-- `src/schemas/budget.schema.ts`: budget structure contract.
-- `src/schemas/parse.ts`: schema-safe parsing helpers.
-- `src/types/Trip.ts`: trip domain types.
-- `src/types/Destination.ts`: destination domain types.
-- `src/types/Itinerary.ts`: itinerary domain types.
-- `src/types/Budget.ts`: budget domain types.
-
-### Auth store
-
-- `src/stores/auth.js`: session state, auth actions, derived user identity.
-
-### Legacy app tree (`src/app`)
-
-- `src/app/App.vue`: old sci-fi shell.
-- `src/app/router/index.js`: old single-route router.
-- `src/app/pages/Home.vue`: old home screen.
-- `src/app/services/gemini.js`: old gemini adapter for legacy tree.
-- `src/app/services/sound.js`: legacy UI sound controls.
-- `src/app/stores/planner.js`: legacy planner store.
-- `src/app/stores/assistant.js`: legacy assistant store.
-- `src/app/stores/budget.js`: legacy budget store.
-- `src/app/stores/trips.js`: legacy trip archive store.
-
-### Tests (`tests`)
-
-- `tests/setup.js`: test DOM cleanup setup.
-- `tests/unit/intent-parser.unit.test.js`: multilingual intent extraction tests.
-- `tests/unit/planner-options.unit.test.js`: planner option ranking tests.
-- `tests/unit/weather-intelligence.unit.test.js`: weather intelligence logic tests.
-- `tests/unit/traffic-intelligence.unit.test.js`: traffic intelligence logic tests.
-- `tests/unit/crowd-intelligence.unit.test.js`: crowd intelligence logic tests.
-- `tests/unit/season-safety-cost.unit.test.js`: season/safety/cost logic tests.
-- `tests/unit/travel-intelligence-utils.unit.test.js`: shared utility logic tests.
-- `tests/component/weather-widget.component.test.js`: weather widget rendering tests.
-- `tests/component/traffic-widget.component.test.js`: traffic widget rendering tests.
-- `tests/component/crowd-widget.component.test.js`: crowd widget rendering tests.
-- `tests/component/season-widget.component.test.js`: season widget rendering tests.
-- `tests/component/safety-widget.component.test.js`: safety widget rendering tests.
-- `tests/component/cost-widget.component.test.js`: cost widget rendering tests.
-- `tests/component/plan-comparison.component.test.js`: plan comparison component tests.
-- `tests/integration/travel-intelligence-dashboard.integration.test.js`: full intelligence dashboard assembly test.
-- `tests/e2e/smoke.spec.ts`: basic route smoke tests.
-
-### Documentation and workflow
-
-- `docs/data-os-migration-roadmap.md`: phased migration roadmap.
-- `docs/deployment-production.md`: production deployment guide.
-- `docs/observability-architecture.md`: observability architecture guide.
-- `docs/profile-memory-architecture.md`: profile-memory architecture guide.
-- `.github/workflows/ci.yml`: CI quality pipeline.
+- static page, no dynamic states
 
 ---
 
-## 20. Quick Start
+## 5. Legacy Pages Present in Codebase
 
-```bash
-npm install
-npm run dev
-```
+These files exist under `src/pages` but route flow now redirects to Help topics:
 
-Build and preview:
+- [src/pages/Guides.vue](src/pages/Guides.vue)
+- [src/pages/Security.vue](src/pages/Security.vue)
+- [src/pages/Faq.vue](src/pages/Faq.vue)
+- [src/pages/ApiKeys.vue](src/pages/ApiKeys.vue)
 
-```bash
-npm run build
-npm run preview
-```
+Current behavior:
 
-Run full local quality checks:
-
-```bash
-npm run lint
-npm run test:coverage
-npm run build
-```
+- users are routed to `/help` with topic query mapping instead of using these pages directly.
 
 ---
 
-If you are maintaining this repository, start from sections 3, 5, 7, 10, and 19 of this README. Those sections explain how the app currently behaves, where logic lives, and what is active vs legacy.
+## 6. Stores and Service Mapping (Quick Reference)
+
+Primary stores:
+
+- [src/stores/auth.js](src/stores/auth.js): auth session and identity
+- [src/stores/profileMemory.js](src/stores/profileMemory.js): personalization memory and scores
+- [src/stores/offline.js](src/stores/offline.js): offline drafts + typed offline packs
+- [src/stores/community.js](src/stores/community.js): posts/reviews/pulse
+- [src/stores/groupTravel.js](src/stores/groupTravel.js): collaborative trip state
+- [src/stores/vault.js](src/stores/vault.js): document vault metadata + encryption metadata
+- [src/stores/plannerSession.js](src/stores/plannerSession.js): active planner context
+
+Notable modules/services:
+
+- recommendations engine: [src/modules/recommendations/engine.js](src/modules/recommendations/engine.js)
+- roadtrip intelligence: [src/modules/roadtrip](src/modules/roadtrip)
+- travel intelligence: [src/modules/travel-intelligence](src/modules/travel-intelligence)
+- visa intelligence: [src/modules/visa-intelligence/service.js](src/modules/visa-intelligence/service.js)
+- firebase integration: [src/services/firebase.js](src/services/firebase.js)
+
+---
+
+## 7. Validation Status
+
+Latest run snapshot:
+
+- `npm run lint` -> PASS
+- `npm run test` -> PASS (23 files, 99 tests)
+- `npm run build` -> PASS
+
+---
+
+## 8. Developer Notes
+
+If you add a new page, keep this README updated using the same pattern:
+
+1. route and access
+2. top-to-bottom layout map
+3. key actions
+4. dependencies
+5. state handling
+6. query assumptions
+
+This keeps onboarding and debugging much faster for all contributors.
+

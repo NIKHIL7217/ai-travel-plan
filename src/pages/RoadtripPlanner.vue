@@ -126,6 +126,66 @@ function saveRoadtripOfflineDraft() {
   }, 2200);
 }
 
+function queueRoadtripOfflinePack(type) {
+  if (!roadtrip.value) {
+    return;
+  }
+
+  const payloadBase = {
+    origin: controls.value.origin,
+    destination: controls.value.destination,
+    days: Number(controls.value.days || 0),
+    travelers: Number(controls.value.travelers || 0),
+    travelMode: controls.value.travelMode,
+    updatedAt: Date.now()
+  };
+
+  if (type === "maps") {
+    offlineStore.queueOfflinePack({
+      type: "maps",
+      title: `${controls.value.destination} road map`,
+      source: "roadtrip",
+      payload: {
+        ...payloadBase,
+        route: roadtrip.value?.route || null,
+        dailyRoute: roadtrip.value?.dailyRoute || []
+      }
+    });
+    offlineDraftMessage.value = "Roadtrip maps pack saved.";
+  }
+
+  if (type === "hotels") {
+    offlineStore.queueOfflinePack({
+      type: "hotels",
+      title: `${controls.value.destination} stay stops`,
+      source: "roadtrip",
+      payload: {
+        ...payloadBase,
+        restStops: roadtrip.value?.recommendedStops?.restStops || []
+      }
+    });
+    offlineDraftMessage.value = "Roadtrip stays pack saved.";
+  }
+
+  if (type === "emergency") {
+    offlineStore.queueOfflinePack({
+      type: "emergency",
+      title: `${controls.value.destination} emergency route`,
+      source: "roadtrip",
+      payload: {
+        ...payloadBase,
+        safetyNotes: roadtrip.value?.safetyNotes || [],
+        weatherWindows: roadtrip.value?.weatherWindows || []
+      }
+    });
+    offlineDraftMessage.value = "Roadtrip emergency pack saved.";
+  }
+
+  setTimeout(() => {
+    offlineDraftMessage.value = "";
+  }, 2200);
+}
+
 onMounted(async () => {
   await authStore.initAuth();
   offlineStore.initForUser(authStore.user?.uid || "guest");
@@ -137,8 +197,8 @@ onMounted(async () => {
   <div class="roadtrip-page container animate-fade-in" style="padding-top: 100px;">
     <div class="roadtrip-header">
       <span class="roadtrip-badge">ROADTRIP MODE</span>
-      <h1>Roadtrip Operating Workspace</h1>
-      <p>Fuel, toll, EV stops, scenic routes, sunrise-sunset points, and route safety in one dashboard.</p>
+      <h1>Roadtrip Intelligence Studio</h1>
+      <p>Plan fuel, tolls, EV stops, scenic windows, and route safety in one immersive workspace.</p>
       <div class="offline-strip mt-2">
         <span class="offline-chip" :class="{ offline: !offlineStore.isOnline }">
           {{ offlineStore.isOnline ? "Online Sync Active" : "Offline Mode Active" }}
@@ -188,6 +248,15 @@ onMounted(async () => {
           <button type="button" class="btn btn-outline" :disabled="!roadtrip" @click="saveRoadtripOfflineDraft">
             Save Offline Draft
           </button>
+          <button type="button" class="btn btn-outline" :disabled="!roadtrip" @click="queueRoadtripOfflinePack('maps')">
+            Save Maps Pack
+          </button>
+          <button type="button" class="btn btn-outline" :disabled="!roadtrip" @click="queueRoadtripOfflinePack('hotels')">
+            Save Hotels Pack
+          </button>
+          <button type="button" class="btn btn-outline" :disabled="!roadtrip" @click="queueRoadtripOfflinePack('emergency')">
+            Save Emergency Pack
+          </button>
           <button type="button" class="btn btn-primary" :disabled="loading" @click="handleGenerateRoadtrip">
             {{ loading ? "Generating..." : "Generate Roadtrip Intelligence" }}
           </button>
@@ -219,13 +288,14 @@ onMounted(async () => {
 .roadtrip-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-bottom: 28px;
+  gap: 14px;
+  padding-bottom: 34px;
 }
 
 .roadtrip-header h1 {
   margin: 8px 0;
-  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  letter-spacing: -0.03em;
 }
 
 .roadtrip-header p {
@@ -234,13 +304,13 @@ onMounted(async () => {
 
 .roadtrip-badge {
   display: inline-block;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   color: #0369a1;
-  background: rgba(224, 242, 254, 0.9);
+  background: rgba(224, 242, 254, 0.86);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  padding: 5px 10px;
 }
 
 .mt-6 {
@@ -262,12 +332,12 @@ onMounted(async () => {
 .roadtrip-grid {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
-  gap: 12px;
+  gap: 14px;
 }
 
 .control-card,
 .recent-card {
-  background: #ffffff !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .control-card h2,
@@ -293,6 +363,7 @@ onMounted(async () => {
 .action-row {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .planner-error {
@@ -351,14 +422,20 @@ onMounted(async () => {
 }
 
 .recent-item {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
   padding: 9px 10px;
   text-align: left;
   display: grid;
   gap: 4px;
   cursor: pointer;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.recent-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(14, 165, 233, 0.35);
 }
 
 .recent-item span {

@@ -12,6 +12,7 @@ const authStore = useAuthStore();
 const communityStore = useCommunityStore();
 
 const destinationInput = ref("Goa");
+const feedTab = ref("posts");
 const postText = ref("");
 const postTags = ref("crowd, food");
 const commentDrafts = ref({});
@@ -28,15 +29,80 @@ const pageError = ref("");
 const scamPreview = ref(null);
 const hiddenGemsPreview = ref(null);
 
-const posts = computed(() => communityStore.posts);
-const reviews = computed(() => communityStore.reviews);
-const pulse = computed(() => communityStore.pulse);
+const posts = computed(() => communityStore.posts || []);
+const reviews = computed(() => communityStore.reviews || []);
+const pulse = computed(() => communityStore.pulse || null);
+
+const trendingTags = computed(() => {
+  const scores = new Map();
+  for (const post of posts.value) {
+    for (const tag of post.tags || []) {
+      const clean = String(tag || "").trim();
+      if (!clean) continue;
+      scores.set(clean, (scores.get(clean) || 0) + 1);
+    }
+  }
+
+  return [...scores.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 10)
+    .map(([tag, count]) => ({ tag, count }));
+});
+
+const reviewBuckets = computed(() => {
+  const buckets = [5, 4, 3, 2, 1].map((rating) => ({
+    rating,
+    count: 0
+  }));
+
+  for (const review of reviews.value) {
+    const rating = Math.max(1, Math.min(5, Number(review.rating || 0)));
+    const bucket = buckets.find((item) => item.rating === rating);
+    if (bucket) {
+      bucket.count += 1;
+    }
+  }
+
+  const total = reviews.value.length || 1;
+  return buckets.map((bucket) => ({
+    ...bucket,
+    percentage: Math.round((bucket.count / total) * 100)
+  }));
+});
+
+const topContributors = computed(() => {
+  const score = new Map();
+
+  for (const post of posts.value) {
+    const name = String(post.authorName || "Traveler").trim() || "Traveler";
+    score.set(name, (score.get(name) || 0) + 1);
+  }
+
+  for (const review of reviews.value) {
+    const name = String(review.authorName || "Traveler").trim() || "Traveler";
+    score.set(name, (score.get(name) || 0) + 2);
+  }
+
+  return [...score.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6)
+    .map(([name, points]) => ({ name, points }));
+});
 
 const scamRiskClass = computed(() => {
   const level = String(scamPreview.value?.level || "").toLowerCase();
   if (level === "high") return "status-high";
   if (level === "moderate") return "status-medium";
   return "status-low";
+});
+
+const averageReview = computed(() => {
+  if (!reviews.value.length) {
+    return 0;
+  }
+
+  const total = reviews.value.reduce((sum, row) => sum + Number(row.rating || 0), 0);
+  return Number((total / reviews.value.length).toFixed(1));
 });
 
 function formatRelativeTime(timestamp) {
@@ -58,7 +124,7 @@ function showMessage(type, text) {
 
   window.setTimeout(() => {
     uiMessage.value = { type: "", text: "" };
-  }, 2400);
+  }, 2600);
 }
 
 async function loadCommunityData() {
@@ -68,7 +134,7 @@ async function loadCommunityData() {
 
   try {
     communityStore.loadForDestination(destination);
-    await loadPhaseThreeInsights(destination);
+    await loadDestinationInsights(destination);
   } catch (error) {
     pageError.value = getFriendlyErrorMessage(error, "Unable to load community feed right now.");
   } finally {
@@ -76,7 +142,7 @@ async function loadCommunityData() {
   }
 }
 
-async function loadPhaseThreeInsights(destination) {
+async function loadDestinationInsights(destination) {
   loadingInsights.value = true;
 
   try {
@@ -92,7 +158,7 @@ async function loadPhaseThreeInsights(destination) {
         destinationLocation: destination,
         budgetPreference: "balanced",
         crowdPreference: "low",
-        limit: 3
+        limit: 4
       })
     ]);
 
@@ -122,7 +188,7 @@ function createPost() {
     });
 
     postText.value = "";
-    showMessage("success", "Post published.");
+    showMessage("success", "Post published to feed.");
   } catch (error) {
     showMessage("error", getFriendlyErrorMessage(error, "Unable to publish post right now."));
   }
@@ -184,7 +250,7 @@ function submitReview() {
     reviewRating.value = 4;
     reviewCostLevel.value = "moderate";
     reviewVisitType.value = "solo";
-    showMessage("success", "Review submitted.");
+    showMessage("success", "Review shared.");
   } catch (error) {
     showMessage("error", getFriendlyErrorMessage(error, "Unable to submit review right now."));
   }
@@ -199,6 +265,11 @@ function toggleHelpful(reviewId) {
   } catch (error) {
     showMessage("error", getFriendlyErrorMessage(error, "Unable to update helpful vote right now."));
   }
+}
+
+function openPlanner() {
+  const destination = String(destinationInput.value || "").trim();
+  router.push({ path: "/planner", query: destination ? { destination } : undefined });
 }
 
 onMounted(async () => {
@@ -218,13 +289,14 @@ onMounted(async () => {
   <div class="community-page container animate-fade-in" style="padding-top: 100px;">
     <section class="community-hero glass-card">
       <div>
-        <span class="hero-badge">PHASE 3 COMMUNITY</span>
-        <h1>Community Intelligence Hub</h1>
-        <p>Share verified tips, learn from real traveler reviews, and track destination scam pressure before you plan.</p>
+        <span class="hero-badge">TRAVELER FEED</span>
+        <h1>Community Pulse</h1>
+        <p>Real tips from real travelers. Discover what is worth doing, what to skip, and where to stay safe before you plan.</p>
       </div>
       <div class="hero-controls">
         <input v-model="destinationInput" class="form-input" placeholder="Destination, e.g. Goa" />
         <button type="button" class="btn btn-outline" :disabled="loading" @click="loadCommunityData">Refresh</button>
+        <button type="button" class="btn btn-primary" @click="openPlanner">Plan This Place</button>
       </div>
     </section>
 
@@ -238,75 +310,137 @@ onMounted(async () => {
       <button type="button" class="btn btn-primary mt-4" @click="loadCommunityData">Retry</button>
     </section>
 
-    <template v-else>
-      <section class="pulse-grid mt-6">
-        <article class="glass-card pulse-card">
-          <h3>Destination Pulse</h3>
-          <ul>
-            <li>Destination: {{ pulse?.destination || destinationInput }}</li>
-            <li>Total Posts: {{ pulse?.totalPosts || 0 }}</li>
-            <li>Total Reviews: {{ pulse?.totalReviews || 0 }}</li>
-            <li>Avg Rating: {{ pulse?.avgRating || "N/A" }}</li>
-            <li>Top Tags: {{ (pulse?.topTags || []).join(" | ") || "No tags yet" }}</li>
-          </ul>
-        </article>
-
-        <article class="glass-card pulse-card">
-          <h3>Live Scam Watch</h3>
-          <div v-if="loadingInsights" class="panel-empty mt-3">
-            <p>Refreshing live scam signals...</p>
-          </div>
-          <template v-else-if="scamPreview">
-            <div class="risk-head mt-2">
-              <span class="risk-pill" :class="scamRiskClass">{{ scamPreview.level }} Risk</span>
-              <span class="risk-score">{{ scamPreview.riskScore }}/100</span>
-            </div>
-            <ul class="mt-3">
-              <li v-for="alert in (scamPreview.alerts || []).slice(0, 3)" :key="alert.id">
-                <strong>{{ alert.title }}</strong> - {{ alert.hotspot }}
-              </li>
-            </ul>
-          </template>
-          <div v-else class="panel-empty mt-3">
-            <p>Scam watch data unavailable for this destination.</p>
-          </div>
-        </article>
-
-        <article class="glass-card pulse-card">
-          <h3>Hidden Gems Snapshot</h3>
-          <div v-if="loadingInsights" class="panel-empty mt-3">
-            <p>Collecting hidden gems...</p>
-          </div>
-          <ul v-else-if="hiddenGemsPreview?.gems?.length" class="mt-3">
-            <li v-for="gem in hiddenGemsPreview.gems" :key="gem.id">
-              <strong>{{ gem.name }}</strong> - {{ gem.relevanceScore }}/100
-            </li>
-          </ul>
-          <div v-else class="panel-empty mt-3">
-            <p>No hidden gem signal available.</p>
-          </div>
-        </article>
-      </section>
-
-      <section class="community-grid mt-6">
+    <section v-else class="community-layout mt-6">
+      <aside class="left-rail">
         <article class="glass-card composer-card">
-          <h3>Publish Community Post</h3>
+          <h3>Share A Tip</h3>
           <textarea
             v-model="postText"
             class="form-input mt-3"
             rows="4"
-            placeholder="Share practical tip: crowd-safe windows, transport hacks, safe zones..."
+            placeholder="Share practical intel: crowd windows, food hacks, safe routes, hidden corners."
           ></textarea>
-          <input v-model="postTags" class="form-input mt-2" placeholder="Tags (comma separated), e.g. crowd,safety,budget" />
+          <input v-model="postTags" class="form-input mt-2" placeholder="Tags, e.g. crowd,safety,budget" />
           <button type="button" class="btn btn-primary mt-3" @click="createPost">Publish Post</button>
+        </article>
 
-          <h3 class="mt-6">Submit Review</h3>
+        <article class="glass-card signal-card mt-4">
+          <h3>Scam Watch</h3>
+          <div v-if="loadingInsights" class="panel-empty mt-3">Refreshing safety signal...</div>
+          <template v-else-if="scamPreview">
+            <div class="risk-row mt-3">
+              <span class="risk-pill" :class="scamRiskClass">{{ scamPreview.level }} Risk</span>
+              <small>{{ scamPreview.riskScore }}/100</small>
+            </div>
+            <ul class="insight-list mt-3">
+              <li v-for="alert in (scamPreview.alerts || []).slice(0, 3)" :key="alert.id">
+                <strong>{{ alert.title }}</strong>
+                <span>{{ alert.hotspot }}</span>
+              </li>
+            </ul>
+          </template>
+          <div v-else class="panel-empty mt-3">Safety signal unavailable.</div>
+        </article>
+
+        <article class="glass-card signal-card mt-4">
+          <h3>Hidden Gems</h3>
+          <div v-if="loadingInsights" class="panel-empty mt-3">Collecting gems...</div>
+          <ul v-else-if="hiddenGemsPreview?.gems?.length" class="insight-list mt-3">
+            <li v-for="gem in hiddenGemsPreview.gems" :key="gem.id">
+              <strong>{{ gem.name }}</strong>
+              <span>{{ gem.relevanceScore }}/100 | {{ gem.bestWindow }}</span>
+            </li>
+          </ul>
+          <div v-else class="panel-empty mt-3">No hidden gems found yet.</div>
+        </article>
+      </aside>
+
+      <main class="stream-col">
+        <article class="glass-card stream-head-card">
+          <div>
+            <span class="stream-label">Live Stream</span>
+            <h2>{{ destinationInput }} Feed</h2>
+          </div>
+          <div class="feed-switcher">
+            <button type="button" class="btn btn-outline btn-xs" :class="{ active: feedTab === 'posts' }" @click="feedTab = 'posts'">
+              Posts ({{ posts.length }})
+            </button>
+            <button type="button" class="btn btn-outline btn-xs" :class="{ active: feedTab === 'reviews' }" @click="feedTab = 'reviews'">
+              Reviews ({{ reviews.length }})
+            </button>
+          </div>
+        </article>
+
+        <article v-if="loading" class="glass-card feed-placeholder mt-4">
+          <p>Loading live community stream...</p>
+        </article>
+
+        <template v-else>
+          <article v-if="feedTab === 'posts' && posts.length === 0" class="glass-card feed-placeholder mt-4">
+            <p>No posts yet. Start the first community thread.</p>
+          </article>
+
+          <div v-if="feedTab === 'posts'" class="feed-list mt-4">
+            <article v-for="post in posts" :key="post.id" class="glass-card feed-item">
+              <div class="feed-head">
+                <div>
+                  <strong>{{ post.authorName }}</strong>
+                  <small>{{ formatRelativeTime(post.createdAt) }}</small>
+                </div>
+                <button type="button" class="btn btn-outline btn-xs" @click="toggleLike(post.id)">
+                  Helpful {{ post.likesBy?.length || 0 }}
+                </button>
+              </div>
+
+              <p class="feed-text mt-3">{{ post.text }}</p>
+              <p class="feed-tags" v-if="post.tags?.length">#{{ post.tags.join(" #") }}</p>
+
+              <div class="comment-box mt-3">
+                <input v-model="commentDrafts[post.id]" class="form-input" placeholder="Reply with your tip" />
+                <button type="button" class="btn btn-outline btn-xs" @click="addComment(post.id)">Comment</button>
+              </div>
+
+              <ul v-if="post.comments?.length" class="comment-list mt-3">
+                <li v-for="comment in post.comments" :key="comment.id">
+                  <strong>{{ comment.authorName }}</strong>
+                  <span>{{ comment.text }}</span>
+                </li>
+              </ul>
+            </article>
+          </div>
+
+          <article v-if="feedTab === 'reviews' && reviews.length === 0" class="glass-card feed-placeholder mt-4">
+            <p>No reviews yet. Share the first destination review.</p>
+          </article>
+
+          <div v-if="feedTab === 'reviews'" class="feed-list mt-4">
+            <article v-for="review in reviews" :key="review.id" class="glass-card feed-item">
+              <div class="feed-head">
+                <div>
+                  <strong>{{ review.title }}</strong>
+                  <small>{{ review.rating }}/5</small>
+                </div>
+                <button type="button" class="btn btn-outline btn-xs" @click="toggleHelpful(review.id)">
+                  Helpful {{ review.helpfulBy?.length || 0 }}
+                </button>
+              </div>
+
+              <p class="feed-text mt-3">{{ review.body }}</p>
+              <p class="feed-meta">{{ review.authorName }} | {{ review.costLevel }} | {{ review.visitType }} | {{ formatRelativeTime(review.createdAt) }}</p>
+            </article>
+          </div>
+        </template>
+      </main>
+
+      <aside class="right-rail">
+        <article class="glass-card review-card">
+          <h3>Write A Review</h3>
           <input v-model="reviewTitle" class="form-input mt-3" placeholder="Review title" />
           <textarea
             v-model="reviewBody"
             class="form-input mt-2"
             rows="4"
-            placeholder="Write experience and actionable recommendations"
+            placeholder="Tell travelers what worked, what to avoid, and where to go."
           ></textarea>
 
           <div class="review-grid mt-2">
@@ -321,7 +455,7 @@ onMounted(async () => {
               </select>
             </label>
             <label>
-              <span>Cost Level</span>
+              <span>Cost</span>
               <select v-model="reviewCostLevel" class="form-select">
                 <option value="low">Low</option>
                 <option value="moderate">Moderate</option>
@@ -342,75 +476,38 @@ onMounted(async () => {
           <button type="button" class="btn btn-primary mt-3" @click="submitReview">Submit Review</button>
         </article>
 
-        <article class="glass-card feed-card">
-          <h3>Community Posts</h3>
-          <div v-if="loading" class="panel-empty mt-3">
-            <p>Loading posts...</p>
-          </div>
+        <article class="glass-card metrics-card mt-4">
+          <h3>Destination Pulse</h3>
+          <ul class="metric-list mt-3">
+            <li><span>Total Posts</span><strong>{{ pulse?.totalPosts || 0 }}</strong></li>
+            <li><span>Total Reviews</span><strong>{{ pulse?.totalReviews || 0 }}</strong></li>
+            <li><span>Average Rating</span><strong>{{ averageReview || pulse?.avgRating || 0 }}</strong></li>
+            <li><span>Contributors</span><strong>{{ topContributors.length }}</strong></li>
+          </ul>
+        </article>
 
-          <div v-else-if="!posts.length" class="panel-empty mt-3">
-            <p>No posts yet for this destination.</p>
-          </div>
-
-          <div v-else class="feed-list mt-3">
-            <article v-for="post in posts" :key="post.id" class="feed-item">
-              <div class="feed-head">
-                <strong>{{ post.authorName }}</strong>
-                <small>{{ formatRelativeTime(post.createdAt) }}</small>
-              </div>
-              <p class="feed-text">{{ post.text }}</p>
-              <p class="feed-tags" v-if="post.tags?.length">#{{ post.tags.join(" #") }}</p>
-
-              <div class="feed-actions">
-                <button type="button" class="btn btn-outline btn-xs" @click="toggleLike(post.id)">
-                  Helpful {{ post.likesBy?.length || 0 }}
-                </button>
-              </div>
-
-              <div class="comment-block mt-2">
-                <input
-                  v-model="commentDrafts[post.id]"
-                  class="form-input"
-                  placeholder="Add comment"
-                />
-                <button type="button" class="btn btn-outline btn-xs" @click="addComment(post.id)">Comment</button>
-              </div>
-
-              <ul v-if="post.comments?.length" class="comment-list mt-2">
-                <li v-for="comment in post.comments" :key="comment.id">
-                  <strong>{{ comment.authorName }}</strong>: {{ comment.text }}
-                </li>
-              </ul>
-            </article>
+        <article class="glass-card metrics-card mt-4">
+          <h3>Trending Tags</h3>
+          <div v-if="trendingTags.length === 0" class="panel-empty mt-3">Tags appear as people post.</div>
+          <div v-else class="tag-grid mt-3">
+            <span v-for="item in trendingTags" :key="item.tag" class="tag-pill">#{{ item.tag }} ({{ item.count }})</span>
           </div>
         </article>
 
-        <article class="glass-card feed-card">
-          <h3>Destination Reviews</h3>
-          <div v-if="loading" class="panel-empty mt-3">
-            <p>Loading reviews...</p>
-          </div>
-
-          <div v-else-if="!reviews.length" class="panel-empty mt-3">
-            <p>No reviews yet for this destination.</p>
-          </div>
-
-          <div v-else class="feed-list mt-3">
-            <article v-for="review in reviews" :key="review.id" class="feed-item">
-              <div class="feed-head">
-                <strong>{{ review.title }}</strong>
-                <small>{{ review.rating }}/5</small>
+        <article class="glass-card metrics-card mt-4">
+          <h3>Rating Mix</h3>
+          <div class="rating-bars mt-3">
+            <div v-for="bucket in reviewBuckets" :key="bucket.rating" class="rating-row">
+              <span>{{ bucket.rating }} stars</span>
+              <div class="bar-track">
+                <div class="bar-fill" :style="{ width: `${bucket.percentage}%` }"></div>
               </div>
-              <p class="feed-text">{{ review.body }}</p>
-              <p class="feed-meta">{{ review.authorName }} | {{ review.costLevel }} | {{ review.visitType }} | {{ formatRelativeTime(review.createdAt) }}</p>
-              <button type="button" class="btn btn-outline btn-xs" @click="toggleHelpful(review.id)">
-                Helpful {{ review.helpfulBy?.length || 0 }}
-              </button>
-            </article>
+              <small>{{ bucket.count }}</small>
+            </div>
           </div>
         </article>
-      </section>
-    </template>
+      </aside>
+    </section>
   </div>
 </template>
 
@@ -418,39 +515,49 @@ onMounted(async () => {
 .community-page {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding-bottom: 30px;
 }
 
 .community-hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 22px;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(8, 145, 178, 0.26);
+  background:
+    radial-gradient(circle at 85% 20%, rgba(16, 185, 129, 0.14), transparent 46%),
+    linear-gradient(140deg, rgba(236, 253, 245, 0.92), rgba(240, 249, 255, 0.92));
+}
+
+.hero-badge {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: #0f766e;
+  font-weight: 800;
+  background: rgba(209, 250, 229, 0.82);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
 }
 
 .community-hero h1 {
   margin-top: 8px;
-  font-size: clamp(1.5rem, 2.8vw, 2rem);
+  font-size: clamp(2rem, 4.2vw, 3.1rem);
+  letter-spacing: -0.03em;
 }
 
 .community-hero p {
   margin-top: 6px;
   color: var(--color-text-secondary);
-  max-width: 720px;
-}
-
-.hero-badge {
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  color: #1e3a8a;
-  font-weight: 800;
+  max-width: 760px;
 }
 
 .hero-controls {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
-  min-width: 280px;
+  min-width: 320px;
 }
 
 .mt-2 {
@@ -488,79 +595,125 @@ onMounted(async () => {
   color: #b91c1c;
 }
 
-.pulse-grid {
+.community-layout {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 0.95fr 1.35fr 0.95fr;
   gap: 12px;
 }
 
-.pulse-card {
-  padding: 16px;
+.left-rail,
+.stream-col,
+.right-rail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
 }
 
-.pulse-card h3 {
-  font-size: 0.94rem;
+.stream-head-card h2 {
+  margin-top: 4px;
+  font-size: 1.28rem;
 }
 
-.pulse-card ul {
-  margin-top: 10px;
+.stream-label {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: #0369a1;
+  font-weight: 800;
+}
+
+.feed-switcher {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-xs {
+  font-size: 0.72rem;
+  padding: 6px 10px;
+}
+
+.btn-xs.active {
+  border-color: rgba(8, 145, 178, 0.45);
+  background: rgba(224, 242, 254, 0.72);
+  color: #0369a1;
+}
+
+.feed-list {
+  display: grid;
+  gap: 10px;
+}
+
+.feed-item {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+}
+
+.feed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.feed-head strong {
+  display: block;
+  font-size: 0.84rem;
+}
+
+.feed-head small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.feed-text {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.feed-tags {
+  margin-top: 8px;
+  color: #0369a1;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.feed-meta {
+  margin-top: 8px;
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.comment-box {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.comment-list {
   list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
   gap: 6px;
 }
 
-.pulse-card li {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
+.comment-list li {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 7px 8px;
+  display: grid;
+  gap: 3px;
 }
 
-.risk-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.comment-list strong {
+  font-size: 0.74rem;
 }
 
-.risk-pill {
-  border-radius: var(--radius-full);
-  padding: 5px 10px;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.risk-pill.status-high {
-  color: #991b1b;
-  background: rgba(254, 202, 202, 0.8);
-  border: 1px solid rgba(220, 38, 38, 0.35);
-}
-
-.risk-pill.status-medium {
-  color: #92400e;
-  background: rgba(254, 243, 199, 0.82);
-  border: 1px solid rgba(245, 158, 11, 0.34);
-}
-
-.risk-pill.status-low {
-  color: #047857;
-  background: rgba(209, 250, 229, 0.76);
-  border: 1px solid rgba(5, 150, 105, 0.35);
-}
-
-.risk-score {
+.comment-list span {
   font-size: 0.76rem;
   color: var(--color-text-secondary);
-  font-weight: 700;
-}
-
-.community-grid {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr 1.2fr;
-  gap: 12px;
-}
-
-.composer-card,
-.feed-card {
-  padding: 16px;
 }
 
 .review-grid {
@@ -571,118 +724,180 @@ onMounted(async () => {
 
 .review-grid label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .review-grid span {
-  font-size: 0.74rem;
-  color: var(--color-text-secondary);
-}
-
-.feed-list {
-  display: grid;
-  gap: 10px;
-}
-
-.feed-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-  padding: 10px;
-}
-
-.feed-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.feed-head small {
-  color: var(--color-text-muted);
-  font-size: 0.74rem;
-}
-
-.feed-text {
-  margin-top: 6px;
-  color: var(--color-text-secondary);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.feed-tags,
-.feed-meta {
-  margin-top: 6px;
-  color: var(--color-text-muted);
   font-size: 0.72rem;
+  color: var(--color-text-secondary);
 }
 
-.feed-actions {
-  margin-top: 8px;
+.metric-list,
+.insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
 }
 
-.comment-block {
+.metric-list li,
+.insight-list li {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 8px 9px;
+}
+
+.metric-list li {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
 
-.comment-list {
-  list-style: none;
-  display: grid;
+.metric-list span {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.metric-list strong {
+  font-size: 0.82rem;
+}
+
+.insight-list strong {
+  font-size: 0.74rem;
+  display: block;
+}
+
+.insight-list span {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.risk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.risk-pill {
+  border-radius: var(--radius-full);
+  padding: 5px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.risk-pill.status-high {
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  background: rgba(254, 226, 226, 0.72);
+  color: #b91c1c;
+}
+
+.risk-pill.status-medium {
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(254, 243, 199, 0.84);
+  color: #b45309;
+}
+
+.risk-pill.status-low {
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  background: rgba(209, 250, 229, 0.7);
+  color: #047857;
+}
+
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.comment-list li {
-  font-size: 0.76rem;
-  color: var(--color-text-secondary);
-}
-
-.btn-xs {
+.tag-pill {
+  border: 1px solid rgba(8, 145, 178, 0.26);
+  border-radius: var(--radius-full);
+  background: rgba(224, 242, 254, 0.74);
+  color: #0369a1;
   font-size: 0.72rem;
-  padding: 6px 10px;
+  font-weight: 700;
+  padding: 5px 10px;
 }
 
-.panel-error,
-.panel-empty {
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 14px;
-  background: #ffffff;
+.rating-bars {
+  display: grid;
+  gap: 7px;
 }
 
-.panel-error p,
-.panel-empty p {
+.rating-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rating-row span {
+  font-size: 0.72rem;
   color: var(--color-text-secondary);
 }
 
-@media (max-width: 1100px) {
-  .pulse-grid {
+.rating-row small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.bar-track {
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.8), rgba(16, 185, 129, 0.8));
+}
+
+.panel-empty {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.feed-placeholder,
+.panel-error {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+}
+
+.panel-error {
+  border: 1px solid rgba(220, 38, 38, 0.32);
+}
+
+@media (max-width: 1120px) {
+  .community-layout {
     grid-template-columns: 1fr;
   }
 
-  .community-grid {
+  .left-rail,
+  .stream-col,
+  .right-rail {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 760px) {
   .community-hero {
     flex-direction: column;
   }
 
   .hero-controls {
-    width: 100%;
     min-width: 0;
+    width: 100%;
   }
 
-  .review-grid {
+  .review-grid,
+  .comment-box,
+  .rating-row {
     grid-template-columns: 1fr;
-  }
-
-  .comment-block {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 </style>

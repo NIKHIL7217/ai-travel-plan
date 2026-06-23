@@ -1,12 +1,18 @@
 import { defineStore } from "pinia";
 import {
+  addGroupComment,
+  addGroupTask,
+  addSharedItineraryItem,
   castGroupVote,
   createGroupPoll,
   createGroupTrip,
   getGroupTripById,
   inviteMemberToGroup,
   joinGroupTripByCode,
-  listGroupTripsForUser
+  listGroupTripsForUser,
+  toggleGroupTaskStatus,
+  updateGroupBudget,
+  updateSharedItineraryItem
 } from "../modules/group-travel/service";
 
 function normalizeUser(user) {
@@ -49,6 +55,12 @@ export const useGroupTravelStore = defineStore("groupTravel", {
     },
     totalGroups(state) {
       return state.groups.length;
+    },
+    pendingTaskCount(state) {
+      return state.groups.reduce((sum, group) => {
+        const tasks = Array.isArray(group.tasks) ? group.tasks : [];
+        return sum + tasks.filter((task) => task.status !== "done").length;
+      }, 0);
     }
   },
   actions: {
@@ -209,6 +221,142 @@ export const useGroupTravelStore = defineStore("groupTravel", {
         return group;
       } catch (error) {
         this.error = error?.message || "Unable to cast vote.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    addComment({ groupId, text, user }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = addGroupComment({
+          groupId,
+          text,
+          user: normalizeUser(user || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to add comment.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    addTask({ groupId, title, assigneeUid, creatorUser }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = addGroupTask({
+          groupId,
+          title,
+          assigneeUid,
+          creatorUser: normalizeUser(creatorUser || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to add task.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    toggleTask({ groupId, taskId, user }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = toggleGroupTaskStatus({
+          groupId,
+          taskId,
+          user: normalizeUser(user || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to update task.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    addItineraryItem({ groupId, day, title, notes, user }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = addSharedItineraryItem({
+          groupId,
+          day,
+          title,
+          notes,
+          user: normalizeUser(user || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to add itinerary item.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    updateItineraryItem({ groupId, itemId, patch, user }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = updateSharedItineraryItem({
+          groupId,
+          itemId,
+          patch,
+          user: normalizeUser(user || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to update itinerary item.";
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    updateBudget({ groupId, budgetTotal, user }) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const group = updateGroupBudget({
+          groupId,
+          budgetTotal,
+          user: normalizeUser(user || {})
+        });
+
+        this.refreshGroups();
+        this.activeGroupId = group.id;
+        return group;
+      } catch (error) {
+        this.error = error?.message || "Unable to update budget.";
         throw error;
       } finally {
         this.loading = false;

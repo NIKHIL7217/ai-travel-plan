@@ -270,7 +270,8 @@ const goToDetails = (id) => {
 .destinations-directory {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
+  padding-bottom: 28px;
 }
 
 .directory-header {
@@ -278,32 +279,32 @@ const goToDetails = (id) => {
 }
 
 .directory-header h1 {
-  font-size: 2.2rem;
+  font-size: clamp(2.3rem, 5vw, 3.1rem);
   font-weight: 800;
-  margin: 6px 0;
-  letter-spacing: -0.5px;
+  margin: 8px 0;
+  letter-spacing: -0.03em;
 }
 
 .hud-badge {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
-  color: var(--color-primary);
-  background-color: var(--color-primary-light);
-  padding: 4px 10px;
+  letter-spacing: 0.12em;
+  color: #0f766e;
+  background-color: rgba(209, 250, 229, 0.9);
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   display: inline-block;
 }
 
 .subtitle {
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   color: var(--color-text-secondary);
 }
 
 /* Filter Controls Panel */
 .filter-controls-panel {
   padding: 14px 20px !important;
-  background-color: #FFFFFF !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .filter-row {
@@ -338,7 +339,7 @@ const goToDetails = (id) => {
 .directory-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 @media (max-width: 900px) {
@@ -355,6 +356,7 @@ const goToDetails = (id) => {
 
 .directory-card {
   overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .img-container {
@@ -378,16 +380,16 @@ const goToDetails = (id) => {
   position: absolute;
   top: 12px;
   right: 12px;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.95);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-weight: 700;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .dest-card-body {
-  padding: 20px;
+  padding: 18px;
 }
 
 .dest-location-badge {
@@ -409,14 +411,14 @@ const goToDetails = (id) => {
   color: var(--color-text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
-  min-height: 64px;
+  min-height: 62px;
 }
 
 .dest-meta-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(148, 163, 184, 0.34);
   padding-top: 14px;
 }
 
@@ -493,7 +495,7 @@ const goToDetails = (id) => {
 .empty-directory {
   text-align: center;
   padding: 40px !important;
-  background-color: #FFFFFF !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .empty-directory span {
@@ -514,9 +516,9 @@ const goToDetails = (id) => {
 /* Maps Analyzer CSS */
 .maps-analyzer-card {
   padding: 20px 24px !important;
-  background-color: #FFFFFF !important;
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(140deg, rgba(236, 253, 245, 0.86), rgba(240, 249, 255, 0.84));
+  border: 1px solid rgba(13, 148, 136, 0.24);
+  box-shadow: var(--shadow-md);
   margin-top: 24px;
 }
 
@@ -529,8 +531,8 @@ const goToDetails = (id) => {
 .analyzer-badge {
   font-size: 0.62rem;
   font-weight: 800;
-  color: var(--color-primary);
-  background-color: var(--color-primary-light);
+  color: #0f766e;
+  background-color: rgba(209, 250, 229, 0.8);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   display: inline-block;
@@ -557,17 +559,17 @@ const goToDetails = (id) => {
   flex-grow: 1;
   display: flex;
   align-items: center;
-  border: 1.5px solid var(--color-border);
+  border: 1.5px solid rgba(148, 163, 184, 0.38);
   border-radius: var(--radius-md);
   padding: 0 14px;
-  background-color: #F8FAFC;
+  background-color: rgba(255, 255, 255, 0.9);
   transition: all var(--transition-fast);
 }
 
 .analyzer-input-wrap:focus-within {
   border-color: var(--color-primary);
   background-color: white;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.16);
 }
 
 .analyzer-icon {

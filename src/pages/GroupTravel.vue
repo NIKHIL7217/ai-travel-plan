@@ -16,6 +16,13 @@ const joinCode = ref("");
 const inviteEmail = ref("");
 const pollQuestion = ref("");
 const pollOptionsInput = ref("Budget, Balanced, Premium");
+const commentInput = ref("");
+const taskInput = ref("");
+const assigneeUidInput = ref("");
+const itineraryDayInput = ref(1);
+const itineraryTitleInput = ref("");
+const itineraryNotesInput = ref("");
+const sharedBudgetInput = ref(0);
 const uiMessage = ref({
   type: "",
   text: ""
@@ -26,6 +33,10 @@ const groups = computed(() => groupTravelStore.groups);
 const plannerContext = computed(() => plannerSessionStore.activeContext);
 const hasPlannerContext = computed(() => Boolean(plannerContext.value?.destination));
 const canCreateGroupFromContext = computed(() => hasPlannerContext.value && !groupTravelStore.loading);
+const sharedItinerary = computed(() => (activeGroup.value?.sharedItinerary || []).slice().sort((a, b) => Number(a.day || 0) - Number(b.day || 0)));
+const sharedComments = computed(() => activeGroup.value?.comments || []);
+const sharedTasks = computed(() => activeGroup.value?.tasks || []);
+const openTasksCount = computed(() => sharedTasks.value.filter((task) => task.status !== "done").length);
 
 function showMessage(type, text) {
   uiMessage.value = {
@@ -181,6 +192,121 @@ async function vote(pollId, optionId) {
   }
 }
 
+async function updateSharedBudget() {
+  if (!activeGroup.value?.id) {
+    return;
+  }
+
+  const nextBudget = Math.max(0, Number(sharedBudgetInput.value || 0));
+
+  try {
+    await groupTravelStore.updateBudget({
+      groupId: activeGroup.value.id,
+      budgetTotal: nextBudget,
+      user: authStore.user
+    });
+    showMessage("success", "Shared budget updated.");
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to update budget.");
+  }
+}
+
+async function submitComment() {
+  if (!activeGroup.value?.id || !commentInput.value.trim()) {
+    return;
+  }
+
+  try {
+    await groupTravelStore.addComment({
+      groupId: activeGroup.value.id,
+      text: commentInput.value,
+      user: authStore.user
+    });
+
+    commentInput.value = "";
+    showMessage("success", "Comment added.");
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to add comment.");
+  }
+}
+
+async function submitTask() {
+  if (!activeGroup.value?.id || !taskInput.value.trim()) {
+    return;
+  }
+
+  try {
+    await groupTravelStore.addTask({
+      groupId: activeGroup.value.id,
+      title: taskInput.value,
+      assigneeUid: assigneeUidInput.value,
+      creatorUser: authStore.user
+    });
+
+    taskInput.value = "";
+    assigneeUidInput.value = "";
+    showMessage("success", "Task added.");
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to add task.");
+  }
+}
+
+async function toggleTask(taskId) {
+  if (!activeGroup.value?.id || !taskId) {
+    return;
+  }
+
+  try {
+    await groupTravelStore.toggleTask({
+      groupId: activeGroup.value.id,
+      taskId,
+      user: authStore.user
+    });
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to update task.");
+  }
+}
+
+async function addItineraryItem() {
+  if (!activeGroup.value?.id || !itineraryTitleInput.value.trim()) {
+    return;
+  }
+
+  try {
+    await groupTravelStore.addItineraryItem({
+      groupId: activeGroup.value.id,
+      day: itineraryDayInput.value,
+      title: itineraryTitleInput.value,
+      notes: itineraryNotesInput.value,
+      user: authStore.user
+    });
+
+    itineraryTitleInput.value = "";
+    itineraryNotesInput.value = "";
+    itineraryDayInput.value = 1;
+    showMessage("success", "Shared itinerary item added.");
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to add itinerary item.");
+  }
+}
+
+async function updateItineraryItem(item, patch) {
+  if (!activeGroup.value?.id || !item?.id) {
+    return;
+  }
+
+  try {
+    await groupTravelStore.updateItineraryItem({
+      groupId: activeGroup.value.id,
+      itemId: item.id,
+      patch,
+      user: authStore.user
+    });
+  } catch (error) {
+    showMessage("error", error?.message || "Unable to update itinerary item.");
+  }
+}
+
 function openGroup(groupId) {
   groupTravelStore.openGroup(groupId);
   router.replace({ path: "/group-trips", query: { group: groupId } });
@@ -225,6 +351,14 @@ watch(
       groupTravelStore.openGroup(targetId);
     }
   }
+);
+
+watch(
+  () => activeGroup.value?.id,
+  () => {
+    sharedBudgetInput.value = Number(activeGroup.value?.itinerarySnapshot?.budgetTotal || 0);
+  },
+  { immediate: true }
 );
 </script>
 
@@ -307,6 +441,121 @@ watch(
           <article class="snapshot-cell">
             <span>Budget</span>
             <strong>{{ formatPrice(activeGroup.itinerarySnapshot?.budgetTotal || 0) }}</strong>
+          </article>
+        </div>
+
+        <div class="collab-grid mt-4">
+          <article class="shared-budget-card">
+            <h3>Shared Budget</h3>
+            <p>Collaborative budget target for all members.</p>
+            <div class="budget-editor mt-3">
+              <input
+                v-model.number="sharedBudgetInput"
+                type="number"
+                min="0"
+                step="50"
+                class="form-input"
+                placeholder="Enter budget"
+              />
+              <button type="button" class="btn btn-outline btn-xs" :disabled="groupTravelStore.loading" @click="updateSharedBudget">
+                Update
+              </button>
+            </div>
+          </article>
+
+          <article class="shared-itinerary-card">
+            <div class="section-head">
+              <h3>Shared Itinerary</h3>
+              <small>{{ sharedItinerary.length }} item(s)</small>
+            </div>
+
+            <div class="itinerary-list mt-3" v-if="sharedItinerary.length > 0">
+              <div class="itinerary-item" v-for="item in sharedItinerary" :key="item.id">
+                <div class="itinerary-row">
+                  <input
+                    type="number"
+                    min="1"
+                    class="form-input day-input"
+                    :value="item.day"
+                    @change="updateItineraryItem(item, { day: Number($event.target.value || item.day) })"
+                  />
+                  <input
+                    class="form-input"
+                    :value="item.title"
+                    @change="updateItineraryItem(item, { title: $event.target.value })"
+                  />
+                </div>
+                <textarea
+                  class="form-input mt-2"
+                  rows="2"
+                  :value="item.notes"
+                  placeholder="Notes for members"
+                  @change="updateItineraryItem(item, { notes: $event.target.value })"
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="add-itinerary-form mt-4">
+              <div class="itinerary-row">
+                <input v-model.number="itineraryDayInput" type="number" min="1" class="form-input day-input" placeholder="Day" />
+                <input v-model="itineraryTitleInput" class="form-input" placeholder="Add itinerary item" />
+              </div>
+              <textarea v-model="itineraryNotesInput" class="form-input mt-2" rows="2" placeholder="Notes (optional)"></textarea>
+              <button type="button" class="btn btn-outline btn-xs mt-2" :disabled="groupTravelStore.loading || !itineraryTitleInput.trim()" @click="addItineraryItem">
+                Add Item
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div class="collab-grid mt-4">
+          <article class="comments-card">
+            <div class="section-head">
+              <h3>Comments</h3>
+              <small>{{ sharedComments.length }}</small>
+            </div>
+
+            <div class="comment-list mt-3" v-if="sharedComments.length > 0">
+              <div class="comment-item" v-for="comment in sharedComments.slice(0, 20)" :key="comment.id">
+                <strong>{{ comment.authorName }}</strong>
+                <p>{{ comment.text }}</p>
+                <small>{{ new Date(comment.createdAt).toLocaleString() }}</small>
+              </div>
+            </div>
+
+            <div class="comment-form mt-3">
+              <textarea v-model="commentInput" class="form-input" rows="3" placeholder="Share update with group"></textarea>
+              <button type="button" class="btn btn-outline btn-xs mt-2" :disabled="groupTravelStore.loading || !commentInput.trim()" @click="submitComment">
+                Post Comment
+              </button>
+            </div>
+          </article>
+
+          <article class="tasks-card">
+            <div class="section-head">
+              <h3>Tasks</h3>
+              <small>{{ openTasksCount }} open</small>
+            </div>
+
+            <div class="task-list mt-3" v-if="sharedTasks.length > 0">
+              <label class="task-item" v-for="task in sharedTasks.slice(0, 30)" :key="task.id">
+                <input type="checkbox" :checked="task.status === 'done'" @change="toggleTask(task.id)" />
+                <div>
+                  <strong :class="{ done: task.status === 'done' }">{{ task.title }}</strong>
+                  <small>
+                    Assignee: {{ task.assigneeUid || 'unassigned' }} • {{ task.status }}
+                  </small>
+                </div>
+              </label>
+            </div>
+
+            <div class="task-form mt-3">
+              <input v-model="taskInput" class="form-input" placeholder="Create task" />
+              <input v-model="assigneeUidInput" class="form-input mt-2" placeholder="Assignee user id (optional)" />
+              <button type="button" class="btn btn-outline btn-xs mt-2" :disabled="groupTravelStore.loading || !taskInput.trim()" @click="submitTask">
+                Add Task
+              </button>
+            </div>
           </article>
         </div>
 
@@ -585,6 +834,113 @@ watch(
   font-size: 0.86rem;
 }
 
+.collab-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.shared-budget-card,
+.shared-itinerary-card,
+.comments-card,
+.tasks-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: #ffffff;
+}
+
+.shared-budget-card p {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.budget-editor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-head small {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.itinerary-list,
+.comment-list,
+.task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.itinerary-item,
+.comment-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.itinerary-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px;
+}
+
+.day-input {
+  text-align: center;
+}
+
+.comment-item strong {
+  font-size: 0.76rem;
+}
+
+.comment-item p {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.comment-item small {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+}
+
+.task-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.task-item strong {
+  font-size: 0.8rem;
+  color: var(--color-text);
+}
+
+.task-item strong.done {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
+.task-item small {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
 .members-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -719,6 +1075,7 @@ watch(
   }
 
   .snapshot-grid,
+  .collab-grid,
   .members-grid {
     grid-template-columns: 1fr;
   }

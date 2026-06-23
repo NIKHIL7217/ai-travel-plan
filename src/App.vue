@@ -16,7 +16,11 @@ const geoLoading = ref(true);
 const currentYear = new Date().getFullYear();
 
 const profileName = computed(() => authStore.displayName);
-const mobileProfilePath = computed(() => (authStore.isAuthenticated ? "/dashboard" : "/login"));
+const mobileProfilePath = computed(() => (authStore.isAuthenticated ? "/profile" : "/login"));
+const isAdminUser = computed(() => {
+  const email = String(authStore.user?.email || "").toLowerCase();
+  return email.includes("admin") || email.endsWith("@wanderai.local");
+});
 const geoLabel = computed(() => {
   if (geoLoading.value) return "Detecting";
   if (!userLocation.value?.loaded) return "Unknown";
@@ -86,20 +90,17 @@ onMounted(() => {
         <!-- Logo -->
         <RouterLink to="/" class="brand-logo">
           <span class="logo-circle">🗺️</span>
-          <span class="logo-txt">AI Travel <span class="logo-blue">Planner</span></span>
+          <span class="logo-txt">Wander<span class="logo-blue">AI</span></span>
         </RouterLink>
 
         <!-- Desktop Navigation Menu -->
         <nav class="nav-links-desktop">
-          <RouterLink to="/" class="nav-link" active-class="active">Home</RouterLink>
-          <RouterLink to="/destination" class="nav-link" active-class="active">Destinations</RouterLink>
+          <RouterLink to="/" class="nav-link" active-class="active">Explore</RouterLink>
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
-          <RouterLink to="/roadtrips" class="nav-link" active-class="active">Roadtrips</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/group-trips" class="nav-link" active-class="active">Group Trips</RouterLink>
+          <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="nav-link" active-class="active">Trips</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/community" class="nav-link" active-class="active">Community</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/dashboard" class="nav-link" active-class="active">Dashboard</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/documents" class="nav-link" active-class="active">Documents</RouterLink>
-          <RouterLink to="/saved-trips" class="nav-link" active-class="active">Saved Trips</RouterLink>
+          <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="nav-link" active-class="active">Profile</RouterLink>
+          <RouterLink v-else to="/login" class="nav-link" active-class="active">Profile</RouterLink>
         </nav>
 
         <div class="nav-right-cluster">
@@ -127,55 +128,40 @@ onMounted(() => {
             <transition name="fade-route">
               <div v-if="profileMenuOpen" class="profile-menu glass-card">
                 <p class="profile-menu-name">{{ profileName }}</p>
-                <p class="profile-menu-email">{{ authStore.user?.email || 'Login to personalize dashboard' }}</p>
+                <p class="profile-menu-email">{{ authStore.user?.email || 'Login to personalize your travel profile' }}</p>
 
                 <div class="profile-actions">
-                  <RouterLink
-                    v-if="authStore.isAuthenticated"
-                    to="/dashboard"
-                    class="profile-action-link"
-                  >
-                    Open Dashboard
+                  <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="profile-action-link">
+                    Open Profile
                   </RouterLink>
-                  <RouterLink
-                    v-if="authStore.isAuthenticated"
-                    to="/saved-trips"
-                    class="profile-action-link"
-                  >
-                    My Saved Trips
-                  </RouterLink>
-                  <RouterLink
-                    v-if="authStore.isAuthenticated"
-                    to="/documents"
-                    class="profile-action-link"
-                  >
-                    Document Vault
+                  <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="profile-action-link">
+                    Trips Hub
                   </RouterLink>
                   <RouterLink
                     v-if="authStore.isAuthenticated"
                     to="/group-trips"
                     class="profile-action-link"
                   >
-                    Group Trips
+                    Group Planning
+                  </RouterLink>
+                  <RouterLink v-if="authStore.isAuthenticated" to="/destination" class="profile-action-link">
+                    Destination Guides
                   </RouterLink>
                   <RouterLink
                     v-if="authStore.isAuthenticated"
                     to="/community"
                     class="profile-action-link"
                   >
-                    Community Hub
+                    Community Feed
                   </RouterLink>
-                  <RouterLink
-                    to="/roadtrips"
-                    class="profile-action-link"
-                  >
+                  <RouterLink to="/roadtrips" class="profile-action-link">
                     Roadtrip Mode
                   </RouterLink>
-                  <RouterLink
-                    to="/help"
-                    class="profile-action-link"
-                  >
+                  <RouterLink to="/help" class="profile-action-link">
                     Help Center
+                  </RouterLink>
+                  <RouterLink v-if="authStore.isAuthenticated && isAdminUser" to="/admin" class="profile-action-link">
+                    Admin Console
                   </RouterLink>
                   <RouterLink
                     v-if="!authStore.isAuthenticated"
@@ -227,21 +213,27 @@ onMounted(() => {
     <footer class="app-footer">
       <div class="container footer-content">
         <div class="footer-brand">
-          <span class="brand-name">AI Travel Planner</span>
-          <p class="brand-desc">Plan your dream journey with artificial intelligence. Discover destinations, budget, and customize itineraries instantly.</p>
+          <span class="brand-name">WanderAI</span>
+          <p class="brand-desc">From inspiration to itinerary in one flow. Explore, plan, and relive journeys with AI-crafted travel experiences.</p>
         </div>
 
         <div class="footer-links-grid">
           <div class="links-column">
-            <h4>Application</h4>
-            <RouterLink to="/">Home</RouterLink>
-            <RouterLink to="/destination">Destinations</RouterLink>
-            <RouterLink to="/planner">Trip Planner</RouterLink>
-            <RouterLink to="/roadtrips">Roadtrip Planner</RouterLink>
-            <RouterLink to="/saved-trips">Saved Archives</RouterLink>
-            <RouterLink to="/documents">Document Vault</RouterLink>
-            <RouterLink to="/group-trips">Group Trips</RouterLink>
-            <RouterLink to="/community">Community Hub</RouterLink>
+            <h4>Journey</h4>
+            <RouterLink to="/">Explore</RouterLink>
+            <RouterLink to="/planner">Planner</RouterLink>
+            <RouterLink v-if="authStore.isAuthenticated" to="/trips">Trips</RouterLink>
+            <RouterLink v-if="authStore.isAuthenticated" to="/community">Community</RouterLink>
+            <RouterLink v-if="authStore.isAuthenticated" to="/profile">Profile</RouterLink>
+            <RouterLink to="/destination">Destination Guides</RouterLink>
+            <RouterLink to="/roadtrips">Roadtrip Mode</RouterLink>
+            <RouterLink to="/group-trips">Group Planning</RouterLink>
+          </div>
+          <div class="links-column">
+            <h4>Account</h4>
+            <RouterLink v-if="authStore.isAuthenticated" to="/profile?section=vault">Document Vault</RouterLink>
+            <RouterLink v-if="authStore.isAuthenticated && isAdminUser" to="/admin">Admin Console</RouterLink>
+            <RouterLink v-if="!authStore.isAuthenticated" to="/login">Login / Signup</RouterLink>
           </div>
           <div class="links-column">
             <h4>Support</h4>
@@ -260,27 +252,19 @@ onMounted(() => {
     <!-- Section 10: Mobile Bottom Navigation -->
     <nav class="mobile-bottom-navbar glass-navbar">
       <RouterLink to="/" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🏠</span>
-        <span class="mob-lbl">Home</span>
-      </RouterLink>
-      <RouterLink to="/destination" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">📍</span>
+        <span class="mob-icon">🌍</span>
         <span class="mob-lbl">Explore</span>
       </RouterLink>
       <RouterLink to="/planner" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">📆</span>
+        <span class="mob-icon">🧠</span>
         <span class="mob-lbl">Planner</span>
       </RouterLink>
-      <RouterLink to="/roadtrips" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🚗</span>
-        <span class="mob-lbl">Roadtrip</span>
-      </RouterLink>
-      <RouterLink to="/saved-trips" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">❤️</span>
-        <span class="mob-lbl">Saved</span>
+      <RouterLink to="/trips" class="mobile-nav-link" active-class="active">
+        <span class="mob-icon">🧳</span>
+        <span class="mob-lbl">Trips</span>
       </RouterLink>
       <RouterLink to="/community" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🧭</span>
+        <span class="mob-icon">🗣️</span>
         <span class="mob-lbl">Community</span>
       </RouterLink>
       <RouterLink :to="mobileProfilePath" class="mobile-nav-link" active-class="active">
@@ -357,7 +341,7 @@ onMounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  height: 72px;
+  height: 78px;
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -391,7 +375,7 @@ onMounted(() => {
 .nav-links-desktop {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 20px;
 }
 
 .nav-right-cluster {
@@ -455,10 +439,12 @@ onMounted(() => {
 }
 
 .nav-link {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--color-text-secondary);
-  padding: 6px 0;
+  padding: 8px 0;
   position: relative;
   transition: color var(--transition-fast);
 }
@@ -496,8 +482,8 @@ onMounted(() => {
 }
 
 .profile-avatar-circle {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-full);
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
   display: flex;
@@ -567,9 +553,9 @@ onMounted(() => {
 
 /* Footer styles */
 .app-footer {
-  background-color: #FFFFFF;
-  border-top: 1px solid var(--color-border);
-  padding: 60px 0 30px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.98));
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 70px 0 30px;
   margin-top: 60px;
 }
 
@@ -593,7 +579,7 @@ onMounted(() => {
 
 .brand-name {
   font-family: var(--font-heading);
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: var(--color-text);
   margin-bottom: 12px;
@@ -658,14 +644,14 @@ onMounted(() => {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 64px;
+  height: 70px;
   z-index: 1000;
   display: none;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   align-items: center;
   justify-items: center;
-  border-top: 1px solid var(--color-border);
-  padding-bottom: 4px; /* spacing for home bar */
+  border-top: 1px solid rgba(148, 163, 184, 0.3);
+  padding-bottom: 6px;
 }
 
 @media (max-width: 768px) {
@@ -693,19 +679,20 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .mob-icon {
-  font-size: 1.2rem;
+  font-size: 1.06rem;
 }
 
 .mob-lbl {
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .mobile-nav-link.active {

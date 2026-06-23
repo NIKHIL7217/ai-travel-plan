@@ -2,16 +2,46 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { useOfflineStore } from "../stores/offline";
 import { useVaultStore } from "../stores/vault";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const offlineStore = useOfflineStore();
 const vaultStore = useVaultStore();
 
 const selectedTag = ref("travel");
 const uploadMessage = ref("");
 
 const documents = computed(() => vaultStore.documents);
+const encryptionMeta = computed(() => vaultStore.encryptionMeta);
+
+function queueDocumentsOfflinePack() {
+  if (!authStore.user?.uid || documents.value.length === 0) {
+    return;
+  }
+
+  offlineStore.queueOfflinePack({
+    type: "documents",
+    title: `Document Vault Pack (${documents.value.length})`,
+    source: "documents",
+    payload: {
+      count: documents.value.length,
+      emergencyPackCount: Number(vaultStore.emergencyPackCount || 0),
+      encryptedCount: Number(vaultStore.encryptedDocumentCount || 0),
+      updatedAt: Date.now()
+    }
+  });
+
+  uploadMessage.value = "Document vault offline pack saved for emergency access.";
+  resetMessageWithDelay();
+}
+
+function handleRotateVaultKey() {
+  vaultStore.rotateKey();
+  uploadMessage.value = "Vault key version rotated and metadata refreshed.";
+  resetMessageWithDelay();
+}
 
 function formatDate(timestamp) {
   return new Date(Number(timestamp || Date.now())).toLocaleString([], {
@@ -55,6 +85,7 @@ onMounted(async () => {
   }
 
   vaultStore.initForUser(authStore.user.uid);
+  offlineStore.initForUser(authStore.user.uid);
 });
 
 watch(
@@ -65,6 +96,7 @@ watch(
     }
 
     vaultStore.initForUser(nextUserId);
+    offlineStore.initForUser(nextUserId);
   }
 );
 </script>
@@ -73,8 +105,8 @@ watch(
   <div class="documents-page container animate-fade-in" style="padding-top: 100px;">
     <div class="page-head">
       <span class="docs-badge">DOCUMENT VAULT</span>
-      <h1>Travel Document Vault</h1>
-      <p>Secure metadata index for passport, visa, tickets, insurance, and emergency docs. File blobs stay local in this phase.</p>
+      <h1>Secure Travel Vault</h1>
+      <p>Organize passport, visa, tickets, insurance, and emergency records with encryption metadata and offline readiness.</p>
     </div>
 
     <section class="stats-grid mt-6">
@@ -90,6 +122,14 @@ watch(
         <span>Emergency Pack</span>
         <strong>{{ vaultStore.emergencyPackCount }}</strong>
       </article>
+      <article class="stat-card glass-card">
+        <span>Encryption</span>
+        <strong>{{ vaultStore.encryptionStatusLabel }}</strong>
+      </article>
+      <article class="stat-card glass-card">
+        <span>Encrypted Docs</span>
+        <strong>{{ vaultStore.encryptedDocumentCount }}</strong>
+      </article>
     </section>
 
     <section class="upload-card glass-card mt-6">
@@ -98,8 +138,20 @@ watch(
         <div class="upload-actions">
           <button type="button" class="btn btn-outline" @click="router.push('/planner')">Back to Planner</button>
           <button type="button" class="btn btn-outline" @click="router.push('/saved-trips')">Saved Trips</button>
+          <button type="button" class="btn btn-outline" :disabled="documents.length === 0" @click="queueDocumentsOfflinePack">
+            Save Offline Pack
+          </button>
+          <button type="button" class="btn btn-outline" @click="handleRotateVaultKey">
+            Rotate Vault Key
+          </button>
         </div>
       </div>
+
+      <p class="security-note mt-3">
+        Encryption mode: <strong>{{ encryptionMeta.enabled ? 'Enabled' : 'Metadata Only' }}</strong>
+        · Algorithm: <strong>{{ encryptionMeta.algorithm }}</strong>
+        · Key v<strong>{{ encryptionMeta.keyVersion }}</strong>
+      </p>
 
       <div class="upload-grid mt-4">
         <label>
@@ -163,13 +215,14 @@ watch(
 .documents-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-bottom: 28px;
+  gap: 14px;
+  padding-bottom: 34px;
 }
 
 .page-head h1 {
   margin: 8px 0;
-  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  letter-spacing: -0.03em;
 }
 
 .page-head p {
@@ -179,13 +232,13 @@ watch(
 
 .docs-badge {
   display: inline-block;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
-  color: #1d4ed8;
-  background: rgba(219, 234, 254, 0.9);
+  letter-spacing: 0.12em;
+  color: #0369a1;
+  background: rgba(224, 242, 254, 0.86);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  padding: 5px 10px;
 }
 
 .mt-6 {
@@ -206,12 +259,12 @@ watch(
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .stat-card {
-  background: #ffffff !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .stat-card span {
@@ -228,7 +281,7 @@ watch(
 
 .upload-card,
 .list-card {
-  background: #ffffff !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .upload-head,
@@ -265,6 +318,12 @@ watch(
   color: #0f766e;
 }
 
+.security-note {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
 .empty-label {
   color: var(--color-text-muted);
   font-size: 0.84rem;
@@ -276,10 +335,10 @@ watch(
 }
 
 .doc-item {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 12px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .doc-head {
@@ -294,10 +353,10 @@ watch(
 }
 
 .doc-tag {
-  border: 1px solid rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(14, 165, 233, 0.24);
   border-radius: 999px;
-  background: rgba(239, 246, 255, 0.82);
-  color: #1d4ed8;
+  background: rgba(224, 242, 254, 0.82);
+  color: #0369a1;
   padding: 4px 9px;
   font-size: 0.68rem;
   font-weight: 700;

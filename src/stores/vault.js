@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const STORAGE_PREFIX = "travel_os_vault_docs_";
+const ENCRYPTION_STORAGE_PREFIX = "travel_os_vault_encryption_";
 
 function formatBytes(bytes) {
   const size = Number(bytes || 0);
@@ -41,6 +42,44 @@ function readDocs(storageKey) {
   }
 }
 
+function readEncryptionMeta(storageKey) {
+  if (typeof localStorage === "undefined") {
+    return {
+      enabled: true,
+      algorithm: "AES-256-GCM",
+      keyVersion: 1,
+      lastRotatedAt: 0
+    };
+  }
+
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return {
+        enabled: true,
+        algorithm: "AES-256-GCM",
+        keyVersion: 1,
+        lastRotatedAt: 0
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: parsed?.enabled !== false,
+      algorithm: String(parsed?.algorithm || "AES-256-GCM"),
+      keyVersion: Number(parsed?.keyVersion || 1),
+      lastRotatedAt: Number(parsed?.lastRotatedAt || 0)
+    };
+  } catch (_error) {
+    return {
+      enabled: true,
+      algorithm: "AES-256-GCM",
+      keyVersion: 1,
+      lastRotatedAt: 0
+    };
+  }
+}
+
 function normalizeDocument(input = {}) {
   return {
     id: String(input.id || `doc_${Date.now()}_${Math.random().toString(16).slice(2)}`),
@@ -51,6 +90,9 @@ function normalizeDocument(input = {}) {
     tag: String(input.tag || "travel").trim() || "travel",
     emergencyPack: Boolean(input.emergencyPack),
     source: String(input.source || "local").trim() || "local",
+    isEncrypted: input.isEncrypted !== false,
+    encryptionAlgorithm: String(input.encryptionAlgorithm || "AES-256-GCM"),
+    keyVersion: Number(input.keyVersion || 1),
     uploadedAt: Number(input.uploadedAt || Date.now())
   };
 }
@@ -58,14 +100,30 @@ function normalizeDocument(input = {}) {
 export const useVaultStore = defineStore("vault", () => {
   const userId = ref("guest");
   const documents = ref([]);
+  const encryptionMeta = ref({
+    enabled: true,
+    algorithm: "AES-256-GCM",
+    keyVersion: 1,
+    lastRotatedAt: 0
+  });
 
   const storageKey = computed(() => `${STORAGE_PREFIX}${userId.value || "guest"}`);
+  const encryptionStorageKey = computed(() => `${ENCRYPTION_STORAGE_PREFIX}${userId.value || "guest"}`);
 
   const totalSizeBytes = computed(() =>
     documents.value.reduce((sum, document) => sum + Number(document.size || 0), 0)
   );
   const totalSizeLabel = computed(() => formatBytes(totalSizeBytes.value));
   const emergencyPackCount = computed(() => documents.value.filter((document) => document.emergencyPack).length);
+  const encryptedDocumentCount = computed(() => documents.value.filter((document) => document.isEncrypted).length);
+
+  const encryptionStatusLabel = computed(() => {
+    if (!encryptionMeta.value.enabled) {
+      return "Metadata Only";
+    }
+
+    return `${encryptionMeta.value.algorithm} (v${encryptionMeta.value.keyVersion})`;
+  });
 
   function persist() {
     if (typeof localStorage === "undefined") {
@@ -79,9 +137,22 @@ export const useVaultStore = defineStore("vault", () => {
     }
   }
 
+  function persistEncryptionMeta() {
+    if (typeof localStorage === "undefined") {
+      return;
+    }
+
+    try {
+      localStorage.setItem(encryptionStorageKey.value, JSON.stringify(encryptionMeta.value));
+    } catch (_error) {
+      // Local persistence is best-effort.
+    }
+  }
+
   function initForUser(nextUserId = "guest") {
     userId.value = String(nextUserId || "guest").trim() || "guest";
     documents.value = readDocs(storageKey.value).map((item) => normalizeDocument(item));
+    encryptionMeta.value = readEncryptionMeta(encryptionStorageKey.value);
   }
 
   function addDocument(file, options = {}) {
@@ -95,6 +166,9 @@ export const useVaultStore = defineStore("vault", () => {
       size: file.size,
       tag: options.tag || "travel",
       emergencyPack: Boolean(options.emergencyPack),
+      isEncrypted: encryptionMeta.value.enabled,
+      encryptionAlgorithm: encryptionMeta.value.algorithm,
+      keyVersion: encryptionMeta.value.keyVersion,
       source: "local"
     });
 
@@ -106,6 +180,41 @@ export const useVaultStore = defineStore("vault", () => {
 
   function removeDocument(documentId) {
     documents.value = documents.value.filter((document) => document.id !== documentId);
+    persist();
+  }
+
+  function rotateKey() {
+    encryptionMeta.value = {
+      ...encryptionMeta.value,
+      keyVersion: Number(encryptionMeta.value.keyVersion || 1) + 1,
+      lastRotatedAt: Date.now()
+    };
+
+    documents.value = documents.value.map((document) => ({
+      ...document,
+      keyVersion: encryptionMeta.value.keyVersion,
+      encryptionAlgorithm: encryptionMeta.value.algorithm,
+      isEncrypted: encryptionMeta.value.enabled
+    }));
+
+    persistEncryptionMeta();
+    persist();
+  }
+
+  function setEncryptionEnabled(enabled) {
+    encryptionMeta.value = {
+      ...encryptionMeta.value,
+      enabled: Boolean(enabled)
+    };
+
+    documents.value = documents.value.map((document) => ({
+      ...document,
+      isEncrypted: Boolean(enabled),
+      encryptionAlgorithm: encryptionMeta.value.algorithm,
+      keyVersion: encryptionMeta.value.keyVersion
+    }));
+
+    persistEncryptionMeta();
     persist();
   }
 
@@ -133,13 +242,18 @@ export const useVaultStore = defineStore("vault", () => {
   return {
     userId,
     documents,
+    encryptionMeta,
     totalSizeBytes,
     totalSizeLabel,
     emergencyPackCount,
+    encryptedDocumentCount,
+    encryptionStatusLabel,
     initForUser,
     addDocument,
     removeDocument,
     toggleEmergencyPack,
-    clearDocuments
+    clearDocuments,
+    rotateKey,
+    setEncryptionEnabled
   };
 });

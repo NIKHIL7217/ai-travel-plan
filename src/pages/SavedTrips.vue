@@ -101,8 +101,8 @@ const closeOverlay = () => {
     <!-- Title -->
     <div class="archives-header">
       <span class="hud-badge">ARCHIVES</span>
-      <h1>My Saved Plans</h1>
-      <p class="subtitle">Access your stored AI itineraries, review itemized budgets, and load prior guides.</p>
+      <h1>Journey Archive Gallery</h1>
+      <p class="subtitle">Revisit every saved itinerary, reopen context, and relaunch plans in seconds.</p>
       <p v-if="deleteError" class="error-inline mt-2">{{ deleteError }}</p>
     </div>
 
@@ -260,7 +260,8 @@ const closeOverlay = () => {
 .saved-trips-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+  padding-bottom: 32px;
 }
 
 .archives-header {
@@ -268,19 +269,19 @@ const closeOverlay = () => {
 }
 
 .archives-header h1 {
-  font-size: 2.2rem;
+  font-size: clamp(2.2rem, 5vw, 3rem);
   font-weight: 800;
-  margin: 6px 0;
-  letter-spacing: -0.5px;
+  margin: 8px 0;
+  letter-spacing: -0.03em;
 }
 
 .hud-badge {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
-  color: var(--color-primary);
-  background-color: var(--color-primary-light);
-  padding: 4px 10px;
+  letter-spacing: 0.12em;
+  color: #0f766e;
+  background-color: rgba(209, 250, 229, 0.86);
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   display: inline-block;
 }
@@ -317,7 +318,7 @@ const closeOverlay = () => {
 .empty-archives {
   text-align: center;
   padding: 40px !important;
-  background-color: #FFFFFF !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .empty-archives span {
@@ -335,7 +336,7 @@ const closeOverlay = () => {
 .archives-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 @media (max-width: 900px) {
@@ -352,6 +353,7 @@ const closeOverlay = () => {
 
 .trip-archive-card {
   overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .card-cover-art {
@@ -368,7 +370,7 @@ const closeOverlay = () => {
 .cover-art-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(15, 23, 42, 0.65) 0%, rgba(15, 23, 42, 0.15) 80%);
+  background: linear-gradient(0deg, rgba(8, 47, 73, 0.78) 0%, rgba(8, 47, 73, 0.2) 78%);
   z-index: 1;
 }
 
@@ -392,7 +394,7 @@ const closeOverlay = () => {
 }
 
 .card-contents {
-  padding: 20px;
+  padding: 18px;
 }
 
 .card-contents h3 {
@@ -415,6 +417,7 @@ const closeOverlay = () => {
   gap: 10px;
   font-size: 0.8rem;
   color: var(--color-text-muted);
+  flex-wrap: wrap;
 }
 
 .text-glow-cyan {
@@ -444,7 +447,7 @@ const closeOverlay = () => {
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background-color: rgba(15, 23, 42, 0.6);
+  background-color: rgba(8, 47, 73, 0.62);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -453,7 +456,7 @@ const closeOverlay = () => {
 }
 
 .modal-content {
-  background-color: #FFFFFF !important;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.94));
   width: min(720px, 100%);
   max-height: 85vh;
   display: flex;
@@ -464,7 +467,7 @@ const closeOverlay = () => {
 
 .modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.34);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -479,8 +482,8 @@ const closeOverlay = () => {
 .badge {
   font-size: 0.68rem;
   font-weight: 700;
-  color: var(--color-primary);
-  background-color: var(--color-primary-light);
+  color: #0369a1;
+  background-color: rgba(224, 242, 254, 0.72);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   display: inline-block;
@@ -506,7 +509,7 @@ const closeOverlay = () => {
 }
 
 .modal-summary {
-  background-color: var(--color-bg);
+  background-color: rgba(248, 250, 252, 0.92);
   padding: 16px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
@@ -534,7 +537,7 @@ const closeOverlay = () => {
 
 .modal-day-card {
   padding: 16px !important;
-  background-color: #FFFFFF !important;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .modal-day-card h4 {
@@ -569,10 +572,10 @@ const closeOverlay = () => {
 }
 
 .det-item.food {
-  background-color: var(--color-primary-light);
+  background-color: rgba(209, 250, 229, 0.7);
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  border: 1px dashed rgba(37, 99, 235, 0.15);
+  border: 1px dashed rgba(13, 148, 136, 0.24);
 }
 
 .det-item.food strong {

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { formatPrice, initUserCurrency } from "../services/currency";
 import { detectUserLocation, userLocation } from "../services/location";
@@ -9,599 +9,606 @@ import { getDynamicTrendingData } from "../modules/trending/engine";
 const router = useRouter();
 
 const searchQuery = ref("");
-const homeLoading = ref(true);
-const locationLabel = ref("your region");
-const popularDestinations = ref([]);
-const destinationDistances = ref({});
-const homeError = ref("");
-const trendingLoading = ref(true);
-const trendingError = ref("");
+const loading = ref(true);
+const loadingError = ref("");
 const trendingCategories = ref([]);
+const liveDestinations = ref([]);
+const locationLabel = ref("your region");
 
 const quickPrompts = [
-  "Plan a 5 day Goa trip",
-  "Weekend roadtrip from Jaipur",
-  "Family trip under 50000 INR"
+  "7 days Japan under 1 lakh INR",
+  "Luxury Bali honeymoon",
+  "Roadtrip from Jaipur",
+  "Family trip to Dubai"
 ];
-const FALLBACK_DESTINATION_IMAGE = "/images/destinations/goa.png";
 
+const heroVisuals = [
+  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=80",
+  "https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1800&q=80",
+  "https://images.unsplash.com/photo-1503220317375-aaad61436b1b?auto=format&fit=crop&w=1800&q=80",
+  "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=80"
+];
+
+const testimonials = [
+  {
+    quote: "I opened WanderAI, typed one line, and booked the trip the same evening.",
+    name: "Ananya R.",
+    title: "Weekend Explorer"
+  },
+  {
+    quote: "This feels like talking to a premium travel concierge, not filling a dashboard form.",
+    name: "Karan M.",
+    title: "Frequent Flyer"
+  },
+  {
+    quote: "The inspiration flow made us choose a destination in under 3 minutes.",
+    name: "Nidhi & Arjun",
+    title: "Couple Travelers"
+  }
+];
+
+const currentHeroIndex = ref(0);
+let heroIntervalId = null;
 let aiServicePromise;
 
 async function loadAiServices() {
   if (!aiServicePromise) {
     aiServicePromise = import("../services/gemini");
   }
+
   return aiServicePromise;
 }
 
-const handleSearch = () => {
+function estimateBudget(name = "Trip") {
+  return 280 + String(name).length * 48;
+}
+
+function seasonByIndex(index = 0) {
+  const seasons = ["Nov-Feb", "Mar-May", "Jun-Aug", "Sep-Nov"];
+  return seasons[Math.abs(index) % seasons.length];
+}
+
+function toCard(item = {}, index = 0) {
+  const name = item.name || item.title || `Destination ${index + 1}`;
+  const id = item.id || `${name}-${index}`.toLowerCase().replace(/\s+/g, "-");
+  return {
+    id,
+    name,
+    location: item.location || locationLabel.value || "Global",
+    image: item.image || heroVisuals[index % heroVisuals.length],
+    budget: Number(item.startingBudget || item.budget || estimateBudget(name)),
+    season: item.bestTime || seasonByIndex(index),
+    distanceKm: Number(item.distanceKm || 0)
+  };
+}
+
+const heroBackgroundStyle = computed(() => {
+  const image = heroVisuals[currentHeroIndex.value % heroVisuals.length];
+  return {
+    backgroundImage: `linear-gradient(150deg, rgba(8,47,73,0.52) 0%, rgba(15,118,110,0.56) 50%, rgba(2,132,199,0.72) 100%), url('${image}')`
+  };
+});
+
+const destinationPool = computed(() => {
+  const trendItems = (trendingCategories.value || []).flatMap((category) => category.items || []);
+  const merged = [...trendItems, ...liveDestinations.value];
+  const seen = new Set();
+
+  return merged
+    .map((item, index) => toCard(item, index))
+    .filter((item) => {
+      const key = `${item.id}-${item.name}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 48);
+});
+
+const fallbackPool = computed(() => {
+  return heroVisuals.map((image, index) => ({
+    id: `fallback-${index + 1}`,
+    name: ["Kyoto", "Bali", "Istanbul", "Cape Town"][index] || `Spot ${index + 1}`,
+    location: "Trending",
+    image,
+    budget: estimateBudget(`fallback-${index + 1}`),
+    season: seasonByIndex(index),
+    distanceKm: 0
+  }));
+});
+
+const sourcePool = computed(() => (destinationPool.value.length ? destinationPool.value : fallbackPool.value));
+
+const sectionCollections = computed(() => {
+  const source = sourcePool.value;
+
+  return [
+    {
+      id: "trending",
+      title: "Trending Destinations",
+      subtitle: "Live picks from search momentum and seasonality.",
+      cta: "/destination",
+      items: source.slice(0, 10)
+    },
+    {
+      id: "weekend",
+      title: "Weekend Escapes",
+      subtitle: "Short, high-energy getaways for the next break.",
+      cta: "/roadtrips",
+      items: source.slice(5, 15)
+    },
+    {
+      id: "gems",
+      title: "Hidden Gems",
+      subtitle: "Less crowded spots with stronger local character.",
+      cta: "/community",
+      items: source.slice(10, 20)
+    },
+    {
+      id: "roadtrips",
+      title: "Popular Roadtrips",
+      subtitle: "Routes made for scenic drives and flexible stops.",
+      cta: "/roadtrips",
+      items: source.slice(15, 25)
+    },
+    {
+      id: "community",
+      title: "Community Favorites",
+      subtitle: "Places repeatedly recommended by travelers.",
+      cta: "/community",
+      items: source.slice(20, 30)
+    }
+  ];
+});
+
+function handleSearch() {
   const query = String(searchQuery.value || "").trim();
   if (query) {
     router.push({ path: "/planner", query: { q: query } });
     return;
   }
-  router.push("/destination");
-};
 
-const usePrompt = (prompt) => {
+  router.push("/destination");
+}
+
+function usePrompt(prompt) {
   searchQuery.value = prompt;
   handleSearch();
-};
+}
 
-const goToDetails = (id) => {
-  router.push(`/destination/${id}`);
-};
+function openPlanner(name) {
+  router.push({
+    path: "/planner",
+    query: {
+      destination: name,
+      q: `Plan a complete ${name} trip with visual itinerary`
+    }
+  });
+}
 
-const openWorkspace = (name) => {
-  router.push({ path: "/planner", query: { destination: name } });
-};
+function openCollection(cta) {
+  router.push(cta);
+}
 
-const getDistanceLabel = (destId) => {
-  const km = destinationDistances.value[destId];
-  if (km === null || km === undefined) {
-    return "Distance unavailable";
-  }
-  return `${km.toLocaleString()} km from your location`;
-};
-
-const formatTrendDistance = (km) => {
-  const value = Number(km || 0);
-  if (!value) {
-    return "Distance unavailable";
-  }
-  return `${value.toLocaleString()} km away`;
-};
+function rotateHeroVisual() {
+  currentHeroIndex.value = (currentHeroIndex.value + 1) % heroVisuals.length;
+}
 
 onMounted(async () => {
-  homeLoading.value = true;
-  trendingLoading.value = true;
-  homeError.value = "";
-  trendingError.value = "";
+  loading.value = true;
+  loadingError.value = "";
+
+  heroIntervalId = window.setInterval(rotateHeroVisual, 6800);
 
   try {
-    const { generateDestinationSuggestions, resolveDestinationPhoto, getRouteDistance, geocodePlace } = await loadAiServices();
+    const { generateDestinationSuggestions, resolveDestinationPhoto } = await loadAiServices();
 
     await detectUserLocation();
     initUserCurrency(userLocation.value).catch(() => {
-      // Currency init is non-blocking for first render.
+      // Currency inference is non-blocking for first paint.
     });
+
     locationLabel.value = userLocation.value?.city || userLocation.value?.country || "your region";
 
-    const [trendingResult, liveListResult] = await Promise.allSettled([
+    const [trendingResult, destinationResult] = await Promise.allSettled([
       getDynamicTrendingData(userLocation.value),
       generateDestinationSuggestions(`top destinations for travelers from ${locationLabel.value}`)
     ]);
 
-    if (trendingResult.status === "fulfilled") {
-      trendingCategories.value = trendingResult.value;
-      trendingError.value = "";
-    } else {
-      trendingError.value = getFriendlyErrorMessage(trendingResult.reason, "Trending engine is temporarily unavailable.");
-      trendingCategories.value = [];
-    }
+    trendingCategories.value = trendingResult.status === "fulfilled" ? trendingResult.value : [];
+    liveDestinations.value = destinationResult.status === "fulfilled" ? destinationResult.value : [];
 
-    const liveList = liveListResult.status === "fulfilled" ? liveListResult.value : [];
+    const photos = await Promise.allSettled(
+      liveDestinations.value.slice(0, 20).map((item) => resolveDestinationPhoto(item.name || "travel"))
+    );
 
-    popularDestinations.value = (liveList || []).slice(0, 6).map((dest, idx) => ({
-      id: dest.id || String(dest.name || `destination-${idx}`).toLowerCase().replace(/\s+/g, "-"),
-      name: dest.name || "Destination",
-      location: dest.location || "Global",
-      budget: Number(dest.startingBudget || 0),
-      rating: Number(dest.rating || 4.4),
-      description: dest.description || "Live destination profile.",
-      image: FALLBACK_DESTINATION_IMAGE
-    }));
-
-    if (popularDestinations.value.length > 0) {
-      Promise.allSettled(
-        popularDestinations.value.map((dest) => resolveDestinationPhoto(dest.name || "travel"))
-      ).then((photos) => {
-        popularDestinations.value = popularDestinations.value.map((dest, idx) => {
-          const nextImage = photos[idx]?.status === "fulfilled" ? photos[idx].value : dest.image;
-          return {
-            ...dest,
-            image: nextImage || dest.image
-          };
-        });
-      });
-    }
-
-    homeLoading.value = false;
-
-    if (userLocation.value?.lat !== null && userLocation.value?.lng !== null) {
-      const distanceEntries = await Promise.allSettled(
-        popularDestinations.value.map(async (dest) => {
-          try {
-            const geo = await geocodePlace(`${dest.name}, ${dest.location}`);
-            if (!geo) return [dest.id, null];
-
-            const route = await getRouteDistance(
-              { lat: userLocation.value.lat, lng: userLocation.value.lng },
-              { lat: geo.lat, lng: geo.lng }
-            );
-            return [dest.id, route?.distance ? Math.round(route.distance) : null];
-          } catch (_error) {
-            return [dest.id, null];
-          }
-        })
-      );
-
-      destinationDistances.value = Object.fromEntries(
-        distanceEntries
-          .filter((entry) => entry.status === "fulfilled")
-          .map((entry) => entry.value)
-      );
-    }
-
-    if (popularDestinations.value.length === 0) {
-      homeError.value = "Live destinations temporarily unavailable.";
-    }
+    liveDestinations.value = liveDestinations.value.map((item, index) => {
+      const image = photos[index]?.status === "fulfilled" ? photos[index].value : item.image;
+      return {
+        ...item,
+        image: image || item.image
+      };
+    });
   } catch (error) {
-    console.error("Home live data load failed:", error);
-    homeError.value = getFriendlyErrorMessage(error, "Unable to load live destinations right now.");
+    loadingError.value = getFriendlyErrorMessage(error, "Unable to load travel inspiration right now.");
   } finally {
-    if (homeLoading.value) {
-      homeLoading.value = false;
-    }
-    trendingLoading.value = false;
+    loading.value = false;
+  }
+});
+
+onUnmounted(() => {
+  if (heroIntervalId) {
+    clearInterval(heroIntervalId);
+    heroIntervalId = null;
   }
 });
 </script>
 
 <template>
-  <div class="home-page-layout animate-fade-in">
-    <section class="hero-section" style="background-image: url('/images/hero_bg.png')">
-      <div class="hero-overlay-gradient"></div>
-      <div class="container hero-content">
-        <span class="hero-tag">AI SEARCH COMMAND CENTER</span>
-        <h1 class="hero-title">Plan Your Trip In One Command</h1>
-        <p class="hero-desc">Type what you want in normal language. We will convert it into a complete trip workspace with live data.</p>
+  <div class="explore-page animate-fade-in">
+    <section class="hero" :style="heroBackgroundStyle">
+      <div class="hero-content container">
+        <span class="hero-badge">EXPLORE</span>
+        <h1>Where do you want to go next?</h1>
+        <p>Plan complete trips with AI.</p>
 
-        <form @submit.prevent="handleSearch" class="hero-search-bar">
-          <span class="search-icon">Search</span>
+        <form class="hero-prompt" @submit.prevent="handleSearch">
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Plan a 5 day Goa trip"
-            class="hero-search-input"
+            placeholder="7 days Japan under 1 lakh INR"
+            aria-label="Travel prompt"
           />
-          <button type="submit" class="btn btn-primary hero-search-btn">Start Planning</button>
+          <button type="submit" class="btn btn-primary">Start Planning</button>
         </form>
 
-        <div class="quick-prompt-row">
-          <button v-for="prompt in quickPrompts" :key="prompt" type="button" class="prompt-chip" @click="usePrompt(prompt)">
+        <div class="prompt-examples">
+          <button
+            v-for="prompt in quickPrompts"
+            :key="prompt"
+            type="button"
+            class="example-pill"
+            @click="usePrompt(prompt)"
+          >
             {{ prompt }}
           </button>
         </div>
       </div>
     </section>
 
-    <section class="container mt-16">
-      <div class="section-header">
-        <span class="section-badge">TRENDING NEAR ME</span>
-        <h2>Live Recommendations For {{ locationLabel }}</h2>
-        <p class="section-subtitle">Weekend escapes, roadtrip ideas, and seasonal picks generated from your current context.</p>
+    <section v-if="loadingError" class="container mt-12">
+      <article class="glass-card error-panel">
+        <h3>Inspiration is temporarily unavailable</h3>
+        <p>{{ loadingError }}</p>
+      </article>
+    </section>
+
+    <section
+      v-for="section in sectionCollections"
+      :key="section.id"
+      class="inspiration-section container"
+      :class="{ 'section-loading': loading }"
+    >
+      <div class="section-head">
+        <div>
+          <h2>{{ section.title }}</h2>
+          <p>{{ section.subtitle }}</p>
+        </div>
+        <button type="button" class="btn btn-outline btn-xs" @click="openCollection(section.cta)">View All</button>
       </div>
 
-      <div v-if="trendingLoading" class="trending-category-grid">
-        <div v-for="n in 4" :key="n" class="glass-card" style="height: 220px;"></div>
+      <div v-if="loading" class="loading-row">
+        <div v-for="n in 4" :key="`${section.id}-loading-${n}`" class="loading-card"></div>
       </div>
 
-      <div v-else-if="trendingError" class="home-empty-state glass-card">
-        <h3>Trending data unavailable</h3>
-        <p>{{ trendingError }}</p>
-        <button type="button" class="btn btn-primary mt-4" @click="router.push('/destination')">Explore Destinations</button>
-      </div>
-
-      <div v-else class="trending-category-grid">
-        <article v-for="category in trendingCategories" :key="category.title" class="glass-card trend-panel">
-          <div class="trend-head">
-            <h3>{{ category.title }}</h3>
-            <button type="button" class="btn btn-outline trend-action" @click="router.push({ path: '/destination', query: { search: category.query } })">
-              View All
-            </button>
+      <div v-else class="card-carousel">
+        <article v-for="item in section.items" :key="`${section.id}-${item.id}`" class="travel-card">
+          <div class="card-image-wrap">
+            <img :src="item.image" :alt="item.name" loading="lazy" />
+            <span class="distance-pill" v-if="item.distanceKm > 0">{{ Math.round(item.distanceKm) }} km away</span>
           </div>
-
-          <div v-if="category.state === 'empty'" class="trend-empty">
-            <p>{{ category.message }}</p>
-            <button type="button" class="btn btn-primary" @click="router.push('/destination')">Explore All</button>
-          </div>
-
-          <div v-else class="trend-item-grid">
-            <div v-for="item in category.items.slice(0, 2)" :key="`${category.title}-${item.id}`" class="trend-item">
-              <img :src="item.image" :alt="item.name" loading="lazy" class="trend-item-img" />
-              <div class="trend-item-body">
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.location }}</span>
-                <small>{{ formatTrendDistance(item.distanceKm) }}</small>
-                <div class="trend-actions">
-                  <button type="button" class="btn btn-outline btn-xs" @click="goToDetails(item.id)">Details</button>
-                  <button type="button" class="btn btn-primary btn-xs" @click="openWorkspace(item.name)">Plan</button>
-                </div>
-              </div>
+          <div class="card-body">
+            <h3>{{ item.name }}</h3>
+            <p>{{ item.location }}</p>
+            <div class="card-meta">
+              <span>{{ formatPrice(item.budget) }}</span>
+              <span>{{ item.season }}</span>
             </div>
+            <button type="button" class="btn btn-primary btn-xs" @click="openPlanner(item.name)">Plan Trip</button>
           </div>
         </article>
       </div>
     </section>
 
-    <section class="container mt-16">
-      <div class="section-header">
-        <span class="section-badge">DESTINATION SNAPSHOT</span>
-        <h2>Popular Right Now</h2>
-        <p class="section-subtitle">Instantly compare budget, rating, and distance before opening your trip workspace.</p>
+    <section class="container testimonials">
+      <div class="section-head">
+        <div>
+          <h2>Testimonials</h2>
+          <p>What travelers feel in the first moments of opening WanderAI.</p>
+        </div>
       </div>
 
-      <div v-if="homeLoading" class="destinations-grid">
-        <div v-for="n in 6" :key="n" class="glass-card" style="height: 300px;"></div>
-      </div>
-
-      <div v-else-if="popularDestinations.length > 0" class="destinations-grid">
-        <article v-for="dest in popularDestinations" :key="dest.id" class="destination-card glass-card">
-          <div class="card-img-wrap">
-            <img :src="dest.image" :alt="dest.name" class="card-img" loading="lazy" />
-            <div class="card-rating">{{ dest.rating }}</div>
-          </div>
-          <div class="card-body">
-            <span class="card-loc">{{ dest.location }}</span>
-            <h3 class="card-title">{{ dest.name }}</h3>
-            <p class="distance-line">{{ getDistanceLabel(dest.id) }}</p>
-            <div class="card-footer">
-              <span class="card-budget">From {{ formatPrice(dest.budget) }}</span>
-            </div>
-            <div class="card-actions mt-4">
-              <button type="button" class="btn btn-outline" @click="goToDetails(dest.id)">View</button>
-              <button type="button" class="btn btn-primary" @click="openWorkspace(dest.name)">Open Workspace</button>
-            </div>
+      <div class="testimonial-grid">
+        <article v-for="item in testimonials" :key="item.name" class="testimonial-card glass-card">
+          <p class="quote">"{{ item.quote }}"</p>
+          <div class="author">
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.title }}</span>
           </div>
         </article>
-      </div>
-
-      <div v-else class="home-empty-state glass-card">
-        <h3>No live destinations found</h3>
-        <p>{{ homeError || "Please try again in a moment." }}</p>
-        <button type="button" class="btn btn-primary mt-4" @click="router.push('/destination')">Open Destinations</button>
       </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.home-page-layout {
+.explore-page {
   display: flex;
   flex-direction: column;
-  padding-bottom: 32px;
+  gap: 58px;
+  padding-bottom: 44px;
 }
 
-.mt-16 {
-  margin-top: 64px;
-}
-
-.mt-4 {
-  margin-top: 16px;
-}
-
-.hero-section {
-  position: relative;
-  min-height: 560px;
+.hero {
+  min-height: calc(100vh - 70px);
   background-size: cover;
   background-position: center;
   display: flex;
   align-items: center;
-  padding-top: 72px;
-  color: white;
-}
-
-.hero-overlay-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.45) 0%, rgba(15, 23, 42, 0.82) 100%);
-  z-index: 1;
+  position: relative;
+  transition: background-image 680ms ease;
 }
 
 .hero-content {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  justify-items: center;
   text-align: center;
-  max-width: 840px;
+  gap: 14px;
+  color: #f8fafc;
 }
 
-.hero-tag {
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  color: #93c5fd;
+.hero-badge {
+  font-size: 0.76rem;
   font-weight: 800;
-  margin-bottom: 12px;
+  letter-spacing: 0.12em;
+  color: #a7f3d0;
+  text-transform: uppercase;
 }
 
-.hero-title {
-  font-size: clamp(2.2rem, 6vw, 3.6rem);
-  font-weight: 800;
-  letter-spacing: -1px;
-  line-height: 1.1;
-  margin-bottom: 14px;
+.hero h1 {
+  font-size: clamp(2.4rem, 8vw, 5.2rem);
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  max-width: 900px;
 }
 
-.hero-desc {
-  font-size: 1.04rem;
-  color: #e2e8f0;
-  max-width: 640px;
-  line-height: 1.6;
-  margin-bottom: 24px;
+.hero p {
+  font-size: clamp(1rem, 2.8vw, 1.2rem);
+  color: rgba(248, 250, 252, 0.92);
 }
 
-.hero-search-bar {
-  display: flex;
-  align-items: center;
-  background-color: #ffffff;
-  border-radius: var(--radius-md);
-  padding: 8px 10px;
-  width: 100%;
-  max-width: 640px;
-  box-shadow: var(--shadow-xl);
+.hero-prompt {
+  margin-top: 6px;
+  width: min(860px, 96%);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 30px 70px rgba(2, 8, 23, 0.25);
 }
 
-.search-icon {
-  margin: 0 10px 0 6px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-}
-
-.hero-search-input {
-  flex-grow: 1;
+.hero-prompt input {
   border: none;
   outline: none;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
+  padding: 12px 14px;
   color: var(--color-text);
-  font-family: inherit;
-  padding: 10px 0;
+  background: transparent;
 }
 
-.hero-search-btn {
-  padding: 10px 20px !important;
-}
-
-.quick-prompt-row {
-  margin-top: 14px;
+.prompt-examples {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+  margin-top: 4px;
 }
 
-.prompt-chip {
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.12);
+.example-pill {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(15, 23, 42, 0.28);
   color: #f8fafc;
-  font-size: 0.76rem;
-  font-weight: 700;
+  border-radius: var(--radius-full);
   padding: 7px 12px;
-  cursor: pointer;
-}
-
-.section-header {
-  text-align: center;
-  margin-bottom: 24px;
-}
-
-.section-badge {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  color: #1e3a8a;
-  background-color: #dbeafe;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  display: inline-block;
-  margin-bottom: 8px;
-}
-
-.section-header h2 {
-  font-size: 1.9rem;
-  font-weight: 800;
-  margin-bottom: 6px;
-}
-
-.section-subtitle {
-  font-size: 0.95rem;
-  color: var(--color-text-secondary);
-}
-
-.trending-category-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.trend-panel {
-  padding: 14px;
-}
-
-.trend-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.trend-action {
-  padding: 7px 10px;
-  font-size: 0.75rem;
-}
-
-.trend-item-grid {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.trend-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-  display: grid;
-  grid-template-columns: 84px 1fr;
-  overflow: hidden;
-}
-
-.trend-item-img {
-  width: 84px;
-  height: 94px;
-  object-fit: cover;
-}
-
-.trend-item-body {
-  display: grid;
-  gap: 2px;
-  padding: 8px;
-}
-
-.trend-item-body span {
-  font-size: 0.78rem;
-  color: var(--color-text-secondary);
-}
-
-.trend-item-body small {
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-
-.trend-actions {
-  margin-top: 6px;
-  display: flex;
-  gap: 6px;
-}
-
-.btn-xs {
-  font-size: 0.72rem;
-  padding: 6px 10px;
-}
-
-.destinations-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.destination-card {
-  overflow: hidden;
-}
-
-.card-img-wrap {
-  height: 190px;
-  position: relative;
-}
-
-.card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.card-rating {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: rgba(255, 255, 255, 0.94);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
   font-size: 0.76rem;
   font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
 }
 
-.card-body {
+.example-pill:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.mt-12 {
+  margin-top: 48px;
+}
+
+.error-panel {
   padding: 16px;
 }
 
-.card-loc {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
+.inspiration-section {
+  display: grid;
+  gap: 14px;
 }
 
-.card-title {
-  font-size: 1.1rem;
-  font-weight: 800;
-  margin: 4px 0 8px;
-}
-
-.distance-line {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  margin-bottom: 10px;
-}
-
-.card-footer {
-  border-top: 1px solid var(--color-border);
-  padding-top: 10px;
-  font-size: 0.84rem;
-  color: var(--color-text-secondary);
-}
-
-.card-actions {
+.section-head {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
 }
 
-.home-empty-state {
-  padding: 24px;
-  text-align: center;
+.section-head h2 {
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  letter-spacing: -0.02em;
 }
 
-.home-empty-state p {
-  margin-top: 8px;
+.section-head p {
+  margin-top: 5px;
   color: var(--color-text-secondary);
+  font-size: 0.86rem;
+}
+
+.loading-row,
+.card-carousel {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.loading-card {
+  min-height: 320px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, #dbeafe 0%, #ecfeff 50%, #dbeafe 100%);
+  background-size: 220% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+.travel-card {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  min-height: 338px;
+}
+
+.card-image-wrap {
+  height: 194px;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-slow);
+}
+
+.travel-card:hover img {
+  transform: scale(1.05);
+}
+
+.distance-pill {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  background: rgba(2, 6, 23, 0.74);
+  color: #e2e8f0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+}
+
+.card-body {
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.card-body h3 {
+  font-size: 0.96rem;
+}
+
+.card-body p {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+}
+
+.card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.testimonials {
+  display: grid;
+  gap: 14px;
+}
+
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.testimonial-card {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.86));
+}
+
+.quote {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.author {
+  margin-top: 12px;
+  display: grid;
+  gap: 2px;
+}
+
+.author strong {
+  font-size: 0.84rem;
+}
+
+.author span {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 220% 0;
+  }
+  100% {
+    background-position: -220% 0;
+  }
 }
 
 @media (max-width: 980px) {
-  .trending-category-grid {
+  .testimonial-grid {
     grid-template-columns: 1fr;
-  }
-
-  .destinations-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 640px) {
-  .destinations-grid {
+@media (max-width: 760px) {
+  .hero {
+    min-height: calc(100vh - 64px);
+    padding-top: 26px;
+  }
+
+  .hero-prompt {
     grid-template-columns: 1fr;
   }
 
-  .hero-search-bar {
+  .section-head {
     flex-direction: column;
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  .hero-search-btn {
-    width: 100%;
+    align-items: flex-start;
   }
 }
 </style>

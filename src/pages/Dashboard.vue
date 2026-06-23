@@ -273,10 +273,10 @@ onMounted(async () => {
   <div class="dashboard-page container animate-fade-in" style="padding-top: 100px;">
     <div class="welcome-panel">
       <div>
-        <span class="hud-badge">TRAVEL OS PANEL</span>
-        <h1>Hi, {{ authStore.displayName }}</h1>
+        <span class="hud-badge">EXPERIENCE COMMAND CENTER</span>
+        <h1>Welcome Back, {{ authStore.displayName }}</h1>
         <p>
-          Your profile dashboard shows private trip activity, budget footprint, and fast access to planning tools.
+          Track your travel memory, live signals, and planning momentum from one premium cockpit.
         </p>
       </div>
       <button type="button" class="btn btn-outline" @click="router.push('/planner')">Create New Plan</button>
@@ -642,36 +642,40 @@ onMounted(async () => {
 .dashboard-page {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  padding-bottom: 32px;
 }
 
 .welcome-panel {
   border-radius: var(--radius-xl);
-  padding: 28px;
+  padding: 32px;
   color: white;
-  background: linear-gradient(120deg, #0f172a 0%, #1e3a8a 45%, #0ea5e9 100%);
+  background: linear-gradient(130deg, #0b4f6c 0%, #0369a1 44%, #0f766e 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  box-shadow: 0 22px 48px rgba(8, 47, 73, 0.26);
 }
 
 .welcome-panel h1 {
   margin: 8px 0;
   color: white;
-  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  letter-spacing: -0.03em;
 }
 
 .welcome-panel p {
   color: rgba(226, 232, 240, 0.95);
   max-width: 720px;
+  font-size: 0.96rem;
 }
 
 .hud-badge {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
-  color: #bfdbfe;
+  letter-spacing: 0.12em;
+  color: #a7f3d0;
 }
 
 .mt-6 {
@@ -694,6 +698,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
 .stat-card span {
@@ -714,13 +719,13 @@ onMounted(async () => {
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
-  gap: 16px;
+  gap: 18px;
 }
 
 .memory-history-grid {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
-  gap: 16px;
+  gap: 18px;
 }
 
 .profile-memory-panel,
@@ -750,10 +755,10 @@ onMounted(async () => {
 }
 
 .trait-pill {
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(14, 165, 233, 0.26);
   border-radius: var(--radius-full);
-  background: rgba(219, 234, 254, 0.62);
-  color: var(--color-primary);
+  background: rgba(224, 242, 254, 0.76);
+  color: #0369a1;
   padding: 5px 10px;
   font-size: 0.72rem;
   font-weight: 700;
@@ -765,11 +770,12 @@ onMounted(async () => {
 }
 
 .timeline-item {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: var(--radius-md);
   padding: 10px;
   display: grid;
   gap: 2px;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .timeline-item strong {
@@ -788,10 +794,10 @@ onMounted(async () => {
 }
 
 .history-card {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: var(--radius-md);
   padding: 10px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .history-card span {
@@ -825,10 +831,10 @@ onMounted(async () => {
 }
 
 .recommendation-card {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 12px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .recommendation-card h4 {
@@ -865,10 +871,10 @@ onMounted(async () => {
 }
 
 .phase-three-card {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 12px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .phase-three-head {
@@ -966,9 +972,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 12px;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .recent-item p {
@@ -979,7 +986,7 @@ onMounted(async () => {
 
 .empty-state {
   margin-top: 18px;
-  border: 1px dashed var(--color-border);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
   border-radius: var(--radius-md);
   padding: 18px;
 }
@@ -1008,10 +1015,10 @@ onMounted(async () => {
 }
 
 .community-card {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 12px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .community-card h4 {
@@ -1041,8 +1048,8 @@ onMounted(async () => {
 .live-pill {
   font-size: 0.76rem;
   font-weight: 700;
-  color: var(--color-primary);
-  background: var(--color-primary-light);
+  color: #0369a1;
+  background: rgba(224, 242, 254, 0.72);
   border-radius: var(--radius-full);
   padding: 5px 10px;
 }
@@ -1060,10 +1067,10 @@ onMounted(async () => {
 }
 
 .live-card {
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: var(--radius-md);
   padding: 14px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1080,10 +1087,10 @@ onMounted(async () => {
 
 .panel-error,
 .panel-empty {
-  border: 1px dashed var(--color-border);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
   border-radius: var(--radius-md);
   padding: 16px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .panel-error p,
