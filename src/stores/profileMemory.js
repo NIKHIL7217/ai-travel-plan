@@ -3,10 +3,13 @@ import {
   computeMemoryScores,
   createPersonalizationPlan,
   loadProfileMemory,
+  deleteNamedPreferenceProfile as deleteNamedPreferenceProfileInStorage,
   recordGeneratedTrip,
   recordSavedTrip,
-  saveEditablePreferences
-} from "../modules/profile-memory";
+  saveEditablePreferences as saveEditablePreferencesInStorage,
+  saveNamedPreferenceProfile as saveNamedPreferenceProfileInStorage,
+  setActivePreferenceProfile as setActivePreferenceProfileInStorage
+} from "../modules/profile-memory/index.js";
 
 function safeAverage(values = []) {
   const normalized = values
@@ -168,7 +171,8 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
       description: "Learning your travel pattern.",
       traits: []
     },
-    timeline: []
+    timeline: [],
+    maxPreferenceProfiles: 5
   }),
   getters: {
     hasSignals: (state) => Number(state?.scores?.overall || 0) > 25,
@@ -184,6 +188,36 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
       food: state?.memory?.preferences?.foodPreference || "mixed",
       stay: state?.memory?.preferences?.stayPreference || "mid-range"
     }),
+    preferenceProfiles: (state) => {
+      const profiles = Array.isArray(state?.memory?.preferenceProfiles) ? state.memory.preferenceProfiles : [];
+      return profiles.map((profile) => {
+        const prefs = profile?.preferences || {};
+        const budgetTarget = Number(prefs?.budgetPreference?.target || 0);
+        return {
+          id: profile.id,
+          name: profile.name || "Traveler",
+          createdAt: Number(profile?.createdAt || 0),
+          updatedAt: Number(profile?.updatedAt || 0),
+          preferences: prefs,
+          summary: [
+            prefs.travelStyle || "Balanced",
+            prefs.transportPreference || "Car",
+            prefs.foodPreference || "mixed",
+            prefs.stayPreference || "mid-range",
+            budgetTarget > 0 ? `${budgetTarget} USD` : "No budget"
+          ].join(" | ")
+        };
+      });
+    },
+    activePreferenceProfileId: (state) => String(state?.memory?.activePreferenceProfileId || ""),
+    activePreferenceProfile: (state) => {
+      const profiles = Array.isArray(state?.memory?.preferenceProfiles) ? state.memory.preferenceProfiles : [];
+      return profiles.find((profile) => profile.id === state?.memory?.activePreferenceProfileId) || profiles[0] || null;
+    },
+    canAddPreferenceProfile: (state) => {
+      const count = Array.isArray(state?.memory?.preferenceProfiles) ? state.memory.preferenceProfiles.length : 0;
+      return count < Number(state.maxPreferenceProfiles || 5);
+    },
     historySummary: (state) => {
       const trips = Array.isArray(state?.memory?.previousTrips) ? state.memory.previousTrips : [];
       const totalBudgetSpent = trips.reduce((sum, trip) => sum + Number(trip?.budgetTotal || 0), 0);
@@ -244,7 +278,28 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
 
     applyPreferencesPatch(patch = {}) {
       this.ensureInitialized(this.userId || "guest");
-      this.memory = saveEditablePreferences(this.userId, patch);
+      this.memory = saveEditablePreferencesInStorage(this.userId, patch);
+      this.refreshDerived();
+      return this.memory;
+    },
+
+    saveNamedPreferenceProfile(payload = {}) {
+      this.ensureInitialized(this.userId || "guest");
+      this.memory = saveNamedPreferenceProfileInStorage(this.userId, payload);
+      this.refreshDerived();
+      return this.memory;
+    },
+
+    setActivePreferenceProfile(profileId = "") {
+      this.ensureInitialized(this.userId || "guest");
+      this.memory = setActivePreferenceProfileInStorage(this.userId, profileId);
+      this.refreshDerived();
+      return this.memory;
+    },
+
+    deleteNamedPreferenceProfile(profileId = "") {
+      this.ensureInitialized(this.userId || "guest");
+      this.memory = deleteNamedPreferenceProfileInStorage(this.userId, profileId);
       this.refreshDerived();
       return this.memory;
     },

@@ -4,6 +4,9 @@ export {
   loadProfileMemory,
   saveProfileMemory,
   saveEditablePreferences,
+  saveNamedPreferenceProfile,
+  deleteNamedPreferenceProfile,
+  setActivePreferenceProfile,
   recordGeneratedTrip,
   recordSavedTrip
 } from "./storage";

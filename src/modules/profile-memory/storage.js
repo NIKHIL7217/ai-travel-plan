@@ -1,6 +1,7 @@
 const STORAGE_PREFIX = "roam_profile_memory_v1_";
 const MAX_PREVIOUS_TRIPS = 40;
 const MAX_FAVORITES = 12;
+const MAX_PREFERENCE_PROFILES = 5;
 
 function now() {
   return Date.now();
@@ -120,13 +121,109 @@ function getDefaultPreferences() {
   };
 }
 
+function normalizePreferenceSet(preferences = {}, fallback = getDefaultPreferences()) {
+  const source = preferences || {};
+  const fallbackBudget = fallback?.budgetPreference || getDefaultPreferences().budgetPreference;
+
+  return {
+    travelStyle: normalizeString(source.travelStyle || source.style, fallback.travelStyle),
+    budgetPreference: normalizeBudgetPreference({
+      ...fallbackBudget,
+      ...(source.budgetPreference || {}),
+      target: source.budgetTarget || source.maxBudget || source?.budgetPreference?.target || fallbackBudget.target
+    }),
+    favoriteDestinations: dedupeFavorites(source.favoriteDestinations || fallback.favoriteDestinations || []),
+    transportPreference: normalizeString(source.transportPreference || source.travelMode, fallback.transportPreference),
+    foodPreference: normalizeString(source.foodPreference, fallback.foodPreference),
+    stayPreference: normalizeString(source.stayPreference, fallback.stayPreference)
+  };
+}
+
+function createPreferenceProfile(profile = {}, fallbackPreferences = getDefaultPreferences(), index = 0) {
+  const id = normalizeString(profile.id, `profile_${now()}_${index}`);
+  const name = normalizeString(profile.name, `Traveler ${index + 1}`);
+  const preferences = normalizePreferenceSet(profile.preferences || profile, fallbackPreferences);
+
+  return {
+    id,
+    name,
+    preferences,
+    createdAt: Number(profile.createdAt || now()),
+    updatedAt: Number(profile.updatedAt || now())
+  };
+}
+
+function normalizePreferenceProfiles(rawProfiles = [], fallbackPreferences = getDefaultPreferences()) {
+  const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
+  const dedupe = new Map();
+
+  profiles.forEach((profile, index) => {
+    const normalized = createPreferenceProfile(profile, fallbackPreferences, index);
+    if (!normalized.id) {
+      return;
+    }
+    if (!dedupe.has(normalized.id)) {
+      dedupe.set(normalized.id, normalized);
+    }
+  });
+
+  const normalizedProfiles = [...dedupe.values()].slice(0, MAX_PREFERENCE_PROFILES);
+  if (normalizedProfiles.length > 0) {
+    return normalizedProfiles;
+  }
+
+  return [
+    createPreferenceProfile(
+      {
+        id: "primary",
+        name: "Primary",
+        preferences: fallbackPreferences,
+        createdAt: now(),
+        updatedAt: now()
+      },
+      fallbackPreferences,
+      0
+    )
+  ];
+}
+
+function syncRootPreferencesFromActiveProfile(memory) {
+  const profiles = Array.isArray(memory?.preferenceProfiles) ? memory.preferenceProfiles : [];
+  const activeProfile = profiles.find((profile) => profile.id === memory?.activePreferenceProfileId) || profiles[0] || null;
+
+  if (!activeProfile) {
+    const defaultPreferences = getDefaultPreferences();
+    memory.preferences = normalizePreferenceSet(memory?.preferences || {}, defaultPreferences);
+    return null;
+  }
+
+  memory.activePreferenceProfileId = activeProfile.id;
+  memory.preferences = normalizePreferenceSet(activeProfile.preferences, memory?.preferences || getDefaultPreferences());
+  return activeProfile;
+}
+
 export function createEmptyProfileMemory(userId = "guest") {
+  const defaultPreferences = getDefaultPreferences();
+  const primaryProfile = createPreferenceProfile(
+    {
+      id: "primary",
+      name: "Primary",
+      preferences: defaultPreferences,
+      createdAt: now(),
+      updatedAt: now()
+    },
+    defaultPreferences,
+    0
+  );
+
   return {
     version: 1,
     userId: normalizeString(userId, "guest"),
     createdAt: now(),
     updatedAt: now(),
-    preferences: getDefaultPreferences(),
+    preferences: normalizePreferenceSet(defaultPreferences, defaultPreferences),
+    preferenceProfiles: [primaryProfile],
+    activePreferenceProfileId: primaryProfile.id,
     previousTrips: [],
     counters: {
       generations: 0,
@@ -145,22 +242,20 @@ export function normalizeProfileMemory(raw, userId = "guest") {
   }
 
   const base = createEmptyProfileMemory(userId);
-  const preferences = raw.preferences || {};
+  const preferences = normalizePreferenceSet(raw.preferences || {}, base.preferences);
+  const preferenceProfiles = normalizePreferenceProfiles(raw.preferenceProfiles || [], preferences);
+  const requestedActiveProfileId = normalizeString(raw.activePreferenceProfileId, preferenceProfiles[0]?.id || "primary");
+  const activePreferenceProfile = preferenceProfiles.find((profile) => profile.id === requestedActiveProfileId) || preferenceProfiles[0];
   const previousTrips = Array.isArray(raw.previousTrips) ? raw.previousTrips : [];
 
-  return {
+  const normalized = {
     ...base,
     ...raw,
     userId: normalizeString(raw.userId || userId, "guest"),
     updatedAt: Number(raw.updatedAt || now()),
-    preferences: {
-      travelStyle: normalizeString(preferences.travelStyle, base.preferences.travelStyle),
-      budgetPreference: normalizeBudgetPreference(preferences.budgetPreference || base.preferences.budgetPreference),
-      favoriteDestinations: dedupeFavorites(preferences.favoriteDestinations || []),
-      transportPreference: normalizeString(preferences.transportPreference, base.preferences.transportPreference),
-      foodPreference: normalizeString(preferences.foodPreference, base.preferences.foodPreference),
-      stayPreference: normalizeString(preferences.stayPreference, base.preferences.stayPreference)
-    },
+    preferences,
+    preferenceProfiles,
+    activePreferenceProfileId: activePreferenceProfile.id,
     previousTrips: previousTrips
       .map((trip) => createTripSnapshot(trip, Boolean(trip?.saved)))
       .slice(0, MAX_PREVIOUS_TRIPS),
@@ -173,6 +268,9 @@ export function normalizeProfileMemory(raw, userId = "guest") {
       lastPersonalizationAt: Number(raw?.metadata?.lastPersonalizationAt || 0) || null
     }
   };
+
+  syncRootPreferencesFromActiveProfile(normalized);
+  return normalized;
 }
 
 export function loadProfileMemory(userId = "guest") {
@@ -233,7 +331,103 @@ export function saveEditablePreferences(userId = "guest", patch = {}) {
     stayPreference: normalizeString(patch.stayPreference, memory.preferences.stayPreference)
   };
 
+  if (!Array.isArray(memory.preferenceProfiles) || memory.preferenceProfiles.length === 0) {
+    memory.preferenceProfiles = normalizePreferenceProfiles([], memory.preferences || getDefaultPreferences());
+  }
+
+  const activeProfileId = normalizeString(memory.activePreferenceProfileId, memory.preferenceProfiles[0]?.id || "primary");
+  const activeProfileIndex = memory.preferenceProfiles.findIndex((profile) => profile.id === activeProfileId);
+  if (activeProfileIndex >= 0) {
+    const currentProfile = memory.preferenceProfiles[activeProfileIndex];
+    memory.preferenceProfiles[activeProfileIndex] = {
+      ...currentProfile,
+      preferences: normalizePreferenceSet(memory.preferences, currentProfile.preferences || memory.preferences),
+      updatedAt: now()
+    };
+    memory.activePreferenceProfileId = memory.preferenceProfiles[activeProfileIndex].id;
+  }
+
   memory.counters.preferenceUpdates += 1;
+  memory.updatedAt = now();
+
+  return saveProfileMemory(memory);
+}
+
+export function saveNamedPreferenceProfile(userId = "guest", payload = {}) {
+  const memory = loadProfileMemory(userId);
+  const existingProfiles = Array.isArray(memory.preferenceProfiles) ? memory.preferenceProfiles : [];
+  const currentProfile = existingProfiles.find((profile) => profile.id === payload.id);
+  const fallbackPreferences = currentProfile?.preferences || memory.preferences || getDefaultPreferences();
+  const normalizedProfile = createPreferenceProfile(
+    {
+      id: payload.id,
+      name: payload.name,
+      preferences: payload.preferences,
+      createdAt: currentProfile?.createdAt || now(),
+      updatedAt: now()
+    },
+    fallbackPreferences,
+    existingProfiles.length
+  );
+
+  const nextProfiles = existingProfiles.filter((profile) => profile.id !== normalizedProfile.id);
+  nextProfiles.unshift(normalizedProfile);
+  memory.preferenceProfiles = normalizePreferenceProfiles(nextProfiles, memory.preferences || getDefaultPreferences());
+
+  const activeId = normalizeString(payload.setActive ? normalizedProfile.id : memory.activePreferenceProfileId, normalizedProfile.id);
+  memory.activePreferenceProfileId = memory.preferenceProfiles.some((profile) => profile.id === activeId)
+    ? activeId
+    : memory.preferenceProfiles[0].id;
+
+  syncRootPreferencesFromActiveProfile(memory);
+  memory.counters.preferenceUpdates += 1;
+  memory.updatedAt = now();
+
+  return saveProfileMemory(memory);
+}
+
+export function deleteNamedPreferenceProfile(userId = "guest", profileId = "") {
+  const memory = loadProfileMemory(userId);
+  const targetId = normalizeString(
+    typeof profileId === "string" ? profileId : profileId?.id
+  );
+  if (!targetId) {
+    return memory;
+  }
+
+  const existingProfiles = Array.isArray(memory.preferenceProfiles) ? memory.preferenceProfiles : [];
+  const remaining = existingProfiles.filter((profile) => profile.id !== targetId);
+  memory.preferenceProfiles = normalizePreferenceProfiles(remaining, memory.preferences || getDefaultPreferences());
+
+  if (!memory.preferenceProfiles.some((profile) => profile.id === memory.activePreferenceProfileId)) {
+    memory.activePreferenceProfileId = memory.preferenceProfiles[0].id;
+  }
+
+  syncRootPreferencesFromActiveProfile(memory);
+  memory.counters.preferenceUpdates += 1;
+  memory.updatedAt = now();
+  return saveProfileMemory(memory);
+}
+
+export function setActivePreferenceProfile(userId = "guest", profileId = "") {
+  const memory = loadProfileMemory(userId);
+  const targetId = normalizeString(profileId);
+
+  if (!targetId) {
+    return memory;
+  }
+
+  if (!Array.isArray(memory.preferenceProfiles) || memory.preferenceProfiles.length === 0) {
+    memory.preferenceProfiles = normalizePreferenceProfiles([], memory.preferences || getDefaultPreferences());
+  }
+
+  const found = memory.preferenceProfiles.find((profile) => profile.id === targetId);
+  if (!found) {
+    return memory;
+  }
+
+  memory.activePreferenceProfileId = found.id;
+  syncRootPreferencesFromActiveProfile(memory);
   memory.updatedAt = now();
 
   return saveProfileMemory(memory);

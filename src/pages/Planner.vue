@@ -11,7 +11,7 @@ import {
   isGeminiConfigured
 } from "../services/gemini";
 import { getSavedTripsFromDb, saveTripToDb } from "../services/firebase";
-import { formatPrice } from "../services/currency";
+import { formatPrice, initUserCurrency, userCurrency } from "../services/currency";
 import { createLoadingState } from "../core/monitoring/loading";
 import { getFriendlyErrorMessage } from "../core/errors";
 import { detectUserLocation, userLocation } from "../services/location";
@@ -58,9 +58,10 @@ const activeRoadtrip = ref(null);
 const generatedPlanOptions = ref([]);
 const selectedPlanId = ref("");
 const roadtripByPlanId = ref({});
-const showMemoryNudge = ref(true);
+const showSavedProfilesDrawer = ref(false);
 
 const promptInput = ref("");
+const conversationListRef = ref(null);
 
 function createDefaultControls() {
   return {
@@ -97,23 +98,79 @@ const tripSnapshot = ref({
   restaurants: []
 });
 
+function getActiveCurrencyRate() {
+  const nextRate = Number(userCurrency.value?.rate || 1);
+  return Number.isFinite(nextRate) && nextRate > 0 ? nextRate : 1;
+}
+
+function toLocalBudget(usdAmount) {
+  const nextAmount = Number(usdAmount || 0);
+  if (!Number.isFinite(nextAmount)) {
+    return 0;
+  }
+  return Math.round(nextAmount * getActiveCurrencyRate());
+}
+
+function toUsdBudget(localAmount) {
+  const nextAmount = Number(localAmount || 0);
+  if (!Number.isFinite(nextAmount)) {
+    return DEFAULT_PLANNER_SETTINGS.budget;
+  }
+  return Math.round(nextAmount / getActiveCurrencyRate());
+}
+
+function promptMentionsUsd(prompt) {
+  return /(\busd\b|\bdollar\b|\bdollars\b|\$)/i.test(String(prompt || ""));
+}
+
+function normalizePromptBudgetToUsd(rawBudget, sourcePrompt) {
+  const numericBudget = Number(rawBudget);
+  if (!Number.isFinite(numericBudget)) {
+    return null;
+  }
+
+  if (promptMentionsUsd(sourcePrompt)) {
+    return Math.round(numericBudget);
+  }
+
+  return toUsdBudget(numericBudget);
+}
+
+const activeCurrencyCode = computed(() => String(userCurrency.value?.currency || "USD"));
+const activeCurrencyCountry = computed(() => String(userCurrency.value?.country || "your location"));
+const budgetMinLocal = computed(() => toLocalBudget(200));
+const budgetMaxLocal = computed(() => toLocalBudget(100000));
+const budgetLocalHint = computed(() => {
+  return `Total trip budget cap in ${activeCurrencyCode.value} for ${activeCurrencyCountry.value} (not per-day).`;
+});
+
 const hasResults = computed(() => Boolean(activeItinerary.value && activeBudget.value));
 const canSavePlan = computed(() => Boolean(activeItinerary.value?.itinerary && activeBudget.value));
 const isOnline = computed(() => Boolean(offlineStore.isOnline));
 const pendingOfflineDrafts = computed(() => Number(offlineStore.pendingCount || 0));
+const normalizedTravelMode = computed(() => String(controls.value.travelMode || "").toLowerCase());
+const shouldShowFlights = computed(() => normalizedTravelMode.value.includes("flight"));
+const transportModeBudgetLabel = computed(() => {
+  if (normalizedTravelMode.value.includes("train")) return "Train + Local";
+  if (normalizedTravelMode.value.includes("bus")) return "Bus + Local";
+  if (normalizedTravelMode.value.includes("car")) return "Fuel + Toll + Local";
+  if (normalizedTravelMode.value.includes("bike")) return "Bike Fuel + Local";
+  return "Transport";
+});
 const selectedPlan = computed(() => {
   return generatedPlanOptions.value.find((option) => option.id === selectedPlanId.value) || generatedPlanOptions.value[0] || null;
 });
 const profileConfidence = computed(() => Number(profileMemoryStore?.scores?.overall || 0));
 const personalityLabel = computed(() => profileMemoryStore?.personality?.label || "Explorer");
-const personalizationNudge = computed(() => profileMemoryStore?.profileNudge || "");
+const savedPreferenceProfiles = computed(() => profileMemoryStore.preferenceProfiles || []);
+const activePreferenceProfile = computed(() => profileMemoryStore.activePreferenceProfile || null);
 const preferenceSummary = computed(() => {
   return [
     `${controls.value.style} style`,
     `${controls.value.travelMode}`,
     `${controls.value.days} days`,
     `${controls.value.travelers} travelers`,
-    `${formatPrice(controls.value.maxBudget)} budget`,
+    `${formatPrice(controls.value.maxBudget)} total trip cap`,
     `${controls.value.stayPreference} stay`,
     `${controls.value.foodPreference} food`
   ].join(" | ");
@@ -126,7 +183,8 @@ const appliedPreferenceRows = computed(() => {
     `Travelers: ${controls.value.travelers}`,
     `Style: ${controls.value.style}`,
     `Mode: ${controls.value.travelMode}`,
-    `Budget Cap: ${formatPrice(controls.value.maxBudget)}`,
+    `Total Trip Budget Cap: ${formatPrice(controls.value.maxBudget)} (${activeCurrencyCode.value})`,
+    `Budget Basis: This cap is for complete ${controls.value.days}-day trip, not per-day.`,
     `Stay: ${controls.value.stayPreference}`,
     `Food: ${controls.value.foodPreference}`
   ];
@@ -185,8 +243,21 @@ function updatePreferenceDraft(nextControls) {
 }
 
 function openPreferencesModal() {
+  if (showPreferencesModal.value) {
+    closePreferencesModal();
+    return;
+  }
+
   preferenceDraft.value = normalizeControlsValue({ ...controls.value });
   showPreferencesModal.value = true;
+}
+
+function toggleSavedProfilesDrawer() {
+  showSavedProfilesDrawer.value = !showSavedProfilesDrawer.value;
+}
+
+function closeSavedProfilesDrawer() {
+  showSavedProfilesDrawer.value = false;
 }
 
 function closePreferencesModal() {
@@ -197,15 +268,46 @@ function applyPreferences() {
   updateControls(preferenceDraft.value);
   preferencesLocked.value = true;
   showPreferencesModal.value = false;
-  profileMemoryStore.applyPreferencesPatch({
-    travelStyle: preferenceDraft.value.style,
-    budgetPreference: { target: preferenceDraft.value.maxBudget },
-    transportPreference: preferenceDraft.value.travelMode,
-    foodPreference: preferenceDraft.value.foodPreference,
-    stayPreference: preferenceDraft.value.stayPreference,
-    favoriteDestinations: preferenceDraft.value.destination ? [preferenceDraft.value.destination] : []
+  addConversation("assistant", `Trip preferences applied for current chat: ${preferenceSummary.value}.`);
+}
+
+function toPlannerControlsFromProfile(profile) {
+  const prefs = profile?.preferences || {};
+  const budgetTarget = Number(prefs?.budgetPreference?.target || 0);
+  const topFavorite = Array.isArray(prefs?.favoriteDestinations)
+    ? prefs.favoriteDestinations
+      .map((item) => (typeof item === "string" ? item : item?.name))
+      .find(Boolean)
+    : "";
+
+  return normalizeControlsValue({
+    ...controls.value,
+    destination: topFavorite || controls.value.destination,
+    style: prefs.travelStyle || controls.value.style,
+    travelMode: prefs.transportPreference || controls.value.travelMode,
+    stayPreference: prefs.stayPreference || controls.value.stayPreference,
+    foodPreference: prefs.foodPreference || controls.value.foodPreference,
+    maxBudget: budgetTarget > 0 ? budgetTarget : controls.value.maxBudget
   });
-  addConversation("assistant", `Preferences applied: ${preferenceSummary.value}`);
+}
+
+function applyNamedPreferenceProfile(profileId) {
+  const profile = savedPreferenceProfiles.value.find((item) => item.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  const nextControls = toPlannerControlsFromProfile(profile);
+  updateControls(nextControls);
+  preferenceDraft.value = normalizeControlsValue({ ...nextControls });
+  preferencesLocked.value = true;
+  closeSavedProfilesDrawer();
+  profileMemoryStore.setActivePreferenceProfile(profile.id);
+
+  addConversation(
+    "assistant",
+    `Applied saved preferences for ${profile.name}. Planner will now generate trip plan as per this profile.`
+  );
 }
 
 function resetPreferencesToDefaults() {
@@ -234,30 +336,8 @@ function mergeIntentWithControls(intentPatch = {}) {
   });
 }
 
-function applyMemoryPreferences() {
-  const settings = profileMemoryStore.preferredSettings;
-  const budgetTarget = profileMemoryStore.budgetTarget;
-  const topDestination = profileMemoryStore.topDestinations[0] || controls.value.destination;
-
-  updateControls({
-    destination: topDestination,
-    style: settings.style,
-    travelMode: settings.transport,
-    stayPreference: settings.stay,
-    foodPreference: settings.food,
-    maxBudget: budgetTarget > 0 ? budgetTarget : controls.value.maxBudget
-  });
-
-  preferencesLocked.value = true;
-  showMemoryNudge.value = false;
-  addConversation("assistant", `Applied profile memory preferences. Personality: ${personalityLabel.value} (${profileConfidence.value}/100 confidence).`);
-}
-
-function dismissMemoryNudge() {
-  showMemoryNudge.value = false;
-}
-
 function buildPreferenceContext(input) {
+  const localBudgetCap = formatPrice(Number(input.maxBudget || DEFAULT_PLANNER_SETTINGS.budget));
   return [
     "User Preferences (must follow strictly):",
     `- Origin: ${String(input.origin || "Current Location").trim() || "Current Location"}`,
@@ -268,7 +348,8 @@ function buildPreferenceContext(input) {
     `- Travel mode: ${String(input.travelMode || "Car")}`,
     `- Stay preference: ${String(input.stayPreference || "mid-range")}`,
     `- Food preference: ${String(input.foodPreference || "mixed")}`,
-    `- Budget cap: ${Number(input.maxBudget || DEFAULT_PLANNER_SETTINGS.budget)} USD`,
+    `- Total trip budget cap (not per-day): ${localBudgetCap} (${activeCurrencyCode.value}, ${activeCurrencyCountry.value})`,
+    `- Internal USD reference for calculations: ${Math.round(Number(input.maxBudget || DEFAULT_PLANNER_SETTINGS.budget))}`,
     "Do not ignore these preferences when creating itinerary, activities, stay suggestions, food suggestions, and budget split."
   ].join("\n");
 }
@@ -309,10 +390,59 @@ function getValidationErrorMessage(effectiveInput) {
   }
 
   if (!Number.isFinite(Number(effectiveInput.maxBudget)) || Number(effectiveInput.maxBudget) < 200) {
-    return "Minimum budget must be at least 200 USD.";
+    return `Minimum total trip budget cap must be at least ${formatPrice(200)}.`;
   }
 
   return "";
+}
+
+function normalizeBudgetByTravelMode(rawBudget, travelMode) {
+  const safeBudget = {
+    flights: Math.max(0, Math.round(Number(rawBudget?.flights || 0))),
+    accommodation: Math.max(0, Math.round(Number(rawBudget?.accommodation || 0))),
+    food: Math.max(0, Math.round(Number(rawBudget?.food || 0))),
+    transportation: Math.max(0, Math.round(Number(rawBudget?.transportation || 0))),
+    activities: Math.max(0, Math.round(Number(rawBudget?.activities || 0))),
+    total: Math.max(0, Math.round(Number(rawBudget?.total || 0)))
+  };
+
+  const mode = String(travelMode || "").toLowerCase();
+  if (!mode.includes("flight")) {
+    safeBudget.transportation = Math.max(0, safeBudget.transportation + safeBudget.flights);
+    safeBudget.flights = 0;
+  }
+
+  safeBudget.total = safeBudget.flights + safeBudget.accommodation + safeBudget.food + safeBudget.transportation + safeBudget.activities;
+  return safeBudget;
+}
+
+function buildPreferenceChangeMessage(previousInput, nextInput) {
+  const changes = [];
+
+  if (String(previousInput.destination || "").trim() !== String(nextInput.destination || "").trim()) {
+    changes.push(`destination to ${nextInput.destination || "your destination"}`);
+  }
+  if (Number(previousInput.days || 0) !== Number(nextInput.days || 0)) {
+    changes.push(`duration to ${nextInput.days} days`);
+  }
+  if (Number(previousInput.travelers || 0) !== Number(nextInput.travelers || 0)) {
+    changes.push(`travelers to ${nextInput.travelers}`);
+  }
+  if (String(previousInput.style || "") !== String(nextInput.style || "")) {
+    changes.push(`style to ${nextInput.style}`);
+  }
+  if (String(previousInput.travelMode || "") !== String(nextInput.travelMode || "")) {
+    changes.push(`travel mode to ${nextInput.travelMode}`);
+  }
+  if (Math.round(Number(previousInput.maxBudget || 0)) !== Math.round(Number(nextInput.maxBudget || 0))) {
+    changes.push(`total budget cap to ${formatPrice(nextInput.maxBudget)}`);
+  }
+
+  if (changes.length === 0) {
+    return "";
+  }
+
+  return `Understood. I updated your preferences from this chat: ${changes.join(", ")}.`;
 }
 
 function addConversation(role, text) {
@@ -329,6 +459,18 @@ function addConversation(role, text) {
   };
 
   conversation.value = [...conversation.value, message].slice(-18);
+}
+
+function scrollConversationToBottom() {
+  if (!conversationListRef.value) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    if (conversationListRef.value) {
+      conversationListRef.value.scrollTop = conversationListRef.value.scrollHeight;
+    }
+  });
 }
 
 function buildRefinementPrompts(destinationName) {
@@ -348,7 +490,7 @@ function buildAssistantReply(effectiveInput, itinerary, budget, snapshot) {
   const topAttraction = snapshot?.attractions?.[0]?.name || "local highlights";
   const topHotel = snapshot?.hotels?.[0]?.name || "stay options";
 
-  return `Great prompt. A ${days}-day itinerary for ${destination} is ready with your preferences applied: ${effectiveInput.style} style, ${effectiveInput.travelMode} mode, ${effectiveInput.stayPreference} stay, ${effectiveInput.foodPreference} food focus, and a budget cap of ${formatPrice(effectiveInput.maxBudget)}. Estimated total budget: ${totalBudget}. Day 1 focus: ${firstTheme}. Local highlights: ${topAttraction}. Recommended stay: ${topHotel}.`;
+  return `Great prompt. A ${days}-day itinerary for ${destination} is ready with your preferences applied: ${effectiveInput.style} style, ${effectiveInput.travelMode} mode, ${effectiveInput.stayPreference} stay, ${effectiveInput.foodPreference} food focus, and a total trip budget cap of ${formatPrice(effectiveInput.maxBudget)} (not per-day). Estimated total budget: ${totalBudget}. Day 1 focus: ${firstTheme}. Local highlights: ${topAttraction}. Recommended stay: ${topHotel}.`;
 }
 
 function planProsCons(planId, effectiveInput) {
@@ -536,6 +678,7 @@ async function selectGeneratedPlan(planId) {
     return;
   }
 
+  const previousPlanId = selectedPlanId.value;
   const option = generatedPlanOptions.value.find((item) => item.id === planId);
   if (!option) {
     return;
@@ -556,6 +699,14 @@ async function selectGeneratedPlan(planId) {
   assistantSuggestions.value = buildAssistantSuggestions(option.itinerary, option.budget, tripSnapshot.value);
   refinementPrompts.value = buildRefinementPrompts(option?.itinerary?.destination || controls.value.destination);
   await buildRoadtripForOption(option, controls.value);
+
+  if (previousPlanId && previousPlanId !== option.id) {
+    addConversation(
+      "assistant",
+      `Plan switched to ${option.label}. Travel mode ${controls.value.travelMode} and budget cap ${formatPrice(controls.value.maxBudget)} remain applied.`
+    );
+  }
+
   syncPlannerSessionContext();
 }
 
@@ -696,6 +847,7 @@ async function handleGenerate() {
   const sourcePrompt = rawPrompt || `Plan a ${controls.value.days}-day trip to ${controls.value.destination}`;
   promptInput.value = sourcePrompt;
   addConversation("user", sourcePrompt);
+  const previousInput = normalizeControlsValue({ ...controls.value });
 
   let intentPatch = {};
   try {
@@ -703,6 +855,13 @@ async function handleGenerate() {
     intentPatch = intentResult?.patch || {};
   } catch (_error) {
     intentPatch = {};
+  }
+
+  if (Number.isFinite(Number(intentPatch.maxBudget))) {
+    const normalizedBudget = normalizePromptBudgetToUsd(intentPatch.maxBudget, sourcePrompt);
+    if (normalizedBudget !== null) {
+      intentPatch.maxBudget = normalizedBudget;
+    }
   }
 
   const mergedInput = mergeIntentWithControls(intentPatch);
@@ -723,6 +882,7 @@ async function handleGenerate() {
   const effectiveInput = applyIntelligentDefaults(personalizationPlan.effectiveInput, sourcePrompt);
   const preferenceContext = buildPreferenceContext(effectiveInput);
   const planningPrompt = `${sourcePrompt}\n\n${preferenceContext}\n\n${personalizationPlan.memoryDirective}`;
+  const preferenceChangeMessage = buildPreferenceChangeMessage(previousInput, effectiveInput);
 
   updateControls(effectiveInput);
 
@@ -778,6 +938,8 @@ async function handleGenerate() {
           )
         ]);
 
+        const normalizedBudget = normalizeBudgetByTravelMode(budget, effectiveInput.travelMode);
+
         const prosCons = planProsCons(profile.id, effectiveInput);
 
         return {
@@ -788,7 +950,7 @@ async function handleGenerate() {
           foodPreference: profile.foodPreference,
           budgetLimit: profile.budgetLimit,
           itinerary,
-          budget,
+          budget: normalizedBudget,
           transportation: effectiveInput.travelMode,
           hotels: itinerary?.hotels || [],
           activities: Array.isArray(itinerary?.itinerary) ? itinerary.itinerary.map((day) => day.theme).filter(Boolean) : [],
@@ -839,7 +1001,9 @@ async function handleGenerate() {
       sourceQuery: sourcePrompt
     });
 
-    showMemoryNudge.value = false;
+    if (preferenceChangeMessage) {
+      addConversation("assistant", preferenceChangeMessage);
+    }
     addConversation("assistant", assistantReply.value);
     syncPlannerSessionContext();
   } catch (error) {
@@ -925,6 +1089,13 @@ onMounted(async () => {
   offlineStore.initForUser(authStore.user?.uid || "guest");
   groupTravelStore.initForUser(authStore.user || { uid: "guest" });
 
+  try {
+    await detectUserLocation();
+    await initUserCurrency(userLocation.value);
+  } catch (_currencyError) {
+    // Currency fallback stays handled in currency service defaults.
+  }
+
   const routeDestination = String(route.query.destination || "").trim();
   const routeOrigin = String(route.query.origin || "").trim();
   const routePrompt = String(route.query.q || route.query.prompt || route.query.search || "").trim();
@@ -949,7 +1120,7 @@ watch(
     profileMemoryStore.initForUser(nextUserId || "guest");
     offlineStore.initForUser(nextUserId || "guest");
     groupTravelStore.initForUser(authStore.user || { uid: nextUserId || "guest" });
-    showMemoryNudge.value = true;
+    showSavedProfilesDrawer.value = false;
     await refreshRecentTrips();
   }
 );
@@ -962,6 +1133,20 @@ watch(
     }
   },
   { deep: true }
+);
+
+watch(
+  () => conversation.value.length,
+  () => {
+    scrollConversationToBottom();
+  }
+);
+
+watch(
+  () => loading.value,
+  () => {
+    scrollConversationToBottom();
+  }
 );
 </script>
 
@@ -978,13 +1163,10 @@ watch(
     <div class="planner-layout mt-6">
       <section class="input-column">
         <article class="glass-card prompt-card">
-          <h2>Describe your trip</h2>
-          <textarea
-            v-model="promptInput"
-            class="planner-textarea"
-            rows="6"
-            placeholder="Example: Plan a 5-day Goa trip from Delhi for 2 people, balanced style, budget under 1500 USD with food spots and sunset beaches."
-          ></textarea>
+          <h2>Live Planner Context</h2>
+          <p class="prompt-intro mt-2">
+            Chat below like WhatsApp. Every message can update itinerary, preferences, and budget planning in real time.
+          </p>
 
           <p v-if="!liveAiReady" class="ai-status mt-2">
             Live Gemini API key is missing. Planner will use fallback intelligence.
@@ -999,42 +1181,15 @@ watch(
             </span>
           </div>
 
-          <div class="preference-strip mt-3">
-            <p>{{ preferenceSummary }}</p>
-            <span class="preference-lock" :class="{ active: preferencesLocked }">
-              {{ preferencesLocked ? "Preferences Locked" : "Prompt Adaptive" }}
-            </span>
-          </div>
-
-          <div class="action-row mt-4">
-            <button type="button" class="btn btn-outline" :disabled="loading" @click="openPreferencesModal">
-              Trip Preferences
-            </button>
-            <button type="button" class="btn btn-primary" :disabled="loading" @click="handleGenerate">
-              {{ loading ? "Generating..." : "Generate Trip Plan" }}
-            </button>
-          </div>
-
-          <p v-if="plannerError" class="planner-error mt-2">{{ plannerError }}</p>
-          <p v-if="offlineDraftMessage" class="offline-message mt-2">{{ offlineDraftMessage }}</p>
-          <p v-if="groupShareStatus" class="group-share-message mt-2">{{ groupShareStatus }}</p>
-        </article>
-
-        <article v-if="showMemoryNudge && profileConfidence > 20" class="glass-card memory-card">
-          <div class="card-head">
-            <h3>Profile Memory Suggestion</h3>
-            <span class="memory-score">{{ profileConfidence }}/100 confidence</span>
-          </div>
-          <p class="memory-note mt-2">
-            {{ personalizationNudge }} Apply your saved profile to tune this plan?
-          </p>
-          <div class="memory-traits mt-3">
-            <span class="memory-pill">Personality: {{ personalityLabel }}</span>
-            <span v-for="trait in profileMemoryStore.personality?.traits || []" :key="trait" class="memory-pill muted">{{ trait }}</span>
-          </div>
-          <div class="action-row mt-3">
-            <button type="button" class="btn btn-outline" :disabled="loading" @click="dismissMemoryNudge">Not Now</button>
-            <button type="button" class="btn btn-primary" :disabled="loading" @click="applyMemoryPreferences">Apply Saved Preferences</button>
+          <div class="context-note-grid mt-3">
+            <article class="context-note">
+              <strong>Budget Meaning</strong>
+              <p>{{ budgetLocalHint }}</p>
+            </article>
+            <article class="context-note">
+              <strong>Detected Budget Region</strong>
+              <p>{{ activeCurrencyCountry }} | {{ activeCurrencyCode }}</p>
+            </article>
           </div>
         </article>
 
@@ -1059,17 +1214,210 @@ watch(
 
         <article class="glass-card conversation-card">
           <div class="card-head">
-            <h3>Conversation</h3>
-            <button type="button" class="btn btn-outline btn-xs" :disabled="loading" @click="openPreferencesModal">
-              Edit Preferences
-            </button>
+            <h3>Planner Chat</h3>
+            <div class="card-head-actions">
+              <div class="preferences-popover-host">
+                <button
+                  type="button"
+                  class="btn btn-outline btn-xs"
+                  :disabled="loading"
+                  @click.stop="toggleSavedProfilesDrawer"
+                >
+                  Saved Preferences
+                </button>
+
+                <button
+                  type="button"
+                  class="btn btn-outline btn-xs"
+                  :disabled="loading"
+                  @click.stop="openPreferencesModal"
+                >
+                  Edit Preferences
+                </button>
+
+                <transition name="drawer-fade">
+                  <button
+                    v-if="showPreferencesModal"
+                    type="button"
+                    class="preferences-screen-backdrop"
+                    aria-label="Close preferences drawer"
+                    @click="closePreferencesModal"
+                  ></button>
+                </transition>
+
+                <transition name="drawer-slide">
+                  <article v-if="showSavedProfilesDrawer" class="preferences-drawer saved-profiles-drawer glass-card" @click.stop>
+                    <div class="preferences-head">
+                      <h3>Saved Preference Profiles</h3>
+                      <button type="button" class="prefs-close" @click="closeSavedProfilesDrawer">x</button>
+                    </div>
+
+                    <p class="preferences-note">
+                      Select a profile to apply trip preferences instantly. Manage names and details from Profile section.
+                    </p>
+
+                    <div class="memory-traits mt-3">
+                      <span class="memory-pill">Personality: {{ personalityLabel }}</span>
+                      <span class="memory-pill muted">Confidence: {{ profileConfidence }}/100</span>
+                    </div>
+
+                    <div class="saved-profile-list mt-3">
+                      <button
+                        v-for="profile in savedPreferenceProfiles"
+                        :key="profile.id"
+                        type="button"
+                        class="saved-profile-item"
+                        :class="{ active: activePreferenceProfile?.id === profile.id }"
+                        @click="applyNamedPreferenceProfile(profile.id)"
+                      >
+                        <span class="saved-profile-name">{{ profile.name }}</span>
+                        <small class="saved-profile-summary">{{ profile.summary }}</small>
+                      </button>
+                    </div>
+
+                    <p v-if="savedPreferenceProfiles.length === 0" class="conversation-empty mt-2">
+                      No saved preference profile found. Add profile entries from Profile page.
+                    </p>
+                  </article>
+                </transition>
+
+                <transition name="drawer-slide">
+                  <article v-if="showPreferencesModal" class="preferences-drawer glass-card" @click.stop>
+                    <div class="preferences-head">
+                      <h3>Edit Trip Preferences</h3>
+                      <button type="button" class="prefs-close" @click="closePreferencesModal">x</button>
+                    </div>
+
+                    <p class="preferences-note">
+                      Update trip preferences for this chat only. To create or edit saved named profiles, use the Profile page.
+                    </p>
+
+                    <div class="control-grid mt-3">
+                      <label>
+                        <span>Origin</span>
+                        <input
+                          class="form-input"
+                          :value="preferenceDraft.origin"
+                          @input="updatePreferenceDraft({ origin: $event.target.value })"
+                        />
+                      </label>
+
+                      <label>
+                        <span>Destination</span>
+                        <input
+                          class="form-input"
+                          :value="preferenceDraft.destination"
+                          @input="updatePreferenceDraft({ destination: $event.target.value })"
+                        />
+                      </label>
+
+                      <label>
+                        <span>Days</span>
+                        <input
+                          class="form-input"
+                          type="number"
+                          min="2"
+                          max="15"
+                          :value="preferenceDraft.days"
+                          @input="updatePreferenceDraft({ days: Number($event.target.value || preferenceDraft.days) })"
+                        />
+                      </label>
+
+                      <label>
+                        <span>Travelers</span>
+                        <input
+                          class="form-input"
+                          type="number"
+                          min="1"
+                          max="8"
+                          :value="preferenceDraft.travelers"
+                          @input="updatePreferenceDraft({ travelers: Number($event.target.value || preferenceDraft.travelers) })"
+                        />
+                      </label>
+
+                      <label>
+                        <span>Style</span>
+                        <select class="form-select" :value="preferenceDraft.style" @change="updatePreferenceDraft({ style: $event.target.value })">
+                          <option value="Balanced">Balanced</option>
+                          <option value="Budget">Budget</option>
+                          <option value="Comfort">Comfort</option>
+                          <option value="Luxury">Luxury</option>
+                          <option value="Adventure">Adventure</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <span>Transport</span>
+                        <select class="form-select" :value="preferenceDraft.travelMode" @change="updatePreferenceDraft({ travelMode: $event.target.value })">
+                          <option value="Flight">Flight</option>
+                          <option value="Train">Train</option>
+                          <option value="Bus">Bus</option>
+                          <option value="Car">Car</option>
+                          <option value="Bike">Bike</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <span>Stay</span>
+                        <select class="form-select" :value="preferenceDraft.stayPreference" @change="updatePreferenceDraft({ stayPreference: $event.target.value })">
+                          <option value="hostel">Hostel</option>
+                          <option value="budget">Budget</option>
+                          <option value="mid-range">Mid-range</option>
+                          <option value="premium">Premium</option>
+                          <option value="luxury">Luxury</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <span>Food</span>
+                        <select class="form-select" :value="preferenceDraft.foodPreference" @change="updatePreferenceDraft({ foodPreference: $event.target.value })">
+                          <option value="street">Street</option>
+                          <option value="local">Local</option>
+                          <option value="mixed">Mixed</option>
+                          <option value="fine-dining">Fine Dining</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <span>Total Budget Cap ({{ activeCurrencyCode }})</span>
+                        <small class="budget-help">{{ budgetLocalHint }}</small>
+                        <input
+                          class="form-input"
+                          type="number"
+                          :min="budgetMinLocal"
+                          :max="budgetMaxLocal"
+                          step="50"
+                          :value="toLocalBudget(preferenceDraft.maxBudget)"
+                          @input="updatePreferenceDraft({ maxBudget: toUsdBudget(Number($event.target.value || toLocalBudget(preferenceDraft.maxBudget))) })"
+                        />
+                      </label>
+                    </div>
+
+                    <div class="preferences-actions mt-4">
+                      <button type="button" class="btn btn-outline" :disabled="loading" @click="resetPreferencesToDefaults">Reset Defaults</button>
+                      <button type="button" class="btn btn-outline" :disabled="loading" @click="closePreferencesModal">Cancel</button>
+                      <button type="button" class="btn btn-primary" :disabled="loading" @click="applyPreferences">Apply Preferences</button>
+                    </div>
+                  </article>
+                </transition>
+              </div>
+            </div>
           </div>
 
-          <p v-if="conversation.length === 0" class="conversation-empty mt-2">
-            Your prompt and assistant responses will appear here.
+          <div class="preference-strip mt-2">
+            <p>
+              <strong>AI understood from your prompt:</strong> {{ preferenceSummary }}
+            </p>
+            <span class="preference-lock" :class="{ active: preferencesLocked }">
+              {{ preferencesLocked ? "Manual Override On" : "Auto From Chat" }}
+            </span>
+          </div>
+
+          <p v-if="conversation.length === 0 && !loading" class="conversation-empty mt-2">
+            Start chatting with your trip request. Planner AI will respond here with suggestions and plan context.
           </p>
 
-          <div v-else class="conversation-list mt-3">
+          <div v-else ref="conversationListRef" class="conversation-list mt-3">
             <article
               v-for="message in conversation"
               :key="message.id"
@@ -1082,7 +1430,32 @@ watch(
               </div>
               <p>{{ message.text }}</p>
             </article>
+
+            <article v-if="loading" class="chat-message assistant typing">
+              <div class="chat-meta">
+                <strong>Planner</strong>
+                <small>thinking...</small>
+              </div>
+              <p>Reading your prompt, understanding preferences, and drafting your plan...</p>
+            </article>
           </div>
+
+          <div class="chat-composer mt-3">
+            <textarea
+              v-model="promptInput"
+              class="chat-composer-input"
+              rows="2"
+              placeholder="Type your trip message... for example: plan 6 days in Bali for couple, total budget under 1,20,000"
+              @keydown.enter.exact.prevent="handleGenerate"
+            ></textarea>
+            <button type="button" class="btn btn-primary chat-send-btn" :disabled="loading" @click="handleGenerate">
+              {{ loading ? "Sending..." : "Send" }}
+            </button>
+          </div>
+          <p class="chat-composer-hint">Press Enter to send | Shift+Enter for next line</p>
+          <p v-if="plannerError" class="planner-error mt-2">{{ plannerError }}</p>
+          <p v-if="offlineDraftMessage" class="offline-message mt-2">{{ offlineDraftMessage }}</p>
+          <p v-if="groupShareStatus" class="group-share-message mt-2">{{ groupShareStatus }}</p>
         </article>
       </section>
 
@@ -1169,7 +1542,7 @@ watch(
           </div>
 
           <div class="budget-grid mt-4">
-            <article class="budget-cell">
+            <article v-if="shouldShowFlights" class="budget-cell">
               <span>Flights</span>
               <strong>{{ formatPrice(activeBudget.flights) }}</strong>
             </article>
@@ -1182,7 +1555,7 @@ watch(
               <strong>{{ formatPrice(activeBudget.food) }}</strong>
             </article>
             <article class="budget-cell">
-              <span>Transport</span>
+              <span>{{ transportModeBudgetLabel }}</span>
               <strong>{{ formatPrice(activeBudget.transportation) }}</strong>
             </article>
             <article class="budget-cell">
@@ -1256,126 +1629,6 @@ watch(
       </section>
     </div>
 
-    <transition name="fade">
-      <div v-if="showPreferencesModal" class="preferences-overlay" @click.self="closePreferencesModal">
-        <article class="preferences-modal glass-card">
-          <div class="preferences-head">
-            <h3>Trip Preferences</h3>
-            <button type="button" class="prefs-close" @click="closePreferencesModal">x</button>
-          </div>
-
-          <p class="preferences-note">
-            Yaha jo preferences fill karoge, planner itinerary aur budget dono me exactly apply karega.
-          </p>
-
-          <div class="control-grid mt-3">
-            <label>
-              <span>Origin</span>
-              <input
-                class="form-input"
-                :value="preferenceDraft.origin"
-                @input="updatePreferenceDraft({ origin: $event.target.value })"
-              />
-            </label>
-
-            <label>
-              <span>Destination</span>
-              <input
-                class="form-input"
-                :value="preferenceDraft.destination"
-                @input="updatePreferenceDraft({ destination: $event.target.value })"
-              />
-            </label>
-
-            <label>
-              <span>Days</span>
-              <input
-                class="form-input"
-                type="number"
-                min="2"
-                max="15"
-                :value="preferenceDraft.days"
-                @input="updatePreferenceDraft({ days: Number($event.target.value || preferenceDraft.days) })"
-              />
-            </label>
-
-            <label>
-              <span>Travelers</span>
-              <input
-                class="form-input"
-                type="number"
-                min="1"
-                max="8"
-                :value="preferenceDraft.travelers"
-                @input="updatePreferenceDraft({ travelers: Number($event.target.value || preferenceDraft.travelers) })"
-              />
-            </label>
-
-            <label>
-              <span>Style</span>
-              <select class="form-select" :value="preferenceDraft.style" @change="updatePreferenceDraft({ style: $event.target.value })">
-                <option value="Balanced">Balanced</option>
-                <option value="Budget">Budget</option>
-                <option value="Comfort">Comfort</option>
-                <option value="Luxury">Luxury</option>
-                <option value="Adventure">Adventure</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Transport</span>
-              <select class="form-select" :value="preferenceDraft.travelMode" @change="updatePreferenceDraft({ travelMode: $event.target.value })">
-                <option value="Flight">Flight</option>
-                <option value="Train">Train</option>
-                <option value="Bus">Bus</option>
-                <option value="Car">Car</option>
-                <option value="Bike">Bike</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Stay</span>
-              <select class="form-select" :value="preferenceDraft.stayPreference" @change="updatePreferenceDraft({ stayPreference: $event.target.value })">
-                <option value="hostel">Hostel</option>
-                <option value="budget">Budget</option>
-                <option value="mid-range">Mid-range</option>
-                <option value="premium">Premium</option>
-                <option value="luxury">Luxury</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Food</span>
-              <select class="form-select" :value="preferenceDraft.foodPreference" @change="updatePreferenceDraft({ foodPreference: $event.target.value })">
-                <option value="street">Street</option>
-                <option value="local">Local</option>
-                <option value="mixed">Mixed</option>
-                <option value="fine-dining">Fine Dining</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Budget (USD)</span>
-              <input
-                class="form-input"
-                type="number"
-                min="200"
-                max="100000"
-                step="50"
-                :value="preferenceDraft.maxBudget"
-                @input="updatePreferenceDraft({ maxBudget: Number($event.target.value || preferenceDraft.maxBudget) })"
-              />
-            </label>
-          </div>
-
-          <div class="preferences-actions mt-4">
-            <button type="button" class="btn btn-outline" :disabled="loading" @click="resetPreferencesToDefaults">Reset Defaults</button>
-            <button type="button" class="btn btn-outline" :disabled="loading" @click="closePreferencesModal">Cancel</button>
-            <button type="button" class="btn btn-primary" :disabled="loading" @click="applyPreferences">Apply Preferences</button>
-          </div>
-        </article>
-      </div>
-    </transition>
   </div>
 </template>
 
@@ -1446,6 +1699,11 @@ watch(
   background: #ffffff !important;
 }
 
+.conversation-card {
+  position: relative;
+  overflow: visible !important;
+}
+
 .prompt-card h2,
 .recent-card h3,
 .conversation-card h3 {
@@ -1491,6 +1749,46 @@ watch(
   color: var(--color-text-secondary);
 }
 
+.saved-profiles-drawer {
+  width: min(520px, calc(100vw - 40px));
+}
+
+.saved-profile-list {
+  display: grid;
+  gap: 8px;
+}
+
+.saved-profile-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  padding: 10px;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.saved-profile-item:hover {
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.saved-profile-item.active {
+  border-color: rgba(5, 150, 105, 0.45);
+  background: rgba(209, 250, 229, 0.45);
+}
+
+.saved-profile-name {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.saved-profile-summary {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+}
+
 .planner-textarea {
   width: 100%;
   border: 1.5px solid var(--color-border);
@@ -1514,6 +1812,42 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.prompt-action-row {
+  justify-content: flex-end;
+}
+
+.prompt-intro {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.context-note-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.context-note {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(248, 250, 252, 0.8);
+  padding: 9px 10px;
+}
+
+.context-note strong {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--color-text);
+}
+
+.context-note p {
+  margin-top: 5px;
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
 }
 
 .planner-error {
@@ -1621,6 +1955,17 @@ watch(
   gap: 8px;
 }
 
+.card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.preferences-popover-host {
+  position: relative;
+}
+
 .card-head small {
   font-size: 0.72rem;
   color: var(--color-text-muted);
@@ -1668,8 +2013,12 @@ watch(
 }
 
 .conversation-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .chat-message {
@@ -1677,16 +2026,24 @@ watch(
   border-radius: var(--radius-md);
   padding: 10px;
   background: #ffffff;
+  max-width: 88%;
 }
 
 .chat-message.user {
   border-color: rgba(37, 99, 235, 0.26);
   background: rgba(239, 246, 255, 0.8);
+  margin-left: auto;
 }
 
 .chat-message.assistant {
   border-color: rgba(2, 132, 199, 0.25);
   background: rgba(236, 254, 255, 0.8);
+  margin-right: auto;
+}
+
+.chat-message.typing {
+  border-style: dashed;
+  opacity: 0.95;
 }
 
 .chat-meta {
@@ -1695,6 +2052,10 @@ watch(
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 5px;
+}
+
+.chat-message.user .chat-meta {
+  flex-direction: row-reverse;
 }
 
 .chat-meta strong {
@@ -1710,6 +2071,47 @@ watch(
   font-size: 0.84rem;
   line-height: 1.5;
   color: var(--color-text);
+}
+
+.chat-message.user p {
+  text-align: right;
+}
+
+.chat-composer {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.chat-composer-input {
+  width: 100%;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  min-height: 74px;
+  max-height: 140px;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.chat-composer-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.chat-send-btn {
+  min-width: 94px;
+}
+
+.chat-composer-hint {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
 }
 
 .loading-card,
@@ -1949,21 +2351,29 @@ watch(
   gap: 8px;
 }
 
-.preferences-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+.preferences-drawer {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  left: auto;
+  width: min(460px, calc(100vw - 40px));
+  max-height: min(78vh, 720px);
+  overflow-y: auto;
   z-index: 60;
-  padding: 20px;
-  display: grid;
-  place-items: center;
+  background: #ffffff !important;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  box-shadow: var(--shadow-xl);
+  transform-origin: top right;
 }
 
-.preferences-modal {
-  width: min(920px, 96vw);
-  max-height: min(90vh, 760px);
-  overflow-y: auto;
-  background: #ffffff !important;
+.preferences-screen-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  border: none;
+  background: rgba(15, 23, 42, 0.12);
+  cursor: pointer;
 }
 
 .preferences-head {
@@ -1971,6 +2381,11 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 2;
+  padding-bottom: 8px;
 }
 
 .preferences-head h3 {
@@ -1993,6 +2408,13 @@ watch(
   color: var(--color-text-secondary);
 }
 
+.budget-help {
+  margin-top: 4px;
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
 .preferences-actions {
   display: flex;
   justify-content: flex-end;
@@ -2001,13 +2423,24 @@ watch(
   flex-wrap: wrap;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+}
+
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
   opacity: 0;
 }
 
@@ -2015,9 +2448,16 @@ watch(
   .planner-layout {
     grid-template-columns: 1fr;
   }
+
+  .preferences-drawer {
+    width: min(460px, calc(100vw - 24px));
+    max-height: none;
+    border-left-width: 1px;
+  }
 }
 
 @media (max-width: 760px) {
+  .context-note-grid,
   .control-grid,
   .budget-grid,
   .snapshot-grid {
@@ -2046,6 +2486,10 @@ watch(
   .action-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .chat-composer {
+    grid-template-columns: 1fr;
   }
 
   .preferences-actions {

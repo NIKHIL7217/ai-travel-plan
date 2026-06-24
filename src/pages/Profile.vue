@@ -22,6 +22,25 @@ const history = computed(() => profileMemoryStore.historySummary);
 const personality = computed(() => profileMemoryStore.personality);
 const preferences = computed(() => profileMemoryStore.memory?.preferences || {});
 const timeline = computed(() => profileMemoryStore.timeline || []);
+const preferenceProfiles = computed(() => profileMemoryStore.preferenceProfiles || []);
+const activePreferenceProfileId = computed(() => profileMemoryStore.activePreferenceProfileId || "");
+const maxPreferenceProfiles = computed(() => Number(profileMemoryStore.maxPreferenceProfiles || 5));
+
+const profileEditorOpen = ref(false);
+const profileEditorMode = ref("create");
+const profileEditorError = ref("");
+const profileActionMessage = ref("");
+const profileActionError = ref("");
+const editingProfileId = ref("");
+const profileDraft = ref({
+  name: "",
+  style: "Balanced",
+  travelMode: "Car",
+  foodPreference: "mixed",
+  stayPreference: "mid-range",
+  budgetTarget: 1500,
+  favoriteDestination: ""
+});
 
 const uniqueDestinations = computed(() => {
   const names = trips.value
@@ -179,6 +198,165 @@ function openSection(sectionId) {
   });
 }
 
+function defaultProfileDraft() {
+  return {
+    name: "",
+    style: "Balanced",
+    travelMode: "Car",
+    foodPreference: "mixed",
+    stayPreference: "mid-range",
+    budgetTarget: 1500,
+    favoriteDestination: ""
+  };
+}
+
+function openPreferenceEditor(mode = "create", profile = null) {
+  profileEditorError.value = "";
+  profileActionMessage.value = "";
+  profileActionError.value = "";
+  profileEditorMode.value = mode;
+
+  if (mode === "edit" && profile) {
+    const prefs = profile.preferences || {};
+    const destination = Array.isArray(prefs.favoriteDestinations)
+      ? prefs.favoriteDestinations
+        .map((item) => (typeof item === "string" ? item : item?.name))
+        .find(Boolean) || ""
+      : "";
+
+    editingProfileId.value = profile.id;
+    profileDraft.value = {
+      name: profile.name || "",
+      style: prefs.travelStyle || "Balanced",
+      travelMode: prefs.transportPreference || "Car",
+      foodPreference: prefs.foodPreference || "mixed",
+      stayPreference: prefs.stayPreference || "mid-range",
+      budgetTarget: Number(prefs?.budgetPreference?.target || 1500),
+      favoriteDestination: destination
+    };
+  } else {
+    const activePrefs = profileMemoryStore.activePreferenceProfile?.preferences || {};
+    const defaultDestination = Array.isArray(activePrefs.favoriteDestinations)
+      ? activePrefs.favoriteDestinations
+        .map((item) => (typeof item === "string" ? item : item?.name))
+        .find(Boolean) || ""
+      : "";
+
+    editingProfileId.value = "";
+    profileDraft.value = {
+      ...defaultProfileDraft(),
+      style: activePrefs.travelStyle || "Balanced",
+      travelMode: activePrefs.transportPreference || "Car",
+      foodPreference: activePrefs.foodPreference || "mixed",
+      stayPreference: activePrefs.stayPreference || "mid-range",
+      budgetTarget: Number(activePrefs?.budgetPreference?.target || 1500),
+      favoriteDestination: defaultDestination
+    };
+  }
+
+  profileEditorOpen.value = true;
+}
+
+function closePreferenceEditor() {
+  profileEditorOpen.value = false;
+  profileEditorError.value = "";
+  editingProfileId.value = "";
+}
+
+function showProfileActionMessage(message) {
+  profileActionError.value = "";
+  profileActionMessage.value = String(message || "").trim();
+  if (!profileActionMessage.value) {
+    return;
+  }
+
+  setTimeout(() => {
+    profileActionMessage.value = "";
+  }, 2200);
+}
+
+function showProfileActionError(message) {
+  profileActionMessage.value = "";
+  profileActionError.value = String(message || "").trim();
+  if (!profileActionError.value) {
+    return;
+  }
+
+  setTimeout(() => {
+    profileActionError.value = "";
+  }, 2600);
+}
+
+function savePreferenceProfile() {
+  const name = String(profileDraft.value.name || "").trim();
+  if (!name) {
+    profileEditorError.value = "Profile name is required.";
+    return;
+  }
+
+  if (
+    profileEditorMode.value === "create" &&
+    preferenceProfiles.value.length >= maxPreferenceProfiles.value
+  ) {
+    profileEditorError.value = `Only ${maxPreferenceProfiles.value} profiles can be saved.`;
+    return;
+  }
+
+  const budgetTarget = Math.max(100, Math.round(Number(profileDraft.value.budgetTarget || 1500)));
+  const favoriteDestination = String(profileDraft.value.favoriteDestination || "").trim();
+
+  profileMemoryStore.saveNamedPreferenceProfile({
+    id: profileEditorMode.value === "edit" ? editingProfileId.value : undefined,
+    name,
+    preferences: {
+      travelStyle: profileDraft.value.style,
+      transportPreference: profileDraft.value.travelMode,
+      foodPreference: profileDraft.value.foodPreference,
+      stayPreference: profileDraft.value.stayPreference,
+      budgetPreference: {
+        target: budgetTarget,
+        min: Math.max(50, Math.round(budgetTarget * 0.35)),
+        max: Math.max(200, Math.round(budgetTarget * 1.85))
+      },
+      favoriteDestinations: favoriteDestination ? [favoriteDestination] : []
+    },
+    setActive: true
+  });
+
+  showProfileActionMessage(`${name} profile saved and activated.`);
+  closePreferenceEditor();
+}
+
+function setActivePreferenceProfile(profileId) {
+  profileMemoryStore.setActivePreferenceProfile(profileId);
+  const profile = preferenceProfiles.value.find((item) => item.id === profileId);
+  if (profile) {
+    showProfileActionMessage(`${profile.name} profile is now active.`);
+  }
+}
+
+function deletePreferenceProfile(profile) {
+  if (!profile || !profile.id) {
+    showProfileActionError("Invalid profile selected for deletion.");
+    return;
+  }
+
+  if (preferenceProfiles.value.length <= 1) {
+    showProfileActionError("At least one profile must remain.");
+    return;
+  }
+
+  const beforeCount = preferenceProfiles.value.length;
+  const nextMemory = profileMemoryStore.deleteNamedPreferenceProfile(profile.id);
+  const afterCount = Array.isArray(nextMemory?.preferenceProfiles) ? nextMemory.preferenceProfiles.length : beforeCount;
+
+  if (afterCount < beforeCount) {
+    showProfileActionMessage(`${profile.name} profile removed.`);
+  } else {
+    showProfileActionError("Could not delete this profile. Please try again.");
+  }
+}
+
 async function removeVaultDocument(documentId) {
   vaultStore.removeDocument(documentId);
 }
@@ -292,6 +470,157 @@ watch(
             <span>Min: {{ formatPrice(budgetPattern.min) }}</span>
             <span>Avg: {{ formatPrice(budgetPattern.avg) }}</span>
             <span>Max: {{ formatPrice(budgetPattern.max) }}</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="glass-card pref-profiles-panel mt-6">
+        <div class="card-head">
+          <h3>Trip Preference Profiles</h3>
+          <div class="hero-actions">
+            <small>{{ preferenceProfiles.length }}/{{ maxPreferenceProfiles }} saved</small>
+            <button
+              type="button"
+              class="btn btn-outline btn-xs"
+              :disabled="preferenceProfiles.length >= maxPreferenceProfiles"
+              @click="openPreferenceEditor('create')"
+            >
+              Add Profile
+            </button>
+          </div>
+        </div>
+
+        <p class="card-copy mt-2">
+          Save up to {{ maxPreferenceProfiles }} named profiles. Family members can keep their own travel style and use it directly in Planner.
+        </p>
+
+        <p v-if="profileActionMessage" class="profile-action-success mt-2">{{ profileActionMessage }}</p>
+        <p v-if="profileActionError" class="profile-action-error mt-2">{{ profileActionError }}</p>
+
+        <div class="pref-profile-list mt-3">
+          <article
+            v-for="profile in preferenceProfiles"
+            :key="profile.id"
+            class="pref-profile-item"
+            :class="{ active: activePreferenceProfileId === profile.id }"
+          >
+            <div>
+              <strong>{{ profile.name }}</strong>
+              <p>{{ profile.summary }}</p>
+            </div>
+            <div class="pref-profile-actions">
+              <button
+                type="button"
+                class="btn btn-outline btn-xs"
+                :disabled="activePreferenceProfileId === profile.id"
+                @click="setActivePreferenceProfile(profile.id)"
+              >
+                {{ activePreferenceProfileId === profile.id ? 'Active' : 'Set Active' }}
+              </button>
+              <button type="button" class="btn btn-outline btn-xs" @click="openPreferenceEditor('edit', profile)">Edit</button>
+              <button
+                type="button"
+                class="btn btn-danger btn-xs"
+                @click="deletePreferenceProfile(profile)"
+              >
+                Delete
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <article v-if="profileEditorOpen" class="profile-editor-inline mt-3">
+          <div class="card-head">
+            <h3>{{ profileEditorMode === 'edit' ? 'Edit Preference Profile' : 'Create Preference Profile' }}</h3>
+            <button type="button" class="btn btn-outline btn-xs" @click="closePreferenceEditor">Close</button>
+          </div>
+
+          <p class="card-copy mt-2">
+            This profile will be available in Planner Saved Preferences drawer for one-click trip application.
+          </p>
+
+          <p v-if="profileEditorError" class="planner-error mt-2">{{ profileEditorError }}</p>
+
+          <div class="pref-form-grid mt-3">
+            <label>
+              <span>Name</span>
+              <input
+                class="form-input"
+                :value="profileDraft.name"
+                @input="profileDraft.name = $event.target.value"
+                placeholder="e.g. Mom, Rahul, Family, Solo"
+              />
+            </label>
+
+            <label>
+              <span>Style</span>
+              <select class="form-select" :value="profileDraft.style" @change="profileDraft.style = $event.target.value">
+                <option value="Balanced">Balanced</option>
+                <option value="Budget">Budget</option>
+                <option value="Comfort">Comfort</option>
+                <option value="Luxury">Luxury</option>
+                <option value="Adventure">Adventure</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Transport</span>
+              <select class="form-select" :value="profileDraft.travelMode" @change="profileDraft.travelMode = $event.target.value">
+                <option value="Flight">Flight</option>
+                <option value="Train">Train</option>
+                <option value="Bus">Bus</option>
+                <option value="Car">Car</option>
+                <option value="Bike">Bike</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Stay</span>
+              <select class="form-select" :value="profileDraft.stayPreference" @change="profileDraft.stayPreference = $event.target.value">
+                <option value="hostel">Hostel</option>
+                <option value="budget">Budget</option>
+                <option value="mid-range">Mid-range</option>
+                <option value="premium">Premium</option>
+                <option value="luxury">Luxury</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Food</span>
+              <select class="form-select" :value="profileDraft.foodPreference" @change="profileDraft.foodPreference = $event.target.value">
+                <option value="street">Street</option>
+                <option value="local">Local</option>
+                <option value="mixed">Mixed</option>
+                <option value="fine-dining">Fine Dining</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Budget Target (USD)</span>
+              <input
+                class="form-input"
+                type="number"
+                min="100"
+                step="50"
+                :value="profileDraft.budgetTarget"
+                @input="profileDraft.budgetTarget = Number($event.target.value || profileDraft.budgetTarget)"
+              />
+            </label>
+
+            <label>
+              <span>Favorite Destination</span>
+              <input
+                class="form-input"
+                :value="profileDraft.favoriteDestination"
+                @input="profileDraft.favoriteDestination = $event.target.value"
+                placeholder="e.g. Goa, Tokyo, Himachal"
+              />
+            </label>
+          </div>
+
+          <div class="hero-actions mt-3">
+            <button type="button" class="btn btn-outline" @click="closePreferenceEditor">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="savePreferenceProfile">Save Profile</button>
           </div>
         </article>
       </section>
@@ -505,6 +834,7 @@ watch(
 .list-card,
 .detail-card,
 .vault-panel,
+.pref-profiles-panel,
 .loading-panel,
 .error-panel {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
@@ -725,6 +1055,76 @@ watch(
   padding: 6px 9px;
 }
 
+.pref-profile-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pref-profile-item {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pref-profile-item.active {
+  border-color: rgba(16, 185, 129, 0.44);
+  background: rgba(209, 250, 229, 0.42);
+}
+
+.pref-profile-item p {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.pref-profile-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-editor-inline {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 12px;
+}
+
+.pref-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pref-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.planner-error {
+  color: #dc2626;
+  font-size: 0.82rem;
+}
+
+.profile-action-success {
+  color: #047857;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.profile-action-error {
+  color: #b91c1c;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 @media (max-width: 1100px) {
   .kpi-grid,
   .identity-grid,
@@ -752,9 +1152,14 @@ watch(
   }
 
   .timeline-item,
-  .vault-item {
+  .vault-item,
+  .pref-profile-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .pref-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -66,6 +66,26 @@ function getFoodPreferenceConfig(foodPreference) {
   return map[foodPreference] || map.mixed;
 }
 
+function normalizeBudgetForTravelMode(rawBudget: Partial<BudgetEstimate>, travelMode: string): BudgetEstimate {
+  const normalized: BudgetEstimate = {
+    flights: Math.max(0, Math.round(Number(rawBudget?.flights || 0))),
+    accommodation: Math.max(0, Math.round(Number(rawBudget?.accommodation || 0))),
+    food: Math.max(0, Math.round(Number(rawBudget?.food || 0))),
+    transportation: Math.max(0, Math.round(Number(rawBudget?.transportation || 0))),
+    activities: Math.max(0, Math.round(Number(rawBudget?.activities || 0))),
+    total: Math.max(0, Math.round(Number(rawBudget?.total || 0)))
+  };
+
+  const mode = String(travelMode || "").toLowerCase();
+  if (!mode.includes("flight")) {
+    normalized.transportation = Math.max(0, normalized.transportation + normalized.flights);
+    normalized.flights = 0;
+  }
+
+  normalized.total = normalized.flights + normalized.accommodation + normalized.food + normalized.transportation + normalized.activities;
+  return normalized;
+}
+
 function selectHotelsForPreference(hotels, stayPreference) {
   const list = Array.isArray(hotels) ? hotels : [];
   if (!list.length) return [];
@@ -183,6 +203,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
 
         Constraints:
         - Reflect user's travel mode and stay/food preferences.
+        - If travel mode is not flight, set "flights" to 0 and include all movement costs in "transportation".
         - ${budgetInstruction}
         - Return integer numeric values only.
 
@@ -216,18 +237,14 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         const parsed = extractJsonObject(text);
 
         if (parsed && typeof parsed === "object") {
-          const normalized = {
+          const normalized = normalizeBudgetForTravelMode({
             flights: Math.max(0, Math.round(Number(parsed.flights || 0))),
             accommodation: Math.max(0, Math.round(Number(parsed.accommodation || 0))),
             food: Math.max(0, Math.round(Number(parsed.food || 0))),
             transportation: Math.max(0, Math.round(Number(parsed.transportation || 0))),
             activities: Math.max(0, Math.round(Number(parsed.activities || 0))),
             total: Math.max(0, Math.round(Number(parsed.total || 0)))
-          };
-
-          if (normalized.total === 0) {
-            normalized.total = normalized.flights + normalized.accommodation + normalized.food + normalized.transportation + normalized.activities;
-          }
+          }, travelMode);
 
           if (normalized.total > 0) {
             const validated = validateBudgetEstimate(normalized, "Gemini budget estimate");
@@ -257,23 +274,31 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     flights = Math.round(Math.max(55, distanceKm * 0.085) * travelers * styleMultiplier);
     transportation = Math.round(16 * days * travelers * styleMultiplier);
   } else if (modeClean.includes("train")) {
-    flights = Math.round(Math.max(18, distanceKm * 0.022) * travelers * styleMultiplier);
-    transportation = Math.round(11 * days * travelers * styleMultiplier);
+    const trainCost = Math.max(18, distanceKm * 0.022) * travelers * styleMultiplier;
+    const localTransit = 11 * days * travelers * styleMultiplier;
+    flights = 0;
+    transportation = Math.round(trainCost + localTransit);
   } else if (modeClean.includes("bus")) {
-    flights = Math.round(Math.max(12, distanceKm * 0.017) * travelers * styleMultiplier);
-    transportation = Math.round(9 * days * travelers * styleMultiplier);
+    const busCost = Math.max(12, distanceKm * 0.017) * travelers * styleMultiplier;
+    const localTransit = 9 * days * travelers * styleMultiplier;
+    flights = 0;
+    transportation = Math.round(busCost + localTransit);
   } else if (modeClean.includes("car")) {
     const fuelCostUsd = (distanceKm / 14) * 1.25;
     const tollCostUsd = distanceKm * 0.015;
-    flights = Math.round((fuelCostUsd + tollCostUsd) * styleMultiplier);
-    transportation = Math.round(12 * days * travelers * styleMultiplier);
+    const localTransit = 12 * days * travelers * styleMultiplier;
+    flights = 0;
+    transportation = Math.round((fuelCostUsd + tollCostUsd) * styleMultiplier + localTransit);
   } else if (modeClean.includes("bike")) {
     const fuelCostUsd = (distanceKm / 45) * 1.25;
-    flights = Math.round(fuelCostUsd * styleMultiplier);
-    transportation = Math.round(8 * days * travelers * styleMultiplier);
+    const localTransit = 8 * days * travelers * styleMultiplier;
+    flights = 0;
+    transportation = Math.round(fuelCostUsd * styleMultiplier + localTransit);
   } else {
-    flights = Math.round(210 * travelers * styleMultiplier);
-    transportation = Math.round(15 * days * travelers * styleMultiplier);
+    const baseTransfer = Math.max(24, distanceKm * 0.03) * travelers * styleMultiplier;
+    const localTransit = 15 * days * travelers * styleMultiplier;
+    flights = 0;
+    transportation = Math.round(baseTransfer + localTransit);
   }
 
   const rooms = Math.ceil(travelers / 2);
@@ -309,19 +334,21 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     }
   }
 
-  return validateBudgetEstimate({
+  const normalizedFallbackBudget = normalizeBudgetForTravelMode({
     flights,
     accommodation,
     food,
     transportation,
     activities,
     total
-  }, "fallback budget estimate") || {
+  }, travelMode);
+
+  return validateBudgetEstimate(normalizedFallbackBudget, "fallback budget estimate") || {
     flights,
     accommodation,
     food,
     transportation,
     activities,
-    total
+    total: flights + accommodation + food + transportation + activities
   };
 }
