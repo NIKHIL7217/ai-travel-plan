@@ -28,6 +28,8 @@ const COMMON_ALERTS = [
   }
 ];
 
+import { getTestingScamData } from "../../data/testing/featureDataset";
+
 const DESTINATION_ALERTS = {
   goa: [
     {
@@ -147,6 +149,17 @@ export async function getScamAlerts(options = {}) {
   const destinationLocation = normalizeText(options.destinationLocation || options.location || "");
   const travelMode = normalizeText(options.travelMode || "general") || "general";
   const band = timeBandLabel(options.timeBand || options.timeOfDay || "auto");
+
+  const testingScam = getTestingScamData(destinationName || destinationLocation || "");
+  if (testingScam?.alerts?.length) {
+    return {
+      ...testingScam,
+      destination: destinationName || destinationLocation || testingScam.destination,
+      travelMode,
+      timeBand: band,
+      generatedAt: new Date().toISOString()
+    };
+  }
 
   const destinationKey = resolveDestinationKey(destinationName, destinationLocation);
   const destinationAlerts = destinationKey ? DESTINATION_ALERTS[destinationKey] : [];

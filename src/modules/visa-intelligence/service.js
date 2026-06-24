@@ -5,6 +5,8 @@ const COUNTRY_ALIASES = {
   uk: "United Kingdom"
 };
 
+import { getTestingVisaData } from "../../data/testing/featureDataset";
+
 const INDIA_VISA_FREE = new Set([
   "Bhutan",
   "Nepal",
@@ -183,6 +185,18 @@ export async function getVisaIntelligence({
     ? String(purpose).toLowerCase()
     : "tourism";
   const normalizedDuration = Math.max(1, Math.min(180, Number(durationDays || 7)));
+
+  const testingVisa = getTestingVisaData(safeDestination || destinationLocation || "", normalizedNationality, normalizedPurpose, normalizedDuration);
+  if (testingVisa?.destination) {
+    return {
+      ...testingVisa,
+      destination: safeDestination || testingVisa.destination,
+      destinationCountry: country || testingVisa.destinationCountry,
+      nationality: normalizedNationality,
+      purpose: normalizedPurpose,
+      durationDays: normalizedDuration
+    };
+  }
 
   if (normalizedNationality.toLowerCase().includes(country.toLowerCase())) {
     return {

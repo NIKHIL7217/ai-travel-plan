@@ -422,8 +422,8 @@ onUnmounted(() => {
 .explore-page {
   display: flex;
   flex-direction: column;
-  gap: 42px;
-  padding-bottom: 44px;
+  gap: 56px;
+  padding-bottom: 64px;
 }
 
 .hero {
@@ -450,7 +450,7 @@ onUnmounted(() => {
   display: grid;
   justify-items: center;
   text-align: center;
-  gap: 14px;
+  gap: 18px;
   color: #f8fafc;
 }
 
@@ -475,13 +475,13 @@ onUnmounted(() => {
 }
 
 .hero-prompt {
-  margin-top: 6px;
+  margin-top: 10px;
   width: min(860px, 96%);
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 16px;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 30px 70px rgba(2, 8, 23, 0.25);
 }
@@ -490,7 +490,7 @@ onUnmounted(() => {
   border: none;
   outline: none;
   font-size: 1.05rem;
-  padding: 12px 14px;
+  padding: 14px 16px;
   color: var(--color-text);
   background: transparent;
 }
@@ -499,8 +499,8 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .example-pill {
@@ -508,8 +508,8 @@ onUnmounted(() => {
   background: rgba(15, 23, 42, 0.28);
   color: #f8fafc;
   border-radius: var(--radius-full);
-  padding: 7px 12px;
-  font-size: 0.76rem;
+  padding: 8px 14px;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform var(--transition-fast), background var(--transition-fast);
@@ -521,20 +521,20 @@ onUnmounted(() => {
 }
 
 .hero-stats {
-  margin-top: 6px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .hero-stat-pill {
   border: 1px solid rgba(255, 255, 255, 0.36);
   border-radius: var(--radius-full);
   background: rgba(8, 47, 73, 0.34);
-  padding: 7px 12px;
+  padding: 9px 14px;
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .hero-stat-pill strong {
@@ -549,16 +549,16 @@ onUnmounted(() => {
 
 .route-preview-strip {
   display: grid;
-  gap: 12px;
+  gap: 18px;
 }
 
 .route-rail {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(290px, 1fr);
-  gap: 12px;
+  grid-auto-columns: minmax(310px, 1fr);
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: 12px;
 }
 
 .route-preview-card {
@@ -577,7 +577,7 @@ onUnmounted(() => {
 .route-overlay {
   position: absolute;
   inset: auto 0 0 0;
-  padding: 14px;
+  padding: 16px;
   background: linear-gradient(180deg, rgba(2, 8, 23, 0), rgba(2, 8, 23, 0.78));
   color: #f8fafc;
 }
@@ -588,18 +588,18 @@ onUnmounted(() => {
 }
 
 .route-overlay p {
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 0.76rem;
   color: rgba(226, 232, 240, 0.92);
 }
 
 .route-overlay span {
   display: inline-block;
-  margin-top: 7px;
+  margin-top: 8px;
   border: 1px solid rgba(226, 232, 240, 0.34);
   border-radius: var(--radius-full);
   background: rgba(2, 6, 23, 0.5);
-  padding: 4px 8px;
+  padding: 5px 10px;
   font-size: 0.7rem;
 }
 
@@ -608,24 +608,25 @@ onUnmounted(() => {
 }
 
 .error-panel {
-  padding: 16px;
+  padding: 20px;
 }
 
 .inspiration-section {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .section-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .section-vibe {
   display: inline-block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   font-weight: 800;
@@ -639,14 +640,14 @@ onUnmounted(() => {
 }
 
 .section-head p {
-  margin-top: 5px;
+  margin-top: 7px;
   color: var(--color-text-secondary);
-  font-size: 0.86rem;
+  font-size: 0.9rem;
 }
 
 .section-cover {
-  width: 118px;
-  height: 70px;
+  width: 132px;
+  height: 78px;
   object-fit: cover;
   border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -657,10 +658,10 @@ onUnmounted(() => {
 .card-carousel {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(260px, 1fr);
-  gap: 12px;
+  grid-auto-columns: minmax(272px, 1fr);
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 6px;
+  padding-bottom: 10px;
 }
 
 .loading-card {
@@ -675,11 +676,11 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   overflow: hidden;
   display: grid;
-  min-height: 338px;
+  min-height: 356px;
 }
 
 .card-image-wrap {
-  height: 194px;
+  height: 206px;
   position: relative;
   overflow: hidden;
 }
@@ -697,78 +698,80 @@ onUnmounted(() => {
 
 .distance-pill {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 12px;
+  bottom: 12px;
   background: rgba(2, 6, 23, 0.74);
   color: #e2e8f0;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: var(--radius-full);
 }
 
 .card-body {
-  padding: 12px;
+  padding: 15px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .card-body h3 {
-  font-size: 0.96rem;
+  font-size: 1rem;
 }
 
 .card-body p {
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
 }
 
 .card-meta {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 0.76rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
   color: var(--color-text-muted);
 }
 
 .card-actions-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 7px;
+  gap: 10px;
 }
 
 .testimonials {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .testimonial-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .testimonial-card {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.86));
+  padding: 18px;
 }
 
 .quote {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: var(--color-text-secondary);
-  line-height: 1.55;
+  line-height: 1.62;
 }
 
 .author {
-  margin-top: 12px;
+  margin-top: 14px;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 .author strong {
-  font-size: 0.84rem;
+  font-size: 0.88rem;
 }
 
 .author span {
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   color: var(--color-text-muted);
 }
 
@@ -792,9 +795,14 @@ onUnmounted(() => {
 }
 
 @media (max-width: 760px) {
+  .explore-page {
+    gap: 44px;
+    padding-bottom: 50px;
+  }
+
   .hero {
     min-height: calc(100vh - 64px);
-    padding-top: 26px;
+    padding-top: 32px;
   }
 
   .hero-prompt {

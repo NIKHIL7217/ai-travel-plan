@@ -6,6 +6,12 @@ import { fetchNearbyPlaces } from "../travel/places.service";
 import { userLocation } from "../location";
 import { getDemoDestinationSuggestions, getDemoDestinationDetails } from "../../data/demoWorkingData";
 import {
+  getTestingDestinationCities,
+  getTestingDestinationDetails,
+  getTestingLocationData,
+  searchTestingDestinationCities
+} from "../../data/testing/featureDataset";
+import {
   destinationDetailsSchema,
   destinationOverviewSchema,
   destinationSuggestionSchema
@@ -306,6 +312,7 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
       const q = String(query || "").trim();
 
       const isMockRequest = q.toLowerCase().includes("demo") || q.toLowerCase().includes("mock");
+      const isTestingRequest = /(test|testing|preview|dataset|sample)/i.test(q);
 
       if (!q) {
         return [];
@@ -357,17 +364,24 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
         return validateDestinationSuggestions(mapped, "mapped destination suggestions");
       };
 
-      if (!NO_MOCK_DATA_POLICY && (DEMO_MODE || isMockRequest)) {
-        const mockFromGemini = mapSuggestions(MOCK_DESTINATIONS);
-        const demoFromFile = mapSuggestions(getDemoDestinationSuggestions());
-        const merged = [...mockFromGemini, ...demoFromFile];
+      const addTestingRows = (seedList = []) => {
+        const testingRows = searchTestingDestinationCities(q);
+        const merged = [...seedList, ...mapSuggestions(testingRows)];
         const seen = new Set();
         const unique = merged.filter((item) => {
           if (!item?.id || seen.has(item.id)) return false;
           seen.add(item.id);
           return true;
         });
-        return validateDestinationSuggestions(unique, "demo destination suggestions");
+        return validateDestinationSuggestions(unique, "testing + mapped destination suggestions");
+      };
+
+      if (!NO_MOCK_DATA_POLICY && (DEMO_MODE || isMockRequest || isTestingRequest)) {
+        const mockFromGemini = mapSuggestions(MOCK_DESTINATIONS);
+        const demoFromFile = mapSuggestions(getDemoDestinationSuggestions());
+        const testingFromFile = mapSuggestions(getTestingDestinationCities());
+        const merged = [...mockFromGemini, ...demoFromFile, ...testingFromFile];
+        return addTestingRows(merged);
       }
 
       if (API_KEY) {
@@ -418,7 +432,7 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
 
         const mapped = mapSuggestions(directList.length > 0 ? directList : nestedList);
             if (mapped.length > 0) {
-              return mapped;
+              return addTestingRows(mapped);
             }
           }
         } catch (error) {
@@ -451,6 +465,11 @@ export async function generateDestinationSuggestions(query: string): Promise<Des
         }
       } catch (error) {
         console.warn("Geocode fallback for destination search failed:", error);
+      }
+
+      const testingCandidates = searchTestingDestinationCities(q);
+      if (testingCandidates.length > 0) {
+        return validateDestinationSuggestions(mapSuggestions(testingCandidates), "testing destination suggestion");
       }
 
       if (NO_MOCK_DATA_POLICY || REAL_DATA_ONLY) {
@@ -486,7 +505,9 @@ function fillIntelligenceFields(destData) {
  */
 export async function getDestinationDetails(destId: string): Promise<DestinationDetails> {
   if (!NO_MOCK_DATA_POLICY && String(destId || "").toLowerCase().includes("-demo")) {
-    const demoDetails = getDemoDestinationDetails(String(destId || "goa-demo").toLowerCase());
+    const incomingId = String(destId || "goa-demo").toLowerCase();
+    const testingDetails = getTestingDestinationDetails(incomingId);
+    const demoDetails = testingDetails || getDemoDestinationDetails(incomingId);
     const validated = validateDestinationDetails(demoDetails, "demo destination details");
     if (validated) {
       return validated;
@@ -495,6 +516,15 @@ export async function getDestinationDetails(destId: string): Promise<Destination
   }
 
   const cleanId = String(destId).toLowerCase().trim();
+  if (!NO_MOCK_DATA_POLICY) {
+    const testingDetails = getTestingDestinationDetails(cleanId);
+    if (testingDetails) {
+      const validatedTesting = validateDestinationDetails(testingDetails, "testing destination details");
+      if (validatedTesting) {
+        return validatedTesting;
+      }
+    }
+  }
   const matched = NO_MOCK_DATA_POLICY ? null : MOCK_DESTINATIONS.find(d => d.id === cleanId);
 
   // In demo mode, prefer built-in mock profiles directly for quick showcase.
@@ -1009,6 +1039,24 @@ function cityHash(str: string): number {
  * via Gemini AI, or falls back to mock data
  */
 export async function getRealLocationData(destinationName: string): Promise<LocationData> {
+  if (!NO_MOCK_DATA_POLICY) {
+    const testingLocation = getTestingLocationData(destinationName);
+    const hasTestingData =
+      Array.isArray(testingLocation?.hotels) ||
+      Array.isArray(testingLocation?.restaurants) ||
+      Array.isArray(testingLocation?.attractions) ||
+      Array.isArray(testingLocation?.hospitals) ||
+      Array.isArray(testingLocation?.fuelStations) ||
+      Array.isArray(testingLocation?.evChargingStations);
+
+    if (hasTestingData) {
+      const validatedTesting = validateLocationData(testingLocation, "testing location data");
+      if (validatedTesting) {
+        return validatedTesting;
+      }
+    }
+  }
+
   try {
     const geo = await geocodePlace(destinationName);
     if (geo?.lat !== undefined && geo?.lng !== undefined) {

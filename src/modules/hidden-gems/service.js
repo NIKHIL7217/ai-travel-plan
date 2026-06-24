@@ -89,6 +89,8 @@ const DESTINATION_GEMS = {
   ]
 };
 
+import { getTestingHiddenGemsData } from "../../data/testing/featureDataset";
+
 function normalizeText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -151,6 +153,19 @@ export async function getHiddenGems(options = {}) {
   const budgetPreference = normalizeText(options.budgetPreference || "balanced").toLowerCase() || "balanced";
   const crowdPreference = normalizeText(options.crowdPreference || "low").toLowerCase() || "low";
   const limit = Math.max(1, Math.min(8, Number(options.limit || 5)));
+
+  const testingGems = getTestingHiddenGemsData(destinationName || destinationLocation || "");
+  if (Array.isArray(testingGems?.gems) && testingGems.gems.length > 0) {
+    return {
+      destination: destinationName || destinationLocation || testingGems.destination,
+      budgetPreference,
+      crowdPreference,
+      gems: testingGems.gems.slice(0, limit),
+      strategy: testingGems.strategy,
+      advisory: testingGems.advisory,
+      generatedAt: new Date().toISOString()
+    };
+  }
 
   const key = destinationKey(destinationName, destinationLocation);
   const sourceList = key ? DESTINATION_GEMS[key] : fallbackGems(destinationName || destinationLocation || "Destination");

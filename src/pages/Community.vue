@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
@@ -13,6 +13,7 @@ const communityStore = useCommunityStore();
 
 const destinationInput = ref("Goa");
 const feedTab = ref("posts");
+const composerMode = ref("tip");
 const postText = ref("");
 const postTags = ref("crowd, food");
 const commentDrafts = ref({});
@@ -201,9 +202,11 @@ function createPost() {
     });
 
     postText.value = "";
-    showMessage("success", "Post published to feed.");
+    feedTab.value = "posts";
+    composerMode.value = "tip";
+    showMessage("success", "Tip published to feed.");
   } catch (error) {
-    showMessage("error", getFriendlyErrorMessage(error, "Unable to publish post right now."));
+    showMessage("error", getFriendlyErrorMessage(error, "Unable to publish tip right now."));
   }
 }
 
@@ -263,6 +266,8 @@ function submitReview() {
     reviewRating.value = 4;
     reviewCostLevel.value = "moderate";
     reviewVisitType.value = "solo";
+    feedTab.value = "reviews";
+    composerMode.value = "review";
     showMessage("success", "Review shared.");
   } catch (error) {
     showMessage("error", getFriendlyErrorMessage(error, "Unable to submit review right now."));
@@ -301,15 +306,37 @@ onMounted(async () => {
 <template>
   <div class="community-page container animate-fade-in" style="padding-top: 100px;">
     <section class="community-hero glass-card">
-      <div>
-        <span class="hero-badge">TRAVELER FEED</span>
-        <h1>Community Pulse</h1>
-        <p>Real tips from real travelers. Discover what is worth doing, what to skip, and where to stay safe before you plan.</p>
+      <div class="hero-main">
+        <span class="hero-badge">TRAVEL COMMUNITY</span>
+        <h1>Community Intelligence Hub</h1>
+        <p>Destination-first traveler insights: practical tips, trusted reviews, safety watch, and hidden local finds in one focused feed.</p>
+        <div class="hero-stats-row">
+          <article class="hero-stat">
+            <span>Posts</span>
+            <strong>{{ pulse?.totalPosts || 0 }}</strong>
+          </article>
+          <article class="hero-stat">
+            <span>Reviews</span>
+            <strong>{{ pulse?.totalReviews || 0 }}</strong>
+          </article>
+          <article class="hero-stat">
+            <span>Avg Rating</span>
+            <strong>{{ averageReview || pulse?.avgRating || 0 }}</strong>
+          </article>
+          <article class="hero-stat">
+            <span>Contributors</span>
+            <strong>{{ topContributors.length }}</strong>
+          </article>
+        </div>
       </div>
+
       <div class="hero-controls">
-        <input v-model="destinationInput" class="form-input" placeholder="Destination, e.g. Goa" />
-        <button type="button" class="btn btn-outline" :disabled="loading" @click="loadCommunityData">Refresh</button>
-        <button type="button" class="btn btn-primary" @click="openPlanner">Plan This Place</button>
+        <label class="control-label" for="community-destination">Destination Focus</label>
+        <input id="community-destination" v-model="destinationInput" class="form-input" placeholder="Destination, e.g. Goa" />
+        <div class="hero-actions">
+          <button type="button" class="btn btn-outline" :disabled="loading" @click="loadCommunityData">Refresh Feed</button>
+          <button type="button" class="btn btn-primary" @click="openPlanner">Plan This Place</button>
+        </div>
       </div>
     </section>
 
@@ -323,60 +350,101 @@ onMounted(async () => {
       <button type="button" class="btn btn-primary mt-4" @click="loadCommunityData">Retry</button>
     </section>
 
-    <section v-else class="community-layout mt-6">
-      <aside class="left-rail">
+    <section v-else class="community-workspace mt-6">
+      <main class="workspace-main">
         <article class="glass-card composer-card">
-          <h3>Share A Tip</h3>
-          <textarea
-            v-model="postText"
-            class="form-input mt-3"
-            rows="4"
-            placeholder="Share practical intel: crowd windows, food hacks, safe routes, hidden corners."
-          ></textarea>
-          <input v-model="postTags" class="form-input mt-2" placeholder="Tags, e.g. crowd,safety,budget" />
-          <button type="button" class="btn btn-primary mt-3" @click="createPost">Publish Post</button>
-        </article>
-
-        <article class="glass-card signal-card mt-4">
-          <h3>Scam Watch</h3>
-          <div v-if="loadingInsights" class="panel-empty mt-3">Refreshing safety signal...</div>
-          <template v-else-if="scamPreview">
-            <div class="risk-row mt-3">
-              <span class="risk-pill" :class="scamRiskClass">{{ scamPreview.level }} Risk</span>
-              <small>{{ scamPreview.riskScore }}/100</small>
+          <div class="composer-head">
+            <div>
+              <span class="stream-label">Contribute</span>
+              <h3>Share For {{ destinationInput || "This Destination" }}</h3>
+              <p>Tip is for quick practical intel. Review is for full structured trip feedback.</p>
             </div>
-            <ul class="insight-list mt-3">
-              <li v-for="alert in (scamPreview.alerts || []).slice(0, 3)" :key="alert.id">
-                <strong>{{ alert.title }}</strong>
-                <span>{{ alert.hotspot }}</span>
-              </li>
-            </ul>
-          </template>
-          <div v-else class="panel-empty mt-3">Safety signal unavailable.</div>
+            <div class="composer-switcher">
+              <button
+                type="button"
+                class="btn btn-outline btn-xs"
+                :class="{ active: composerMode === 'tip' }"
+                @click="composerMode = 'tip'"
+              >
+                Share Tip
+              </button>
+              <button
+                type="button"
+                class="btn btn-outline btn-xs"
+                :class="{ active: composerMode === 'review' }"
+                @click="composerMode = 'review'"
+              >
+                Write Review
+              </button>
+            </div>
+          </div>
+
+          <div v-if="composerMode === 'tip'" class="composer-body mt-3">
+            <textarea
+              v-model="postText"
+              class="form-input"
+              rows="4"
+              placeholder="Share practical intel: crowd windows, food hacks, safe routes, hidden corners."
+            ></textarea>
+            <input v-model="postTags" class="form-input mt-2" placeholder="Tags, e.g. crowd,safety,budget" />
+            <div class="composer-actions mt-3">
+              <button type="button" class="btn btn-primary" @click="createPost">Publish Tip</button>
+            </div>
+          </div>
+
+          <div v-else class="composer-body mt-3">
+            <input v-model="reviewTitle" class="form-input" placeholder="Review title" />
+            <textarea
+              v-model="reviewBody"
+              class="form-input mt-2"
+              rows="4"
+              placeholder="Tell travelers what worked, what to avoid, and where to go."
+            ></textarea>
+
+            <div class="review-grid mt-2">
+              <label>
+                <span>Rating</span>
+                <select v-model.number="reviewRating" class="form-select">
+                  <option :value="5">5</option>
+                  <option :value="4">4</option>
+                  <option :value="3">3</option>
+                  <option :value="2">2</option>
+                  <option :value="1">1</option>
+                </select>
+              </label>
+              <label>
+                <span>Cost</span>
+                <select v-model="reviewCostLevel" class="form-select">
+                  <option value="low">Low</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label>
+                <span>Visit Type</span>
+                <select v-model="reviewVisitType" class="form-select">
+                  <option value="solo">Solo</option>
+                  <option value="friends">Friends</option>
+                  <option value="family">Family</option>
+                  <option value="couple">Couple</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="composer-actions mt-3">
+              <button type="button" class="btn btn-primary" @click="submitReview">Submit Review</button>
+            </div>
+          </div>
         </article>
 
-        <article class="glass-card signal-card mt-4">
-          <h3>Hidden Gems</h3>
-          <div v-if="loadingInsights" class="panel-empty mt-3">Collecting gems...</div>
-          <ul v-else-if="hiddenGemsPreview?.gems?.length" class="insight-list mt-3">
-            <li v-for="gem in hiddenGemsPreview.gems" :key="gem.id">
-              <strong>{{ gem.name }}</strong>
-              <span>{{ gem.relevanceScore }}/100 | {{ gem.bestWindow }}</span>
-            </li>
-          </ul>
-          <div v-else class="panel-empty mt-3">No hidden gems found yet.</div>
-        </article>
-      </aside>
-
-      <main class="stream-col">
-        <article class="glass-card stream-head-card">
+        <article class="glass-card stream-head-card mt-4">
           <div>
             <span class="stream-label">Live Stream</span>
             <h2>{{ destinationInput }} Feed</h2>
           </div>
           <div class="feed-switcher">
             <button type="button" class="btn btn-outline btn-xs" :class="{ active: feedTab === 'posts' }" @click="feedTab = 'posts'">
-              Posts ({{ posts.length }})
+              Tips ({{ posts.length }})
             </button>
             <button type="button" class="btn btn-outline btn-xs" :class="{ active: feedTab === 'reviews' }" @click="feedTab = 'reviews'">
               Reviews ({{ reviews.length }})
@@ -390,7 +458,7 @@ onMounted(async () => {
 
         <template v-else>
           <article v-if="feedTab === 'posts' && posts.length === 0" class="glass-card feed-placeholder mt-4">
-            <p>No posts yet. Start the first community thread.</p>
+            <p>No tips yet. Share the first community intel.</p>
           </article>
 
           <div v-if="feedTab === 'posts'" class="feed-list mt-4">
@@ -447,57 +515,55 @@ onMounted(async () => {
         </template>
       </main>
 
-      <aside class="right-rail">
-        <article class="glass-card review-card">
-          <h3>Write A Review</h3>
-          <input v-model="reviewTitle" class="form-input mt-3" placeholder="Review title" />
-          <textarea
-            v-model="reviewBody"
-            class="form-input mt-2"
-            rows="4"
-            placeholder="Tell travelers what worked, what to avoid, and where to go."
-          ></textarea>
+      <aside class="workspace-side">
+        <article class="glass-card signal-card">
+          <h3>Scam Watch</h3>
+          <div v-if="loadingInsights" class="panel-empty mt-3">Refreshing safety signal...</div>
+          <template v-else-if="scamPreview">
+            <div class="risk-row mt-3">
+              <span class="risk-pill" :class="scamRiskClass">{{ scamPreview.level }} Risk</span>
+              <small>{{ scamPreview.riskScore }}/100</small>
+            </div>
+            <ul class="insight-list mt-3">
+              <li v-for="alert in (scamPreview.alerts || []).slice(0, 3)" :key="alert.id">
+                <strong>{{ alert.title }}</strong>
+                <span>{{ alert.hotspot }}</span>
+              </li>
+            </ul>
+          </template>
+          <div v-else class="panel-empty mt-3">Safety signal unavailable.</div>
+        </article>
 
-          <div class="review-grid mt-2">
-            <label>
-              <span>Rating</span>
-              <select v-model.number="reviewRating" class="form-select">
-                <option :value="5">5</option>
-                <option :value="4">4</option>
-                <option :value="3">3</option>
-                <option :value="2">2</option>
-                <option :value="1">1</option>
-              </select>
-            </label>
-            <label>
-              <span>Cost</span>
-              <select v-model="reviewCostLevel" class="form-select">
-                <option value="low">Low</option>
-                <option value="moderate">Moderate</option>
-                <option value="high">High</option>
-              </select>
-            </label>
-            <label>
-              <span>Visit Type</span>
-              <select v-model="reviewVisitType" class="form-select">
-                <option value="solo">Solo</option>
-                <option value="friends">Friends</option>
-                <option value="family">Family</option>
-                <option value="couple">Couple</option>
-              </select>
-            </label>
-          </div>
-
-          <button type="button" class="btn btn-primary mt-3" @click="submitReview">Submit Review</button>
+        <article class="glass-card signal-card mt-4">
+          <h3>Hidden Gems</h3>
+          <div v-if="loadingInsights" class="panel-empty mt-3">Collecting gems...</div>
+          <ul v-else-if="hiddenGemsPreview?.gems?.length" class="insight-list mt-3">
+            <li v-for="gem in hiddenGemsPreview.gems" :key="gem.id">
+              <strong>{{ gem.name }}</strong>
+              <span>{{ gem.relevanceScore }}/100 | {{ gem.bestWindow }}</span>
+            </li>
+          </ul>
+          <div v-else class="panel-empty mt-3">No hidden gems found yet.</div>
         </article>
 
         <article class="glass-card metrics-card mt-4">
           <h3>Destination Pulse</h3>
           <ul class="metric-list mt-3">
-            <li><span>Total Posts</span><strong>{{ pulse?.totalPosts || 0 }}</strong></li>
+            <li><span>Total Tips</span><strong>{{ pulse?.totalPosts || 0 }}</strong></li>
             <li><span>Total Reviews</span><strong>{{ pulse?.totalReviews || 0 }}</strong></li>
             <li><span>Average Rating</span><strong>{{ averageReview || pulse?.avgRating || 0 }}</strong></li>
             <li><span>Contributors</span><strong>{{ topContributors.length }}</strong></li>
+          </ul>
+        </article>
+
+        <article class="glass-card metrics-card mt-4">
+          <h3>Top Contributors</h3>
+          <div v-if="topContributors.length === 0" class="panel-empty mt-3">Contributors appear as community activity grows.</div>
+          <ul v-else class="metric-list mt-3">
+            <li v-for="item in topContributors" :key="item.name">
+              <span>{{ item.name }}</span>
+              <strong>{{ item.points }} pts</strong>
+            </li>
           </ul>
         </article>
 
@@ -530,20 +596,26 @@ onMounted(async () => {
 .community-page {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-bottom: 30px;
+  gap: 18px;
+  padding-bottom: 48px;
 }
 
 .community-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 14px;
-  padding: 24px;
+  gap: 24px;
+  padding: 30px;
   border: 1px solid rgba(8, 145, 178, 0.26);
   background:
     radial-gradient(circle at 85% 20%, rgba(16, 185, 129, 0.14), transparent 46%),
     linear-gradient(140deg, rgba(236, 253, 245, 0.92), rgba(240, 249, 255, 0.92));
+}
+
+.hero-main {
+  display: grid;
+  gap: 12px;
+  align-content: start;
 }
 
 .hero-badge {
@@ -564,15 +636,56 @@ onMounted(async () => {
 }
 
 .community-hero p {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--color-text-secondary);
-  max-width: 760px;
+  max-width: 820px;
+  line-height: 1.6;
 }
 
 .hero-controls {
   display: grid;
-  gap: 8px;
-  min-width: 320px;
+  gap: 10px;
+  width: min(360px, 100%);
+  align-content: start;
+}
+
+.control-label {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hero-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hero-stat {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.hero-stat span {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.hero-stat strong {
+  font-size: 1rem;
+  color: var(--color-text);
 }
 
 .mt-2 {
@@ -610,31 +723,79 @@ onMounted(async () => {
   color: #b91c1c;
 }
 
-.community-layout {
+.community-workspace {
   display: grid;
-  grid-template-columns: 0.95fr 1.35fr 0.95fr;
+  grid-template-columns: minmax(0, 1.58fr) minmax(300px, 0.92fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.workspace-main,
+.workspace-side {
+  min-width: 0;
+}
+
+.workspace-main {
+  display: grid;
   gap: 12px;
 }
 
-.left-rail,
-.stream-col,
-.right-rail {
+.workspace-side {
   display: grid;
+  gap: 12px;
   align-content: start;
-  gap: 10px;
 }
 
 .composer-card,
 .signal-card,
 .stream-head-card,
-.review-card,
 .metrics-card {
   border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.composer-card {
+  border-color: rgba(14, 165, 233, 0.26);
+}
+
+.composer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composer-head h3 {
+  margin-top: 2px;
+  font-size: 1.06rem;
+}
+
+.composer-head p {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.composer-switcher {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .stream-head-card h2 {
   margin-top: 4px;
   font-size: 1.28rem;
+}
+
+.stream-subcopy {
+  margin-top: 7px;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
 }
 
 .stream-label {
@@ -664,7 +825,7 @@ onMounted(async () => {
 
 .feed-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .feed-item {
@@ -675,7 +836,7 @@ onMounted(async () => {
 
 .feed-media {
   width: 100%;
-  height: 210px;
+  height: 220px;
   object-fit: cover;
   border-radius: var(--radius-md);
   margin-bottom: 10px;
@@ -917,25 +1078,48 @@ onMounted(async () => {
 }
 
 @media (max-width: 1120px) {
-  .community-layout {
+  .community-workspace {
     grid-template-columns: 1fr;
   }
 
-  .left-rail,
-  .stream-col,
-  .right-rail {
-    grid-template-columns: 1fr;
+  .workspace-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
   .community-hero {
     flex-direction: column;
+    padding: 22px;
+    gap: 18px;
   }
 
   .hero-controls {
-    min-width: 0;
     width: 100%;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+  }
+
+  .hero-stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .composer-head {
+    flex-direction: column;
+  }
+
+  .composer-switcher {
+    width: 100%;
+  }
+
+  .composer-switcher .btn {
+    flex: 1;
+  }
+
+  .workspace-side {
+    grid-template-columns: 1fr;
   }
 
   .review-grid,

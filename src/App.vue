@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterView, RouterLink, useRoute, useRouter } from "vue-router";
 import { initUserCurrency } from "./services/currency";
 import { useAuthStore } from "./stores/auth";
@@ -12,6 +12,7 @@ const offlineStore = useOfflineStore();
 const route = useRoute();
 const router = useRouter();
 const profileMenuOpen = ref(false);
+const profileWrapRef = ref(null);
 const geoLoading = ref(true);
 const currentYear = new Date().getFullYear();
 
@@ -47,9 +48,34 @@ const toggleProfileMenu = () => {
   profileMenuOpen.value = !profileMenuOpen.value;
 };
 
+const closeProfileMenu = () => {
+  profileMenuOpen.value = false;
+};
+
+const handleClickOutsideProfileMenu = (event) => {
+  if (!profileMenuOpen.value) {
+    return;
+  }
+
+  const host = profileWrapRef.value;
+  if (!host) {
+    return;
+  }
+
+  if (event.target instanceof Node && !host.contains(event.target)) {
+    closeProfileMenu();
+  }
+};
+
+const handleEscapeForProfileMenu = (event) => {
+  if (event.key === "Escape") {
+    closeProfileMenu();
+  }
+};
+
 const handleLogout = async () => {
   await authStore.logout();
-  profileMenuOpen.value = false;
+  closeProfileMenu();
 
   if (route.meta?.requiresAuth) {
     router.push("/");
@@ -59,7 +85,7 @@ const handleLogout = async () => {
 watch(
   () => route.fullPath,
   () => {
-    profileMenuOpen.value = false;
+    closeProfileMenu();
   }
 );
 
@@ -72,6 +98,9 @@ watch(
 );
 
 onMounted(() => {
+  document.addEventListener("pointerdown", handleClickOutsideProfileMenu);
+  document.addEventListener("keydown", handleEscapeForProfileMenu);
+
   detectUserLocation()
     .then(() => initUserCurrency(userLocation.value))
     .finally(() => {
@@ -79,6 +108,11 @@ onMounted(() => {
     });
   authStore.initAuth();
   offlineStore.initForUser(authStore.user?.uid || "guest");
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", handleClickOutsideProfileMenu);
+  document.removeEventListener("keydown", handleEscapeForProfileMenu);
 });
 </script>
 
@@ -115,7 +149,7 @@ onMounted(() => {
           </div>
 
           <!-- Profile Avatar -->
-          <div class="nav-profile-wrap">
+          <div ref="profileWrapRef" class="nav-profile-wrap">
             <button
               type="button"
               class="profile-avatar-circle"
@@ -126,11 +160,11 @@ onMounted(() => {
             </button>
 
             <transition name="fade-route">
-              <div v-if="profileMenuOpen" class="profile-menu glass-card">
+              <div v-if="profileMenuOpen" class="profile-menu">
                 <p class="profile-menu-name">{{ profileName }}</p>
                 <p class="profile-menu-email">{{ authStore.user?.email || 'Login to personalize your travel profile' }}</p>
 
-                <div class="profile-actions">
+                <div class="profile-actions" @click="closeProfileMenu">
                   <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="profile-action-link">
                     Open Profile
                   </RouterLink>
@@ -351,6 +385,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .brand-logo {
@@ -375,20 +410,20 @@ onMounted(() => {
 .nav-links-desktop {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
 }
 
 .nav-right-cluster {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .geo-indicator {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
+  padding: 8px 12px;
   border-radius: var(--radius-full);
   border: 1px solid var(--color-border);
   background: #ffffff;
@@ -412,7 +447,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
+  padding: 8px 12px;
   border-radius: var(--radius-full);
   border: 1px solid rgba(5, 150, 105, 0.25);
   background: rgba(209, 250, 229, 0.52);
@@ -479,6 +514,7 @@ onMounted(() => {
   position: relative;
   display: flex;
   align-items: center;
+  isolation: isolate;
 }
 
 .profile-avatar-circle {
@@ -502,15 +538,29 @@ onMounted(() => {
   font-weight: 800;
 }
 
-.profile-menu {
+.nav-profile-wrap .profile-menu {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: 260px;
-  padding: 14px;
+  left: auto;
+  width: min(312px, calc(100vw - 24px));
+  max-height: min(72vh, calc(100vh - 120px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.84));
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   box-shadow: var(--shadow-xl);
-  z-index: 1200;
+  z-index: 1300;
+}
+
+.nav-profile-wrap .profile-menu:hover {
+  transform: none;
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-xl);
 }
 
 .profile-menu-name {
@@ -527,16 +577,17 @@ onMounted(() => {
 }
 
 .profile-actions {
-  margin-top: 12px;
+  margin-top: 14px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .profile-action-link {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-size: 0.85rem;
+  line-height: 1.4;
   color: var(--color-text-secondary);
   background: #ffffff;
   text-align: left;
@@ -555,15 +606,16 @@ onMounted(() => {
 .app-footer {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 250, 252, 0.88));
   border-top: 1px solid rgba(148, 163, 184, 0.18);
-  padding: 42px 0 22px;
-  margin-top: 28px;
+  padding: 52px 0 28px;
+  margin-top: 36px;
 }
 
 .footer-content {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 36px;
-  margin-bottom: 22px;
+  gap: 44px;
+  margin-bottom: 28px;
 }
 
 @media (max-width: 768px) {
@@ -595,7 +647,7 @@ onMounted(() => {
 
 .footer-links-grid {
   display: flex;
-  gap: 36px;
+  gap: 44px;
 }
 
 @media (max-width: 480px) {
@@ -609,7 +661,7 @@ onMounted(() => {
 .links-column {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 11px;
 }
 
 .links-column h4 {
@@ -631,7 +683,7 @@ onMounted(() => {
 
 .footer-bottom {
   border-top: 1px solid var(--color-border);
-  padding-top: 14px;
+  padding-top: 16px;
   text-align: center;
 }
 
@@ -647,14 +699,14 @@ onMounted(() => {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 70px;
+  height: 74px;
   z-index: 1000;
   display: none;
   grid-template-columns: repeat(5, 1fr);
   align-items: center;
   justify-items: center;
   border-top: 1px solid rgba(148, 163, 184, 0.3);
-  padding-bottom: 6px;
+  padding-bottom: 8px;
 }
 
 @media (max-width: 768px) {
@@ -682,7 +734,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   color: var(--color-text-muted);
   cursor: pointer;
 }

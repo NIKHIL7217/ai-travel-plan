@@ -187,7 +187,7 @@ function listOrDefault(values = [], fallback = "No details") {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -198,6 +198,7 @@ function listOrDefault(values = [], fallback = "No details") {
   display: grid;
   gap: 10px;
   background: #ffffff;
+  min-width: 0;
 }
 
 .option-card.selected {
@@ -286,6 +287,7 @@ function listOrDefault(values = [], fallback = "No details") {
   font-size: 0.74rem;
   line-height: 1.35;
   color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .score-grid {
@@ -316,6 +318,7 @@ function listOrDefault(values = [], fallback = "No details") {
   font-size: 0.74rem;
   color: var(--color-text-muted);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .tradeoff-grid {
@@ -346,6 +349,7 @@ function listOrDefault(values = [], fallback = "No details") {
   font-size: 0.7rem;
   color: var(--color-text-secondary);
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1080px) {
