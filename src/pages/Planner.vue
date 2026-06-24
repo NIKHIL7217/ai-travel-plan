@@ -131,58 +131,6 @@ const appliedPreferenceRows = computed(() => {
     `Food: ${controls.value.foodPreference}`
   ];
 });
-const itineraryThemes = computed(() => {
-  const rows = Array.isArray(activeItinerary.value?.itinerary) ? activeItinerary.value.itinerary : [];
-  return rows.slice(0, 6).map((day, index) => ({
-    day: Number(day?.day || index + 1),
-    theme: String(day?.theme || `Day ${index + 1}`)
-  }));
-});
-const activityHighlights = computed(() => {
-  const rows = Array.isArray(activeItinerary.value?.itinerary) ? activeItinerary.value.itinerary : [];
-  return rows
-    .map((day, index) => ({
-      id: `${index + 1}-${day?.theme || "activity"}`,
-      day: Number(day?.day || index + 1),
-      theme: String(day?.theme || "Experience"),
-      detail: String(day?.afternoon || day?.morning || "Local activity window")
-    }))
-    .slice(0, 6);
-});
-const hotelHighlights = computed(() => {
-  return (tripSnapshot.value?.hotels || []).slice(0, 6).map((hotel, index) => ({
-    id: `${hotel?.name || "hotel"}-${index}`,
-    name: String(hotel?.name || "Hotel"),
-    distance: String(hotel?.distance || "N/A")
-  }));
-});
-const restaurantHighlights = computed(() => {
-  return (tripSnapshot.value?.restaurants || []).slice(0, 6).map((restaurant, index) => ({
-    id: `${restaurant?.name || "restaurant"}-${index}`,
-    name: String(restaurant?.name || "Restaurant"),
-    distance: String(restaurant?.distance || "N/A")
-  }));
-});
-const mapDirectionsUrl = computed(() => {
-  const destination = String(activeItinerary.value?.destination || controls.value.destination || "").trim();
-  if (!destination) {
-    return "";
-  }
-
-  const origin = String(controls.value.origin || "Current Location").trim() || "Current Location";
-  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
-});
-const photoMoodboard = computed(() => {
-  const destination = String(activeItinerary.value?.destination || controls.value.destination || "travel").trim() || "travel";
-  const themes = itineraryThemes.value.slice(0, 3).map((row) => row.theme);
-  const queries = [destination, ...themes];
-
-  return queries.map((query, index) => ({
-    id: `${query}-${index}`,
-    alt: `${query} travel mood`,
-    url: `https://source.unsplash.com/1200x800/?${encodeURIComponent(`${destination} ${query} travel`)}`
-  }));
-});
 const LOCKED_PREFERENCE_KEYS = new Set([
   "origin",
   "destination",
@@ -353,15 +301,15 @@ function applyIntelligentDefaults(effectiveInput, sourcePrompt) {
 
 function getValidationErrorMessage(effectiveInput) {
   if (!Number.isFinite(Number(effectiveInput.days)) || Number(effectiveInput.days) < 2) {
-    return "Trip days kam se kam 2 hone chahiye.";
+    return "Trip days must be at least 2.";
   }
 
   if (!Number.isFinite(Number(effectiveInput.travelers)) || Number(effectiveInput.travelers) < 1) {
-    return "Travelers count kam se kam 1 hona chahiye.";
+    return "Number of travelers must be at least 1.";
   }
 
   if (!Number.isFinite(Number(effectiveInput.maxBudget)) || Number(effectiveInput.maxBudget) < 200) {
-    return "Budget minimum 200 USD hona chahiye.";
+    return "Minimum budget must be at least 200 USD.";
   }
 
   return "";
@@ -400,7 +348,7 @@ function buildAssistantReply(effectiveInput, itinerary, budget, snapshot) {
   const topAttraction = snapshot?.attractions?.[0]?.name || "local highlights";
   const topHotel = snapshot?.hotels?.[0]?.name || "stay options";
 
-  return `Great prompt. ${destination} ke liye ${days}-day itinerary ready hai with your preferences applied: ${effectiveInput.style} style, ${effectiveInput.travelMode} mode, ${effectiveInput.stayPreference} stay, ${effectiveInput.foodPreference} food focus, and budget cap ${formatPrice(effectiveInput.maxBudget)}. Estimated total budget ${totalBudget} hai. Day 1 focus: ${firstTheme}. Local picks me ${topAttraction} aur stay side par ${topHotel} strong signals me aaye hain.`;
+  return `Great prompt. A ${days}-day itinerary for ${destination} is ready with your preferences applied: ${effectiveInput.style} style, ${effectiveInput.travelMode} mode, ${effectiveInput.stayPreference} stay, ${effectiveInput.foodPreference} food focus, and a budget cap of ${formatPrice(effectiveInput.maxBudget)}. Estimated total budget: ${totalBudget}. Day 1 focus: ${firstTheme}. Local highlights: ${topAttraction}. Recommended stay: ${topHotel}.`;
 }
 
 function planProsCons(planId, effectiveInput) {
@@ -456,14 +404,14 @@ function buildAssistantSuggestions(itinerary, budget, snapshot) {
   const distance = snapshot?.distance;
 
   const suggestions = [
-    dayOne ? `Day 1 me ${dayOne.theme} ko fixed rakho, isse trip ka flow stable start hota hai.` : "Day 1 ko light arrival plus orientation day rakho for smoother start.",
-    dayTwo ? `Day 2 ke liye ${dayTwo.theme} slot ko pre-book karo to time waste kam hoga.` : "Day 2 ke main attraction slots pehle lock kar lo.",
-    Number(budget?.total || 0) > 0 ? `Current total ${formatPrice(budget.total)} hai, booking split karke cash flow easy raho.` : "Budget ko transport, stay, food, activities me split karke track karo.",
-    attraction ? `Top attraction signal: ${attraction}. Iske peak hours avoid karo.` : "Top attractions ke liye early slot prefer karo.",
-    restaurant ? `Food pick: ${restaurant}. Off-peak dining window choose karo.` : "Local food spot ke liye off-peak timing choose karo.",
-    distance ? `Approx route distance ${distance} hai, transit buffer include karo.` : "Transit me 15 to 20 percent buffer rakhna useful rahega.",
-    `Current preference mode ${controls.value.travelMode} hai, isliye route pacing and transfer planning ussi ke hisaab se rakho.`,
-    `Current style ${controls.value.style} hai, isliye activity intensity aur spend priority ussi style ke around tune karo.`
+    dayOne ? `Keep Day 1 focused on ${dayOne.theme} to ensure a stable trip start.` : "Make Day 1 a light arrival and orientation day for a smoother start.",
+    dayTwo ? `For Day 2, prioritize ${dayTwo.theme} and consider pre-booking to reduce wait times.` : "Prioritize main attractions on Day 2 and lock key slots early.",
+    Number(budget?.total || 0) > 0 ? `Current total is ${formatPrice(budget.total)}. Consider splitting bookings to ease cash flow.` : "Split your budget across transport, stay, food, and activities to track spending.",
+    attraction ? `Top attraction: ${attraction}. Aim to avoid peak hours for a better experience.` : "Prefer earlier time slots for top attractions.",
+    restaurant ? `Recommended food spot: ${restaurant}. Choose off-peak dining windows.` : "Choose off-peak dining times for local food spots.",
+    distance ? `Approximate route distance: ${distance}. Add a transit buffer.` : "Include a 15–20% transit buffer for travel time.",
+    `Preference mode is ${controls.value.travelMode}; plan pacing and transfers accordingly.`,
+    `Style is ${controls.value.style}; tune activity intensity and spend priority to match this style.`
   ];
 
   return suggestions.filter(Boolean).slice(0, 6);
@@ -620,25 +568,6 @@ function toggleDay(day) {
   expandedDay.value = expandedDay.value === day ? null : day;
 }
 
-function openRouteMap() {
-  const url = mapDirectionsUrl.value;
-  if (!url) {
-    return;
-  }
-
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
-function openMapsSearch(name) {
-  const label = String(name || "").trim();
-  if (!label) {
-    return;
-  }
-
-  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(label)}`;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 function useRecentTrip(trip) {
   if (!trip) {
     return;
@@ -746,89 +675,6 @@ function handleSaveOfflineDraft() {
   }, 2200);
 }
 
-function queuePlannerOfflinePack(type) {
-  if (!canSavePlan.value) {
-    return;
-  }
-
-  const destination = activeItinerary.value?.destination || controls.value.destination || "Trip";
-  const payloadBase = {
-    destination,
-    days: Number(controls.value.days || 0),
-    travelers: Number(controls.value.travelers || 0),
-    travelMode: controls.value.travelMode,
-    budgetTotal: Number(activeBudget.value?.total || 0),
-    updatedAt: Date.now()
-  };
-
-  if (type === "itinerary") {
-    offlineStore.queueOfflinePack({
-      type: "itinerary",
-      title: `${destination} itinerary`,
-      source: "planner",
-      payload: {
-        ...payloadBase,
-        itinerary: activeItinerary.value?.itinerary || []
-      }
-    });
-    offlineDraftMessage.value = "Itinerary offline pack saved.";
-  }
-
-  if (type === "maps") {
-    offlineStore.queueOfflinePack({
-      type: "maps",
-      title: `${destination} maps`,
-      source: "planner",
-      payload: {
-        ...payloadBase,
-        mapPoints: Array.isArray(activeItinerary.value?.itinerary)
-          ? activeItinerary.value.itinerary.map((day, index) => ({
-              day: index + 1,
-              theme: day.theme,
-              places: day.activities || []
-            }))
-          : []
-      }
-    });
-    offlineDraftMessage.value = "Maps offline pack saved.";
-  }
-
-  if (type === "hotels") {
-    offlineStore.queueOfflinePack({
-      type: "hotels",
-      title: `${destination} hotel list`,
-      source: "planner",
-      payload: {
-        ...payloadBase,
-        hotels: tripSnapshot.value?.hotels || []
-      }
-    });
-    offlineDraftMessage.value = "Hotel offline pack saved.";
-  }
-
-  if (type === "emergency") {
-    offlineStore.queueOfflinePack({
-      type: "emergency",
-      title: `${destination} emergency info`,
-      source: "planner",
-      payload: {
-        ...payloadBase,
-        weather: tripSnapshot.value?.weather || null,
-        keyTips: [
-          "Keep emergency contacts reachable.",
-          "Carry digital + printed identity copy.",
-          "Store nearest hospital and embassy location."
-        ]
-      }
-    });
-    offlineDraftMessage.value = "Emergency offline pack saved.";
-  }
-
-  setTimeout(() => {
-    offlineDraftMessage.value = "";
-  }, 2200);
-}
-
 async function handleGenerate() {
   if (loading.value) {
     return;
@@ -843,7 +689,7 @@ async function handleGenerate() {
 
   const rawPrompt = String(promptInput.value || "").trim();
   if (!rawPrompt && !String(controls.value.destination || "").trim()) {
-    plannerError.value = "Prompt ya destination do, fir main itinerary generate kar dunga.";
+    plannerError.value = "Please provide a prompt or destination to generate an itinerary.";
     return;
   }
 
@@ -998,8 +844,8 @@ async function handleGenerate() {
     syncPlannerSessionContext();
   } catch (error) {
     console.error("Planner generation failed", error);
-    plannerError.value = getFriendlyErrorMessage(error, "AI plan generate nahi ho paya. Thodi der baad retry karo.");
-    addConversation("assistant", "Mujhe response generate karne me issue aaya. Prompt ko thoda simple karke ek baar retry karo.");
+    plannerError.value = getFriendlyErrorMessage(error, "AI plan generation failed. Please try again later.");
+    addConversation("assistant", "I had an issue generating a response. Try simplifying the prompt and retry.");
   } finally {
     generationLoading.stop();
   }
@@ -1039,7 +885,7 @@ async function handleSaveTrip() {
     await refreshRecentTrips();
     syncPlannerSessionContext();
   } catch (error) {
-    plannerError.value = getFriendlyErrorMessage(error, "Trip save nahi ho paya.");
+    plannerError.value = getFriendlyErrorMessage(error, "Failed to save the trip.");
   }
 }
 
@@ -1069,7 +915,7 @@ async function handleCreateGroupTrip() {
 
     router.push({ path: "/group-trips", query: { group: group.id } });
   } catch (error) {
-    plannerError.value = getFriendlyErrorMessage(error, "Group trip create nahi ho paya.");
+    plannerError.value = getFriendlyErrorMessage(error, "Failed to create group trip.");
   }
 }
 
@@ -1122,17 +968,17 @@ watch(
 <template>
   <div class="planner-chat-page container animate-fade-in" style="padding-top: 100px;">
     <div class="planner-header">
-      <span class="planner-badge">AI PLANNER STUDIO</span>
-      <h1>Build Your Journey In Three Panels</h1>
+      <span class="planner-badge">PLANNER CHAT</span>
+      <h1>Talk To Your AI Trip Planner</h1>
       <p>
-        Left me intent and preferences set karo, center me itinerary canvas dekho, right side pe budget, weather, and smart suggestions live update honge.
+        Enter a normal prompt. The planner will interpret it and return practical suggestions, a budget split, and a day-wise itinerary.
       </p>
     </div>
 
     <div class="planner-layout mt-6">
-      <section class="planner-column planner-column-left">
+      <section class="input-column">
         <article class="glass-card prompt-card">
-          <h2>Trip Intent Console</h2>
+          <h2>Describe your trip</h2>
           <textarea
             v-model="promptInput"
             class="planner-textarea"
@@ -1141,7 +987,7 @@ watch(
           ></textarea>
 
           <p v-if="!liveAiReady" class="ai-status mt-2">
-            Live Gemini key missing hai. Planner fallback intelligence ke saath response dega.
+            Live Gemini API key is missing. Planner will use fallback intelligence.
           </p>
 
           <div class="offline-strip mt-2">
@@ -1192,16 +1038,35 @@ watch(
           </div>
         </article>
 
+        <article v-if="recentTrips.length > 0" class="glass-card recent-card">
+          <div class="card-head">
+            <h3>Recent Saved Trips</h3>
+            <small>Reuse as baseline</small>
+          </div>
+          <div class="recent-list mt-3">
+            <button
+              v-for="trip in recentTrips"
+              :key="trip.id"
+              type="button"
+              class="recent-item"
+              @click="useRecentTrip(trip)"
+            >
+              <span>{{ trip.destination }}</span>
+              <small>{{ trip.days }} days · {{ formatPrice(trip?.budget?.total || 0) }}</small>
+            </button>
+          </div>
+        </article>
+
         <article class="glass-card conversation-card">
           <div class="card-head">
-            <h3>Prompt Timeline</h3>
+            <h3>Conversation</h3>
             <button type="button" class="btn btn-outline btn-xs" :disabled="loading" @click="openPreferencesModal">
               Edit Preferences
             </button>
           </div>
 
           <p v-if="conversation.length === 0" class="conversation-empty mt-2">
-            Your prompt and assistant responses yahan appear honge.
+            Your prompt and assistant responses will appear here.
           </p>
 
           <div v-else class="conversation-list mt-3">
@@ -1221,39 +1086,33 @@ watch(
         </article>
       </section>
 
-      <section class="planner-column planner-column-center canvas-dominant">
+      <section class="result-column">
         <article v-if="loading" class="glass-card loading-card">
           <div class="spinner"></div>
           <p>AI planner is building your itinerary and suggestions...</p>
         </article>
 
         <article v-else-if="!hasResults" class="glass-card empty-card">
-          <h3>Itinerary Canvas Awaits</h3>
-          <p>Prompt submit karte hi yaha cinematic itinerary canvas, route map, moodboard, and live travel intelligence appear hoga.</p>
-          <div class="empty-sample-grid mt-4">
-            <article class="sample-card">
-              <strong>Day 1 • Arrival + Sunset Walk</strong>
-              <p>Airport transfer, local cafe, golden-hour viewpoint.</p>
-            </article>
-            <article class="sample-card">
-              <strong>Day 2 • Culture + Food Trail</strong>
-              <p>Old town walk, signature street-food circuit, evening market.</p>
-            </article>
-            <article class="sample-card">
-              <strong>Day 3 • Scenic Route Day</strong>
-              <p>Road viewpoints, hidden stopovers, dinner by waterfront.</p>
-            </article>
-          </div>
-          <div class="sample-pill-row mt-4">
-            <span class="sample-pill">Live Budget Split</span>
-            <span class="sample-pill">Hotel + Food Picks</span>
-            <span class="sample-pill">Route Intelligence</span>
-          </div>
+          <h3>Ready when you are</h3>
+          <p>Send a natural prompt and I will return a clean, actionable plan.</p>
         </article>
 
-        <article v-else class="glass-card result-card visual-canvas">
-          <div class="result-canvas-head">
-            <div class="result-title-block">
+        <article v-else class="glass-card result-card">
+          <PlanComparisonView
+            v-if="generatedPlanOptions.length > 0"
+            :options="generatedPlanOptions"
+            :selected-plan-id="selectedPlanId"
+            :loading="loading"
+            @select-plan="selectGeneratedPlan"
+          />
+
+          <div v-if="selectedPlan" class="selected-plan-strip mt-4">
+            <span class="selected-label">Selected: {{ selectedPlan.label }}</span>
+            <span class="selected-score">Rank #{{ selectedPlan.rank }} • Score {{ selectedPlan.totalScore }}/100</span>
+          </div>
+
+          <div class="result-header">
+            <div>
               <span class="tagline">{{ activeItinerary.tagline }}</span>
               <h2>{{ activeItinerary.destination }}</h2>
               <p>{{ activeItinerary.summary }}</p>
@@ -1281,42 +1140,6 @@ watch(
               <button
                 type="button"
                 class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="queuePlannerOfflinePack('itinerary')"
-              >
-                Save Itinerary Pack
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="queuePlannerOfflinePack('maps')"
-              >
-                Save Maps Pack
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="queuePlannerOfflinePack('hotels')"
-              >
-                Save Hotels Pack
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="queuePlannerOfflinePack('emergency')"
-              >
-                Save Emergency Pack
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
                 :class="{ saved: saveStatus }"
                 :disabled="!canSavePlan"
                 @click="handleSaveTrip"
@@ -1326,135 +1149,80 @@ watch(
             </div>
           </div>
 
-          <article v-if="photoMoodboard.length > 0" class="canvas-hero-media">
-            <img :src="photoMoodboard[0].url" :alt="photoMoodboard[0].alt" class="canvas-hero-main" loading="lazy" />
-            <div class="canvas-hero-stack">
-              <img
-                v-for="photo in photoMoodboard.slice(1, 3)"
-                :key="photo.id"
-                :src="photo.url"
-                :alt="photo.alt"
-                loading="lazy"
-              />
-            </div>
-            <div class="canvas-hero-overlay">
-              <strong>{{ activeItinerary.destination }} Itinerary Canvas</strong>
-              <p>{{ controls.days }} days • {{ controls.travelMode }} • {{ formatPrice(activeBudget.total) }} estimate</p>
-            </div>
-          </article>
-
-          <div class="canvas-pulse-row">
-            <span class="pulse-chip">{{ tripSnapshot.distance }}</span>
-            <span class="pulse-chip">{{ tripSnapshot.weather ? `${tripSnapshot.weather.temp} | ${tripSnapshot.weather.humidity}` : "Weather loading" }}</span>
-            <span class="pulse-chip">{{ hotelHighlights[0]?.name || "Hotel picks ready" }}</span>
-            <span class="pulse-chip">{{ restaurantHighlights[0]?.name || "Food picks ready" }}</span>
+          <div v-if="assistantReply" class="assistant-reply-card mt-4">
+            <h3>Assistant Response</h3>
+            <p>{{ assistantReply }}</p>
           </div>
 
-          <PlanComparisonView
-            v-if="generatedPlanOptions.length > 0"
-            :options="generatedPlanOptions"
-            :selected-plan-id="selectedPlanId"
-            :loading="loading"
-            @select-plan="selectGeneratedPlan"
+          <div class="assistant-suggestion-card mt-4">
+            <h4>Applied Preferences</h4>
+            <ul class="suggestion-list">
+              <li v-for="item in appliedPreferenceRows" :key="item">{{ item }}</li>
+            </ul>
+          </div>
+
+          <div v-if="assistantSuggestions.length > 0" class="assistant-suggestion-card mt-4">
+            <h4>Suggested Next Moves</h4>
+            <ul class="suggestion-list">
+              <li v-for="(suggestion, index) in assistantSuggestions" :key="`suggestion-${index}`">{{ suggestion }}</li>
+            </ul>
+          </div>
+
+          <div class="budget-grid mt-4">
+            <article class="budget-cell">
+              <span>Flights</span>
+              <strong>{{ formatPrice(activeBudget.flights) }}</strong>
+            </article>
+            <article class="budget-cell">
+              <span>Stay</span>
+              <strong>{{ formatPrice(activeBudget.accommodation) }}</strong>
+            </article>
+            <article class="budget-cell">
+              <span>Food</span>
+              <strong>{{ formatPrice(activeBudget.food) }}</strong>
+            </article>
+            <article class="budget-cell">
+              <span>Transport</span>
+              <strong>{{ formatPrice(activeBudget.transportation) }}</strong>
+            </article>
+            <article class="budget-cell">
+              <span>Activities</span>
+              <strong>{{ formatPrice(activeBudget.activities) }}</strong>
+            </article>
+            <article class="budget-cell total">
+              <span>Total</span>
+              <strong>{{ formatPrice(activeBudget.total) }}</strong>
+            </article>
+          </div>
+
+          <div class="snapshot-grid mt-4">
+            <article class="snapshot-cell">
+              <span>Distance</span>
+              <strong>{{ tripSnapshot.distance }}</strong>
+            </article>
+            <article class="snapshot-cell">
+              <span>Weather</span>
+              <strong v-if="tripSnapshot.weather">{{ tripSnapshot.weather.temp }} · {{ tripSnapshot.weather.humidity }} humidity</strong>
+              <strong v-else>{{ tripSnapshotLoading ? "Refreshing..." : "Unavailable" }}</strong>
+            </article>
+            <article class="snapshot-cell">
+              <span>Top Attraction</span>
+              <strong>{{ tripSnapshot.attractions[0]?.name || "Not available" }}</strong>
+            </article>
+            <article class="snapshot-cell">
+              <span>Top Hotel</span>
+              <strong>{{ tripSnapshot.hotels[0]?.name || "Not available" }}</strong>
+            </article>
+          </div>
+
+          <RoadtripIntelligencePanel
+            v-if="isRoadtripMode(controls.travelMode)"
+            class="mt-4"
+            :roadtrip="activeRoadtrip"
+            :loading="roadtripLoading || loading"
           />
 
-          <div v-if="selectedPlan" class="selected-plan-strip mt-4">
-            <span class="selected-label">Selected: {{ selectedPlan.label }}</span>
-            <span class="selected-score">Rank #{{ selectedPlan.rank }} • Score {{ selectedPlan.totalScore }}/100</span>
-          </div>
-
-          <div class="canvas-grid mt-4">
-            <article class="canvas-card">
-              <div class="canvas-card-head">
-                <h4>Timeline</h4>
-                <small>{{ itineraryThemes.length }} day flow</small>
-              </div>
-              <div class="timeline-chip-row mt-3">
-                <span v-for="item in itineraryThemes" :key="`${item.day}-${item.theme}`" class="timeline-chip">
-                  Day {{ item.day }} • {{ item.theme }}
-                </span>
-              </div>
-            </article>
-
-            <article class="canvas-card">
-              <div class="canvas-card-head">
-                <h4>Route Map</h4>
-                <small>{{ controls.origin }} to {{ activeItinerary.destination }}</small>
-              </div>
-              <p class="canvas-note mt-3">Open full directions to inspect route options and neighborhood context.</p>
-              <button type="button" class="btn btn-outline btn-xs mt-3" :disabled="!mapDirectionsUrl" @click="openRouteMap">
-                Open In Maps
-              </button>
-            </article>
-          </div>
-
-          <article class="canvas-card">
-            <div class="canvas-card-head">
-              <h4>Photo Moodboard</h4>
-              <small>Destination visual storytelling</small>
-            </div>
-            <div class="photo-moodboard mt-3">
-              <img v-for="photo in photoMoodboard" :key="photo.id" :src="photo.url" :alt="photo.alt" loading="lazy" />
-            </div>
-          </article>
-
-          <div class="resources-grid mt-4">
-            <article class="canvas-card resource-card">
-              <div class="canvas-card-head">
-                <h4>Hotels</h4>
-                <small>{{ hotelHighlights.length }} picks</small>
-              </div>
-              <div v-if="hotelHighlights.length === 0" class="resource-empty mt-3">Hotels will appear after snapshot refresh.</div>
-              <div v-else class="resource-list mt-3">
-                <button
-                  v-for="hotel in hotelHighlights"
-                  :key="hotel.id"
-                  type="button"
-                  class="resource-item"
-                  @click="openMapsSearch(hotel.name)"
-                >
-                  <span>{{ hotel.name }}</span>
-                  <small>{{ hotel.distance }}</small>
-                </button>
-              </div>
-            </article>
-
-            <article class="canvas-card resource-card">
-              <div class="canvas-card-head">
-                <h4>Activities</h4>
-                <small>{{ activityHighlights.length }} experiences</small>
-              </div>
-              <div v-if="activityHighlights.length === 0" class="resource-empty mt-3">Generate itinerary to view activities.</div>
-              <div v-else class="resource-list mt-3">
-                <article v-for="activity in activityHighlights" :key="activity.id" class="resource-item static">
-                  <span>Day {{ activity.day }} • {{ activity.theme }}</span>
-                  <small>{{ activity.detail }}</small>
-                </article>
-              </div>
-            </article>
-
-            <article class="canvas-card resource-card">
-              <div class="canvas-card-head">
-                <h4>Restaurants</h4>
-                <small>{{ restaurantHighlights.length }} nearby</small>
-              </div>
-              <div v-if="restaurantHighlights.length === 0" class="resource-empty mt-3">Restaurants will appear after snapshot refresh.</div>
-              <div v-else class="resource-list mt-3">
-                <button
-                  v-for="restaurant in restaurantHighlights"
-                  :key="restaurant.id"
-                  type="button"
-                  class="resource-item"
-                  @click="openMapsSearch(restaurant.name)"
-                >
-                  <span>{{ restaurant.name }}</span>
-                  <small>{{ restaurant.distance }}</small>
-                </button>
-              </div>
-            </article>
-          </div>
-
-          <div class="itinerary-list mt-4 stagger-grid">
+          <div class="itinerary-list mt-4">
             <article v-for="day in activeItinerary.itinerary" :key="day.day" class="day-card">
               <button type="button" class="day-head" @click="toggleDay(day.day)">
                 <span>Day {{ day.day }} - {{ day.theme }}</span>
@@ -1468,13 +1236,6 @@ watch(
               </div>
             </article>
           </div>
-
-          <RoadtripIntelligencePanel
-            v-if="isRoadtripMode(controls.travelMode)"
-            class="mt-4"
-            :roadtrip="activeRoadtrip"
-            :loading="roadtripLoading || loading"
-          />
 
           <div class="refinement-card mt-4" v-if="refinementPrompts.length > 0">
             <h4>Refine This Plan</h4>
@@ -1493,106 +1254,6 @@ watch(
           </div>
         </article>
       </section>
-
-      <aside class="planner-column planner-column-right">
-        <article v-if="!hasResults" class="glass-card insight-card empty-insight">
-          <h3>Intelligence Panel</h3>
-          <p>Generate karne ke baad yaha assistant response, budget split, weather snapshot, and quick next moves milenge.</p>
-        </article>
-
-        <template v-else>
-          <article v-if="assistantReply" class="glass-card assistant-reply-card">
-            <h3>Assistant Response</h3>
-            <p>{{ assistantReply }}</p>
-          </article>
-
-          <article class="glass-card assistant-suggestion-card">
-            <h4>Applied Preferences</h4>
-            <ul class="suggestion-list">
-              <li v-for="item in appliedPreferenceRows" :key="item">{{ item }}</li>
-            </ul>
-          </article>
-
-          <article v-if="assistantSuggestions.length > 0" class="glass-card assistant-suggestion-card">
-            <h4>Suggested Next Moves</h4>
-            <ul class="suggestion-list">
-              <li v-for="(suggestion, index) in assistantSuggestions" :key="`suggestion-${index}`">{{ suggestion }}</li>
-            </ul>
-          </article>
-
-          <article class="glass-card insight-card">
-            <h4>Budget Intelligence</h4>
-            <div class="budget-grid mt-3">
-              <article class="budget-cell">
-                <span>Flights</span>
-                <strong>{{ formatPrice(activeBudget.flights) }}</strong>
-              </article>
-              <article class="budget-cell">
-                <span>Stay</span>
-                <strong>{{ formatPrice(activeBudget.accommodation) }}</strong>
-              </article>
-              <article class="budget-cell">
-                <span>Food</span>
-                <strong>{{ formatPrice(activeBudget.food) }}</strong>
-              </article>
-              <article class="budget-cell">
-                <span>Transport</span>
-                <strong>{{ formatPrice(activeBudget.transportation) }}</strong>
-              </article>
-              <article class="budget-cell">
-                <span>Activities</span>
-                <strong>{{ formatPrice(activeBudget.activities) }}</strong>
-              </article>
-              <article class="budget-cell total">
-                <span>Total</span>
-                <strong>{{ formatPrice(activeBudget.total) }}</strong>
-              </article>
-            </div>
-          </article>
-
-          <article class="glass-card insight-card">
-            <h4>Live Snapshot</h4>
-            <div class="snapshot-grid mt-3">
-              <article class="snapshot-cell">
-                <span>Distance</span>
-                <strong>{{ tripSnapshot.distance }}</strong>
-              </article>
-              <article class="snapshot-cell">
-                <span>Weather</span>
-                <strong v-if="tripSnapshot.weather">{{ tripSnapshot.weather.temp }} | {{ tripSnapshot.weather.humidity }} humidity</strong>
-                <strong v-else>{{ tripSnapshotLoading ? "Refreshing..." : "Unavailable" }}</strong>
-              </article>
-              <article class="snapshot-cell">
-                <span>Top Attraction</span>
-                <strong>{{ tripSnapshot.attractions[0]?.name || "Not available" }}</strong>
-              </article>
-              <article class="snapshot-cell">
-                <span>Top Hotel</span>
-                <strong>{{ tripSnapshot.hotels[0]?.name || "Not available" }}</strong>
-              </article>
-            </div>
-          </article>
-        </template>
-
-        <article v-if="recentTrips.length > 0" class="glass-card recent-card">
-          <div class="card-head">
-            <h3>Recent Saved Trips</h3>
-            <small>Reuse as baseline</small>
-          </div>
-          <div class="recent-list mt-3">
-            <button
-              v-for="trip in recentTrips"
-              :key="trip.id"
-              type="button"
-              class="recent-item"
-              @click="useRecentTrip(trip)"
-            >
-              <span>{{ trip.destination }}</span>
-              <small>{{ trip.days }} days | {{ formatPrice(trip?.budget?.total || 0) }}</small>
-            </button>
-          </div>
-        </article>
-      </aside>
     </div>
 
     <transition name="fade">
@@ -1722,110 +1383,78 @@ watch(
 .planner-chat-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding-bottom: 56px;
-}
-
-.canvas-dominant {
-  position: relative;
-}
-
-.canvas-dominant::before {
-  content: "";
-  position: absolute;
-  inset: -10px;
-  border-radius: calc(var(--radius-xl) + 10px);
-  background: radial-gradient(circle at 12% 10%, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0));
-  pointer-events: none;
+  gap: 14px;
+  padding-bottom: 28px;
 }
 
 .planner-header h1 {
-  margin: 12px 0;
-  font-size: clamp(2.2rem, 5vw, 3.2rem);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  margin: 8px 0;
+  font-size: clamp(1.9rem, 4vw, 2.7rem);
 }
 
 .planner-header p {
   color: var(--color-text-secondary);
-  max-width: 920px;
-  font-size: 1rem;
-  line-height: 1.65;
+  max-width: 760px;
 }
 
 .planner-badge {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  color: #0f766e;
-  background: rgba(209, 250, 229, 0.82);
+  letter-spacing: 0.1em;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
   border-radius: var(--radius-sm);
-  padding: 6px 12px;
+  padding: 4px 10px;
 }
 
 .mt-6 {
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
 .mt-4 {
-  margin-top: 20px;
-}
-
-.mt-3 {
   margin-top: 16px;
 }
 
-.mt-2 {
+.mt-3 {
   margin-top: 12px;
+}
+
+.mt-2 {
+  margin-top: 8px;
 }
 
 .planner-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.planner-column {
-  display: grid;
+  grid-template-columns: 1.05fr 1fr;
   gap: 16px;
+}
+
+.input-column,
+.result-column {
+  display: grid;
+  gap: 12px;
   align-content: start;
-  min-width: 0;
 }
-
-.planner-column-left,
-.planner-column-center,
-.planner-column-right {
-  min-width: 0;
-}
-
 
 .prompt-card,
-.conversation-card,
-.result-card,
 .recent-card,
-.assistant-reply-card,
-.assistant-suggestion-card,
-.insight-card,
+.conversation-card,
 .loading-card,
-.empty-card {
-  padding: 18px;
-}
-
+.empty-card,
 .result-card {
-  overflow: visible;
+  background: #ffffff !important;
 }
 
 .prompt-card h2,
 .recent-card h3,
 .conversation-card h3 {
-  font-size: 1.02rem;
+  font-size: 1rem;
 }
 
 .memory-card {
-  border: 1px solid rgba(6, 182, 212, 0.24);
-  background: linear-gradient(150deg, rgba(236, 254, 255, 0.72) 0%, rgba(236, 253, 245, 0.68) 100%);
+  border: 1px solid rgba(2, 132, 199, 0.25);
+  background: linear-gradient(160deg, rgba(236, 254, 255, 0.7) 0%, rgba(248, 250, 252, 0.8) 100%) !important;
 }
 
 .memory-score {
@@ -1837,21 +1466,21 @@ watch(
 .memory-note {
   color: var(--color-text-secondary);
   font-size: 0.82rem;
-  line-height: 1.52;
+  line-height: 1.5;
 }
 
 .memory-traits {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .memory-pill {
-  border: 1px solid rgba(14, 165, 233, 0.24);
-  background: rgba(224, 242, 254, 0.72);
-  color: #0369a1;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  background: rgba(219, 234, 254, 0.52);
+  color: var(--color-primary);
   border-radius: var(--radius-full);
-  padding: 6px 12px;
+  padding: 5px 10px;
   font-size: 0.7rem;
   font-weight: 700;
 }
@@ -1864,29 +1493,27 @@ watch(
 
 .planner-textarea {
   width: 100%;
-  border: 1.5px solid rgba(148, 163, 184, 0.35);
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 16px;
-  font-size: 0.94rem;
+  padding: 14px;
+  font-size: 0.95rem;
   line-height: 1.6;
   resize: vertical;
-  min-height: 176px;
+  min-height: 160px;
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  background: rgba(255, 255, 255, 0.92);
 }
 
 .planner-textarea:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.16);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 .action-row {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .planner-error {
@@ -1903,7 +1530,7 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .offline-chip {
@@ -1911,7 +1538,7 @@ watch(
   border-radius: var(--radius-full);
   background: rgba(209, 250, 229, 0.6);
   color: #047857;
-  padding: 6px 11px;
+  padding: 5px 9px;
   font-size: 0.68rem;
   font-weight: 700;
 }
@@ -1938,29 +1565,29 @@ watch(
 }
 
 .preference-strip {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: rgba(248, 250, 252, 0.9);
-  padding: 12px 14px;
+  background: rgba(248, 250, 252, 0.82);
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .preference-strip p {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--color-text-secondary);
-  line-height: 1.55;
+  line-height: 1.45;
 }
 
 .preference-lock {
   border-radius: var(--radius-full);
-  border: 1px solid rgba(14, 165, 233, 0.24);
-  background: rgba(224, 242, 254, 0.62);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: rgba(219, 234, 254, 0.5);
   color: var(--color-text-secondary);
-  padding: 6px 11px;
+  padding: 5px 9px;
   font-size: 0.68rem;
   font-weight: 700;
   white-space: nowrap;
@@ -1975,13 +1602,13 @@ watch(
 .control-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .control-grid label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   font-size: 0.77rem;
   font-weight: 700;
   color: var(--color-text-secondary);
@@ -1991,7 +1618,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .card-head small {
@@ -2001,24 +1628,23 @@ watch(
 
 .btn-xs {
   font-size: 0.72rem;
-  padding: 7px 12px;
+  padding: 6px 10px;
 }
 
 .recent-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .recent-item {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.9);
-  padding: 11px 12px;
+  background: #ffffff;
+  padding: 9px 10px;
   text-align: left;
   display: grid;
-  gap: 5px;
+  gap: 4px;
   cursor: pointer;
-  transition: transform var(--transition-fast), border-color var(--transition-fast);
 }
 
 .recent-item span {
@@ -2033,8 +1659,7 @@ watch(
 }
 
 .recent-item:hover {
-  border-color: rgba(14, 165, 233, 0.4);
-  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.4);
 }
 
 .conversation-empty {
@@ -2044,24 +1669,24 @@ watch(
 
 .conversation-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .chat-message {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  background: #ffffff;
 }
 
 .chat-message.user {
-  border-color: rgba(14, 165, 233, 0.24);
-  background: rgba(239, 246, 255, 0.78);
+  border-color: rgba(37, 99, 235, 0.26);
+  background: rgba(239, 246, 255, 0.8);
 }
 
 .chat-message.assistant {
-  border-color: rgba(13, 148, 136, 0.24);
-  background: rgba(236, 253, 245, 0.76);
+  border-color: rgba(2, 132, 199, 0.25);
+  background: rgba(236, 254, 255, 0.8);
 }
 
 .chat-meta {
@@ -2069,7 +1694,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .chat-meta strong {
@@ -2089,57 +1714,17 @@ watch(
 
 .loading-card,
 .empty-card {
-  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
-  padding: 28px;
+  padding: 18px;
   text-align: center;
   color: var(--color-text-secondary);
-  min-height: 300px;
-  place-content: center;
-}
-
-.empty-sample-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.sample-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.88);
-  padding: 12px;
-}
-
-.sample-card strong {
-  font-size: 0.8rem;
-}
-
-.sample-card p {
-  margin-top: 4px;
-  font-size: 0.74rem;
-  color: var(--color-text-secondary);
-}
-
-.sample-pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sample-pill {
-  border: 1px solid rgba(14, 165, 233, 0.24);
-  border-radius: var(--radius-full);
-  background: rgba(224, 242, 254, 0.7);
-  color: #0369a1;
-  padding: 6px 11px;
-  font-size: 0.7rem;
-  font-weight: 700;
 }
 
 .spinner {
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgba(13, 148, 136, 0.2);
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(37, 99, 235, 0.2);
   border-top-color: var(--color-primary);
   border-radius: var(--radius-full);
   margin: 0 auto 10px;
@@ -2152,243 +1737,39 @@ watch(
   }
 }
 
-
-.visual-canvas {
-  display: grid;
-  gap: 16px;
-}
-
-.canvas-hero-media {
-  position: relative;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  min-height: 244px;
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-}
-
-.canvas-hero-main {
-  width: 100%;
-  height: 244px;
-  object-fit: cover;
-}
-
-.canvas-hero-stack {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-}
-
-.canvas-hero-stack img {
-  width: 100%;
-  height: 122px;
-  object-fit: cover;
-}
-
-.canvas-hero-overlay {
-  position: absolute;
-  inset: auto 0 0 0;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, rgba(2, 8, 23, 0), rgba(2, 8, 23, 0.78));
-  color: #f8fafc;
-}
-
-.canvas-hero-overlay strong {
-  color: #f8fafc;
-  font-size: 0.92rem;
-}
-
-.canvas-hero-overlay p {
-  margin-top: 4px;
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 0.76rem;
-}
-
-.canvas-pulse-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.pulse-chip {
-  border: 1px solid rgba(14, 165, 233, 0.24);
-  border-radius: var(--radius-full);
-  background: rgba(224, 242, 254, 0.7);
-  color: #0369a1;
-  padding: 6px 11px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.canvas-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.canvas-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.92);
-  padding: 14px;
-}
-
-.canvas-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.canvas-card-head h4 {
-  font-size: 0.88rem;
-}
-
-.canvas-card-head small {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-}
-
-.timeline-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.timeline-chip {
-  border: 1px solid rgba(14, 165, 233, 0.24);
-  border-radius: var(--radius-full);
-  background: rgba(224, 242, 254, 0.72);
-  color: #0369a1;
-  padding: 6px 11px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.canvas-note {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-}
-
-.photo-moodboard {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.photo-moodboard img {
-  width: 100%;
-  height: 110px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-}
-
-.resources-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.resource-card {
-  min-height: 220px;
-}
-
-.resource-empty {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-}
-
-.resource-list {
-  display: grid;
-  gap: 8px;
-}
-
-.resource-item {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.96);
-  padding: 9px 10px;
-  text-align: left;
-  display: grid;
-  gap: 4px;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.resource-item span {
-  font-size: 0.76rem;
-  color: var(--color-text);
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.resource-item small {
-  font-size: 0.68rem;
-  color: var(--color-text-muted);
-}
-
-.resource-item.static {
-  cursor: default;
-}
-
-.result-canvas-head {
+.result-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.result-title-block h2 {
-  font-size: clamp(1.3rem, 2.2vw, 1.8rem);
-  margin-top: 3px;
-}
-
-.result-title-block {
-  min-width: 0;
-  flex: 1 1 240px;
-}
-
-.result-title-block p {
-  margin-top: 8px;
-  color: var(--color-text-secondary);
-  max-width: 760px;
-  font-size: 0.9rem;
+  gap: 12px;
 }
 
 .result-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-  flex: 1 1 260px;
-  min-width: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
 }
 
 .selected-plan-strip {
-  border: 1px solid rgba(14, 165, 233, 0.26);
+  border: 1px solid rgba(37, 99, 235, 0.28);
   border-radius: var(--radius-md);
-  background: rgba(224, 242, 254, 0.72);
-  padding: 12px 14px;
+  background: rgba(239, 246, 255, 0.72);
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .selected-label {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #0369a1;
+  color: var(--color-primary);
 }
 
 .selected-score {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
 }
 
 .tagline {
@@ -2396,8 +1777,18 @@ watch(
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.08em;
-  color: #0f766e;
+  color: var(--color-secondary);
   margin-bottom: 4px;
+}
+
+.result-header h2 {
+  font-size: 1.35rem;
+}
+
+.result-header p {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  max-width: 700px;
 }
 
 .btn.saved {
@@ -2407,16 +1798,16 @@ watch(
 
 .assistant-reply-card,
 .assistant-suggestion-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.92);
-  min-width: 0;
+  padding: 12px;
+  background: #ffffff;
 }
 
 .assistant-reply-card h3,
 .assistant-suggestion-card h4 {
   font-size: 0.95rem;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .assistant-reply-card p {
@@ -2430,42 +1821,29 @@ watch(
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .suggestion-list li {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 8px 10px;
   font-size: 0.82rem;
   color: var(--color-text-secondary);
-  background: rgba(248, 250, 252, 0.9);
-  overflow-wrap: anywhere;
-}
-
-.insight-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.empty-insight p {
-  margin-top: 8px;
-  font-size: 0.86rem;
-  color: var(--color-text-secondary);
+  background: rgba(248, 250, 252, 0.8);
 }
 
 .budget-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .budget-cell {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  background: #ffffff;
 }
 
 .budget-cell span {
@@ -2482,21 +1860,21 @@ watch(
 }
 
 .budget-cell.total {
-  border-color: rgba(13, 148, 136, 0.35);
-  background: rgba(209, 250, 229, 0.66);
+  border-color: rgba(37, 99, 235, 0.35);
+  background: var(--color-primary-light);
 }
 
 .snapshot-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .snapshot-cell {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  background: #ffffff;
 }
 
 .snapshot-cell span {
@@ -2514,14 +1892,13 @@ watch(
 
 .itinerary-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .day-card {
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: linear-gradient(155deg, rgba(255, 255, 255, 0.94), rgba(240, 249, 255, 0.88));
-  box-shadow: var(--shadow-sm);
+  background: #ffffff;
 }
 
 .day-head {
@@ -2531,25 +1908,18 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 13px 14px;
-  font-size: 0.9rem;
+  padding: 10px 12px;
+  font-size: 0.86rem;
   font-weight: 700;
   cursor: pointer;
   color: var(--color-text);
 }
 
-.day-head span:first-child {
-  min-width: 0;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
 .day-body {
-  border-top: 1px solid rgba(148, 163, 184, 0.28);
-  padding: 12px 14px;
+  border-top: 1px solid var(--color-border);
+  padding: 10px 12px;
   display: grid;
-  gap: 10px;
-  background: rgba(248, 250, 252, 0.76);
+  gap: 8px;
 }
 
 .day-body p {
@@ -2564,10 +1934,9 @@ watch(
 }
 
 .refinement-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 14px;
-  background: rgba(248, 250, 252, 0.82);
+  padding: 12px;
 }
 
 .refinement-card h4 {
@@ -2575,17 +1944,17 @@ watch(
 }
 
 .refinement-row {
-  margin-top: 12px;
+  margin-top: 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .preferences-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 47, 73, 0.48);
+  background: rgba(15, 23, 42, 0.45);
   z-index: 60;
-  padding: 24px;
+  padding: 20px;
   display: grid;
   place-items: center;
 }
@@ -2594,14 +1963,14 @@ watch(
   width: min(920px, 96vw);
   max-height: min(90vh, 760px);
   overflow-y: auto;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.9));
+  background: #ffffff !important;
 }
 
 .preferences-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .preferences-head h3 {
@@ -2613,23 +1982,22 @@ watch(
   border-radius: var(--radius-full);
   width: 32px;
   height: 32px;
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
   color: var(--color-text-secondary);
   cursor: pointer;
 }
 
 .preferences-note {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 0.82rem;
   color: var(--color-text-secondary);
-  line-height: 1.55;
 }
 
 .preferences-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -2643,53 +2011,17 @@ watch(
   opacity: 0;
 }
 
-@media (max-width: 1280px) {
-  .planner-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  }
-
-  .planner-column-right {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .result-actions {
-    justify-content: flex-start;
-  }
-}
-
 @media (max-width: 1080px) {
   .planner-layout {
     grid-template-columns: 1fr;
-  }
-
-  .planner-column-center,
-  .planner-column-right {
-    grid-column: auto;
-  }
-
-  .planner-column-right {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .result-actions {
-    justify-content: flex-start;
-    min-width: 0;
   }
 }
 
 @media (max-width: 760px) {
   .control-grid,
   .budget-grid,
-  .snapshot-grid,
-  .planner-layout,
-  .planner-column-right {
+  .snapshot-grid {
     grid-template-columns: 1fr;
-  }
-
-  .planner-column-center,
-  .planner-column-right {
-    grid-column: auto;
   }
 
   .preference-strip {
@@ -2702,37 +2034,13 @@ watch(
     align-items: flex-start;
   }
 
-  .result-canvas-head {
+  .result-header {
     flex-direction: column;
-  }
-
-  .canvas-grid,
-  .photo-moodboard,
-  .resources-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .canvas-hero-media {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  .canvas-hero-main {
-    height: 220px;
-  }
-
-  .canvas-hero-stack {
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: auto;
-  }
-
-  .canvas-hero-stack img {
-    height: 110px;
   }
 
   .result-actions {
     width: 100%;
-    justify-content: stretch;
+    justify-items: stretch;
   }
 
   .action-row {
