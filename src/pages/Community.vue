@@ -105,6 +105,19 @@ const averageReview = computed(() => {
   return Number((total / reviews.value.length).toFixed(1));
 });
 
+function mediaForPost(post) {
+  const destination = String(destinationInput.value || "travel").trim() || "travel";
+  const seed = String(post?.id || post?.text || destination);
+  const theme = (post?.tags || []).slice(0, 2).join(" ") || "travel stories";
+  return `https://source.unsplash.com/1200x900/?${encodeURIComponent(`${destination} ${theme} ${seed}`)}`;
+}
+
+function mediaForReview(review) {
+  const destination = String(destinationInput.value || "travel").trim() || "travel";
+  const theme = `${review?.visitType || "trip"} ${review?.costLevel || "moderate"}`;
+  return `https://source.unsplash.com/1200x900/?${encodeURIComponent(`${destination} ${theme} travel`)}`;
+}
+
 function formatRelativeTime(timestamp) {
   const diffMs = Date.now() - Number(timestamp || Date.now());
   const mins = Math.floor(diffMs / 60000);
@@ -382,6 +395,7 @@ onMounted(async () => {
 
           <div v-if="feedTab === 'posts'" class="feed-list mt-4">
             <article v-for="post in posts" :key="post.id" class="glass-card feed-item">
+              <img :src="mediaForPost(post)" :alt="post.authorName" class="feed-media" loading="lazy" />
               <div class="feed-head">
                 <div>
                   <strong>{{ post.authorName }}</strong>
@@ -415,6 +429,7 @@ onMounted(async () => {
 
           <div v-if="feedTab === 'reviews'" class="feed-list mt-4">
             <article v-for="review in reviews" :key="review.id" class="glass-card feed-item">
+              <img :src="mediaForReview(review)" :alt="review.title" class="feed-media" loading="lazy" />
               <div class="feed-head">
                 <div>
                   <strong>{{ review.title }}</strong>
@@ -609,6 +624,14 @@ onMounted(async () => {
   gap: 10px;
 }
 
+.composer-card,
+.signal-card,
+.stream-head-card,
+.review-card,
+.metrics-card {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
 .stream-head-card h2 {
   margin-top: 4px;
   font-size: 1.28rem;
@@ -645,7 +668,17 @@ onMounted(async () => {
 }
 
 .feed-item {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.feed-media {
+  width: 100%;
+  height: 210px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
 }
 
 .feed-head {
@@ -682,6 +715,10 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 0.76rem;
   color: var(--color-text-muted);
+}
+
+.feed-item .btn {
+  white-space: nowrap;
 }
 
 .comment-box {
@@ -863,6 +900,13 @@ onMounted(async () => {
   color: var(--color-text-muted);
 }
 
+.feed-placeholder {
+  text-align: center;
+  min-height: 130px;
+  display: grid;
+  place-content: center;
+}
+
 .feed-placeholder,
 .panel-error {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
@@ -898,6 +942,10 @@ onMounted(async () => {
   .comment-box,
   .rating-row {
     grid-template-columns: 1fr;
+  }
+
+  .feed-media {
+    height: 180px;
   }
 }
 </style>

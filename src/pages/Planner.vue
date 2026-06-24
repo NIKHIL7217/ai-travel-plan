@@ -1221,7 +1221,7 @@ watch(
         </article>
       </section>
 
-      <section class="planner-column planner-column-center">
+      <section class="planner-column planner-column-center canvas-dominant">
         <article v-if="loading" class="glass-card loading-card">
           <div class="spinner"></div>
           <p>AI planner is building your itinerary and suggestions...</p>
@@ -1229,7 +1229,26 @@ watch(
 
         <article v-else-if="!hasResults" class="glass-card empty-card">
           <h3>Itinerary Canvas Awaits</h3>
-          <p>Prompt submit karte hi yaha day-wise visual itinerary, save actions, and plan comparison render hoga.</p>
+          <p>Prompt submit karte hi yaha cinematic itinerary canvas, route map, moodboard, and live travel intelligence appear hoga.</p>
+          <div class="empty-sample-grid mt-4">
+            <article class="sample-card">
+              <strong>Day 1 • Arrival + Sunset Walk</strong>
+              <p>Airport transfer, local cafe, golden-hour viewpoint.</p>
+            </article>
+            <article class="sample-card">
+              <strong>Day 2 • Culture + Food Trail</strong>
+              <p>Old town walk, signature street-food circuit, evening market.</p>
+            </article>
+            <article class="sample-card">
+              <strong>Day 3 • Scenic Route Day</strong>
+              <p>Road viewpoints, hidden stopovers, dinner by waterfront.</p>
+            </article>
+          </div>
+          <div class="sample-pill-row mt-4">
+            <span class="sample-pill">Live Budget Split</span>
+            <span class="sample-pill">Hotel + Food Picks</span>
+            <span class="sample-pill">Route Intelligence</span>
+          </div>
         </article>
 
         <article v-else class="glass-card result-card visual-canvas">
@@ -1305,6 +1324,30 @@ watch(
                 {{ saveStatus ? "Saved" : "Save Trip" }}
               </button>
             </div>
+          </div>
+
+          <article v-if="photoMoodboard.length > 0" class="canvas-hero-media">
+            <img :src="photoMoodboard[0].url" :alt="photoMoodboard[0].alt" class="canvas-hero-main" loading="lazy" />
+            <div class="canvas-hero-stack">
+              <img
+                v-for="photo in photoMoodboard.slice(1, 3)"
+                :key="photo.id"
+                :src="photo.url"
+                :alt="photo.alt"
+                loading="lazy"
+              />
+            </div>
+            <div class="canvas-hero-overlay">
+              <strong>{{ activeItinerary.destination }} Itinerary Canvas</strong>
+              <p>{{ controls.days }} days • {{ controls.travelMode }} • {{ formatPrice(activeBudget.total) }} estimate</p>
+            </div>
+          </article>
+
+          <div class="canvas-pulse-row">
+            <span class="pulse-chip">{{ tripSnapshot.distance }}</span>
+            <span class="pulse-chip">{{ tripSnapshot.weather ? `${tripSnapshot.weather.temp} | ${tripSnapshot.weather.humidity}` : "Weather loading" }}</span>
+            <span class="pulse-chip">{{ hotelHighlights[0]?.name || "Hotel picks ready" }}</span>
+            <span class="pulse-chip">{{ restaurantHighlights[0]?.name || "Food picks ready" }}</span>
           </div>
 
           <PlanComparisonView
@@ -1411,7 +1454,7 @@ watch(
             </article>
           </div>
 
-          <div class="itinerary-list mt-4">
+          <div class="itinerary-list mt-4 stagger-grid">
             <article v-for="day in activeItinerary.itinerary" :key="day.day" class="day-card">
               <button type="button" class="day-head" @click="toggleDay(day.day)">
                 <span>Day {{ day.day }} - {{ day.theme }}</span>
@@ -1681,6 +1724,19 @@ watch(
   flex-direction: column;
   gap: 16px;
   padding-bottom: 34px;
+}
+
+.canvas-dominant {
+  position: relative;
+}
+
+.canvas-dominant::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: calc(var(--radius-xl) + 10px);
+  background: radial-gradient(circle at 12% 10%, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0));
+  pointer-events: none;
 }
 
 .planner-header h1 {
@@ -2028,6 +2084,44 @@ watch(
   place-content: center;
 }
 
+.empty-sample-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.sample-card {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.88);
+  padding: 10px;
+}
+
+.sample-card strong {
+  font-size: 0.8rem;
+}
+
+.sample-card p {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+}
+
+.sample-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sample-pill {
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: var(--radius-full);
+  background: rgba(224, 242, 254, 0.7);
+  color: #0369a1;
+  padding: 5px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
 .spinner {
   width: 26px;
   height: 26px;
@@ -2048,6 +2142,68 @@ watch(
 .visual-canvas {
   display: grid;
   gap: 12px;
+}
+
+.canvas-hero-media {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  min-height: 244px;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+}
+
+.canvas-hero-main {
+  width: 100%;
+  height: 244px;
+  object-fit: cover;
+}
+
+.canvas-hero-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+}
+
+.canvas-hero-stack img {
+  width: 100%;
+  height: 122px;
+  object-fit: cover;
+}
+
+.canvas-hero-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(2, 8, 23, 0), rgba(2, 8, 23, 0.78));
+  color: #f8fafc;
+}
+
+.canvas-hero-overlay strong {
+  color: #f8fafc;
+  font-size: 0.92rem;
+}
+
+.canvas-hero-overlay p {
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.76rem;
+}
+
+.canvas-pulse-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pulse-chip {
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: var(--radius-full);
+  background: rgba(224, 242, 254, 0.7);
+  color: #0369a1;
+  padding: 5px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .canvas-grid {
@@ -2336,7 +2492,8 @@ watch(
 .day-card {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.94), rgba(240, 249, 255, 0.88));
+  box-shadow: var(--shadow-sm);
 }
 
 .day-head {
@@ -2358,6 +2515,7 @@ watch(
   padding: 10px 12px;
   display: grid;
   gap: 8px;
+  background: rgba(248, 250, 252, 0.76);
 }
 
 .day-body p {
@@ -2497,6 +2655,24 @@ watch(
   .photo-moodboard,
   .resources-grid {
     grid-template-columns: 1fr;
+  }
+
+  .canvas-hero-media {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .canvas-hero-main {
+    height: 220px;
+  }
+
+  .canvas-hero-stack {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .canvas-hero-stack img {
+    height: 110px;
   }
 
   .result-actions {

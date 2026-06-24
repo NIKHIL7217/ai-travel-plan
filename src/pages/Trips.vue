@@ -80,6 +80,12 @@ const achievements = computed(() => {
   return rows;
 });
 
+function tripCover(destination, style = "travel") {
+  const label = String(destination || "travel").trim() || "travel";
+  const hint = String(style || "travel").trim() || "travel";
+  return `https://source.unsplash.com/1200x800/?${encodeURIComponent(`${label} ${hint} travel`)}`;
+}
+
 function formatDate(value) {
   return new Date(Number(value || Date.now())).toLocaleDateString([], {
     year: "numeric",
@@ -179,15 +185,16 @@ onMounted(loadTripsExperience);
             <p>No upcoming trips yet. Start one from Planner.</p>
           </div>
 
-          <div v-else class="trip-stream mt-4">
-            <article v-for="trip in upcomingTrips" :key="trip.id" class="trip-item">
-              <div>
+          <div v-else class="trip-gallery mt-4 stagger-grid">
+            <article v-for="trip in upcomingTrips" :key="trip.id" class="trip-gallery-card glass-card hover-lift">
+              <img :src="tripCover(trip.destination, trip.style)" :alt="trip.destination" loading="lazy" />
+              <div class="trip-gallery-overlay">
                 <strong>{{ trip.destination }}</strong>
                 <p>{{ trip.days }} days · {{ trip.travelMode || 'Car' }} · {{ formatDate(trip.createdAt) }}</p>
-              </div>
-              <div class="trip-item-right">
-                <span>{{ formatPrice(trip?.budget?.total || 0) }}</span>
-                <button type="button" class="btn btn-outline btn-xs" @click="openPlannerWithTrip(trip)">Refresh Plan</button>
+                <div class="trip-gallery-meta">
+                  <span>{{ formatPrice(trip?.budget?.total || 0) }}</span>
+                  <button type="button" class="btn btn-outline btn-xs" @click="openPlannerWithTrip(trip)">Refresh Plan</button>
+                </div>
               </div>
             </article>
           </div>
@@ -203,15 +210,16 @@ onMounted(loadTripsExperience);
             <p>No archived trips yet.</p>
           </div>
 
-          <div v-else class="trip-stream mt-4">
-            <article v-for="trip in pastTrips" :key="trip.id" class="trip-item">
-              <div>
+          <div v-else class="trip-gallery mt-4 stagger-grid">
+            <article v-for="trip in pastTrips" :key="trip.id" class="trip-gallery-card glass-card hover-lift compact">
+              <img :src="tripCover(trip.destination, trip.style)" :alt="trip.destination" loading="lazy" />
+              <div class="trip-gallery-overlay">
                 <strong>{{ trip.destination }}</strong>
                 <p>{{ trip.days }} days · {{ trip.style || 'Balanced' }} · {{ formatDate(trip.createdAt) }}</p>
-              </div>
-              <div class="trip-item-right">
-                <span>{{ formatPrice(trip?.budget?.total || 0) }}</span>
-                <button type="button" class="btn btn-outline btn-xs" @click="openPlannerWithTrip(trip)">Replan</button>
+                <div class="trip-gallery-meta">
+                  <span>{{ formatPrice(trip?.budget?.total || 0) }}</span>
+                  <button type="button" class="btn btn-outline btn-xs" @click="openPlannerWithTrip(trip)">Replan</button>
+                </div>
               </div>
             </article>
           </div>
@@ -291,7 +299,7 @@ onMounted(loadTripsExperience);
             <p>Your timeline will appear as you generate and save trips.</p>
           </div>
 
-          <div v-else class="timeline-list mt-4">
+          <div v-else class="timeline-ribbon mt-4">
             <article v-for="event in timeline" :key="event.id" class="timeline-item">
               <div>
                 <strong>{{ event.destination }}</strong>
@@ -306,8 +314,9 @@ onMounted(loadTripsExperience);
       <section v-if="selectedSection === 'achievements'" class="content-panel mt-6">
         <article class="glass-card stream-panel">
           <h3>Travel Achievements</h3>
-          <div class="achievement-grid mt-4">
+          <div class="achievement-grid mt-4 stagger-grid">
             <article v-for="achievement in achievements" :key="achievement.id" class="achievement-item">
+              <span class="achievement-burst">Unlocked</span>
               <strong>{{ achievement.title }}</strong>
               <p>{{ achievement.detail }}</p>
             </article>
@@ -322,7 +331,7 @@ onMounted(loadTripsExperience);
 .trips-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding-bottom: 40px;
 }
 
@@ -331,6 +340,12 @@ onMounted(loadTripsExperience);
   justify-content: space-between;
   gap: 18px;
   align-items: flex-end;
+  padding: 22px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(8, 145, 178, 0.24);
+  background:
+    radial-gradient(circle at 88% 18%, rgba(14, 165, 233, 0.14), rgba(14, 165, 233, 0)),
+    linear-gradient(140deg, rgba(240, 249, 255, 0.96), rgba(236, 253, 245, 0.9));
 }
 
 .trips-badge {
@@ -397,6 +412,10 @@ onMounted(loadTripsExperience);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
 }
 
+.stream-panel {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
 .error-panel {
   border-color: rgba(220, 38, 38, 0.3);
 }
@@ -420,6 +439,65 @@ onMounted(loadTripsExperience);
 .achievement-grid {
   display: grid;
   gap: 10px;
+}
+
+.trip-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trip-gallery-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 220px;
+}
+
+.trip-gallery-card.compact {
+  min-height: 190px;
+}
+
+.trip-gallery-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.trip-gallery-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(2, 8, 23, 0), rgba(2, 8, 23, 0.8));
+}
+
+.trip-gallery-overlay strong {
+  color: #f8fafc;
+  font-size: 0.88rem;
+}
+
+.trip-gallery-overlay p {
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.74rem;
+}
+
+.trip-gallery-meta {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trip-gallery-meta span {
+  border: 1px solid rgba(226, 232, 240, 0.34);
+  border-radius: var(--radius-full);
+  background: rgba(15, 23, 42, 0.5);
+  color: #f8fafc;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 8px;
 }
 
 .trip-item,
@@ -493,10 +571,48 @@ onMounted(loadTripsExperience);
   gap: 12px;
 }
 
+.timeline-ribbon {
+  display: grid;
+  gap: 8px;
+}
+
+.timeline-ribbon .timeline-item {
+  position: relative;
+  padding-left: 18px;
+}
+
+.timeline-ribbon .timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.66), rgba(16, 185, 129, 0.5));
+}
+
 .timeline-item small {
   font-size: 0.7rem;
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+.achievement-item {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(240, 249, 255, 0.9));
+}
+
+.achievement-burst {
+  display: inline-block;
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: var(--radius-full);
+  background: rgba(224, 242, 254, 0.72);
+  color: #0369a1;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  margin-bottom: 7px;
 }
 
 @media (max-width: 980px) {
@@ -507,6 +623,10 @@ onMounted(loadTripsExperience);
 
   .pack-stats,
   .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trip-gallery {
     grid-template-columns: 1fr;
   }
 

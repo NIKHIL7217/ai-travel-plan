@@ -22,6 +22,39 @@ const quickPrompts = [
   "Family trip to Dubai"
 ];
 
+const heroStats = [
+  { label: "Trips Planned", value: "120K+" },
+  { label: "Destinations", value: "180+" },
+  { label: "Traveler Stories", value: "9.4K" }
+];
+
+const routePreviews = [
+  {
+    id: "coastal-escape",
+    title: "Mumbai to Goa",
+    subtitle: "Coastal sunrise route",
+    distance: "590 km",
+    duration: "11h",
+    image: "https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1400&q=80"
+  },
+  {
+    id: "mountain-loop",
+    title: "Delhi to Manali",
+    subtitle: "Mountain switchback drive",
+    distance: "530 km",
+    duration: "10h",
+    image: "https://images.unsplash.com/photo-1506461883276-594a12b11cf3?auto=format&fit=crop&w=1400&q=80"
+  },
+  {
+    id: "desert-highway",
+    title: "Jaipur to Jaisalmer",
+    subtitle: "Desert fort trail",
+    distance: "560 km",
+    duration: "9h 20m",
+    image: "https://images.unsplash.com/photo-1477587458883-47145ed94245?auto=format&fit=crop&w=1400&q=80"
+  }
+];
+
 const heroVisuals = [
   "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=80",
   "https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1800&q=80",
@@ -130,6 +163,8 @@ const sectionCollections = computed(() => {
       title: "Trending Destinations",
       subtitle: "Live picks from search momentum and seasonality.",
       cta: "/destination",
+      cover: "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=1600&q=80",
+      vibe: "Most booked this week",
       items: source.slice(0, 10)
     },
     {
@@ -137,6 +172,8 @@ const sectionCollections = computed(() => {
       title: "Weekend Escapes",
       subtitle: "Short, high-energy getaways for the next break.",
       cta: "/roadtrips",
+      cover: "https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=1600&q=80",
+      vibe: "Fast recharge itineraries",
       items: source.slice(5, 15)
     },
     {
@@ -144,6 +181,8 @@ const sectionCollections = computed(() => {
       title: "Hidden Gems",
       subtitle: "Less crowded spots with stronger local character.",
       cta: "/community",
+      cover: "https://images.unsplash.com/photo-1458668383970-8ddd3927deed?auto=format&fit=crop&w=1600&q=80",
+      vibe: "Low-crowd local secrets",
       items: source.slice(10, 20)
     },
     {
@@ -151,6 +190,8 @@ const sectionCollections = computed(() => {
       title: "Popular Roadtrips",
       subtitle: "Routes made for scenic drives and flexible stops.",
       cta: "/roadtrips",
+      cover: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80",
+      vibe: "Epic route narratives",
       items: source.slice(15, 25)
     },
     {
@@ -158,6 +199,8 @@ const sectionCollections = computed(() => {
       title: "Community Favorites",
       subtitle: "Places repeatedly recommended by travelers.",
       cta: "/community",
+      cover: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1600&q=80",
+      vibe: "Loved by real travelers",
       items: source.slice(20, 30)
     }
   ];
@@ -275,6 +318,33 @@ onUnmounted(() => {
             {{ prompt }}
           </button>
         </div>
+
+        <div class="hero-stats">
+          <article v-for="stat in heroStats" :key="stat.label" class="hero-stat-pill">
+            <strong>{{ stat.value }}</strong>
+            <span>{{ stat.label }}</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="container route-preview-strip">
+      <div class="section-head">
+        <div>
+          <h2>Route Previews</h2>
+          <p>Quick route inspiration with distance and pacing at a glance.</p>
+        </div>
+      </div>
+
+      <div class="route-rail stagger-grid">
+        <article v-for="route in routePreviews" :key="route.id" class="route-preview-card glass-card hover-lift">
+          <img :src="route.image" :alt="route.title" loading="lazy" />
+          <div class="route-overlay">
+            <strong>{{ route.title }}</strong>
+            <p>{{ route.subtitle }}</p>
+            <span>{{ route.distance }} • {{ route.duration }}</span>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -293,9 +363,11 @@ onUnmounted(() => {
     >
       <div class="section-head">
         <div>
+          <span class="section-vibe">{{ section.vibe }}</span>
           <h2>{{ section.title }}</h2>
           <p>{{ section.subtitle }}</p>
         </div>
+        <img :src="section.cover" :alt="section.title" class="section-cover" loading="lazy" />
         <button type="button" class="btn btn-outline btn-xs" @click="openCollection(section.cta)">View All</button>
       </div>
 
@@ -303,8 +375,8 @@ onUnmounted(() => {
         <div v-for="n in 4" :key="`${section.id}-loading-${n}`" class="loading-card"></div>
       </div>
 
-      <div v-else class="card-carousel">
-        <article v-for="item in section.items" :key="`${section.id}-${item.id}`" class="travel-card">
+      <div v-else class="card-carousel stagger-grid">
+        <article v-for="item in section.items" :key="`${section.id}-${item.id}`" class="travel-card glass-card hover-lift">
           <div class="card-image-wrap">
             <img :src="item.image" :alt="item.name" loading="lazy" />
             <span class="distance-pill" v-if="item.distanceKm > 0">{{ Math.round(item.distanceKm) }} km away</span>
@@ -316,7 +388,10 @@ onUnmounted(() => {
               <span>{{ formatPrice(item.budget) }}</span>
               <span>{{ item.season }}</span>
             </div>
-            <button type="button" class="btn btn-primary btn-xs" @click="openPlanner(item.name)">Plan Trip</button>
+            <div class="card-actions-row">
+              <button type="button" class="btn btn-outline btn-xs" @click="openCollection('/destination')">Explore</button>
+              <button type="button" class="btn btn-primary btn-xs" @click="openPlanner(item.name)">Plan Trip</button>
+            </div>
           </div>
         </article>
       </div>
@@ -347,7 +422,7 @@ onUnmounted(() => {
 .explore-page {
   display: flex;
   flex-direction: column;
-  gap: 58px;
+  gap: 42px;
   padding-bottom: 44px;
 }
 
@@ -361,7 +436,17 @@ onUnmounted(() => {
   transition: background-image 680ms ease;
 }
 
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 47, 73, 0) 0%, rgba(8, 47, 73, 0.28) 100%);
+}
+
 .hero-content {
+  position: relative;
+  z-index: 1;
   display: grid;
   justify-items: center;
   text-align: center;
@@ -435,6 +520,89 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.26);
 }
 
+.hero-stats {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hero-stat-pill {
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: var(--radius-full);
+  background: rgba(8, 47, 73, 0.34);
+  padding: 7px 12px;
+  display: grid;
+  gap: 1px;
+}
+
+.hero-stat-pill strong {
+  color: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.hero-stat-pill span {
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.7rem;
+}
+
+.route-preview-strip {
+  display: grid;
+  gap: 12px;
+}
+
+.route-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(290px, 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.route-preview-card {
+  position: relative;
+  min-height: 180px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.route-preview-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.route-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(2, 8, 23, 0), rgba(2, 8, 23, 0.78));
+  color: #f8fafc;
+}
+
+.route-overlay strong {
+  color: #f8fafc;
+  font-size: 0.92rem;
+}
+
+.route-overlay p {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.route-overlay span {
+  display: inline-block;
+  margin-top: 7px;
+  border: 1px solid rgba(226, 232, 240, 0.34);
+  border-radius: var(--radius-full);
+  background: rgba(2, 6, 23, 0.5);
+  padding: 4px 8px;
+  font-size: 0.7rem;
+}
+
 .mt-12 {
   margin-top: 48px;
 }
@@ -451,8 +619,18 @@ onUnmounted(() => {
 .section-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
+}
+
+.section-vibe {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: #0f766e;
+  text-transform: uppercase;
 }
 
 .section-head h2 {
@@ -464,6 +642,15 @@ onUnmounted(() => {
   margin-top: 5px;
   color: var(--color-text-secondary);
   font-size: 0.86rem;
+}
+
+.section-cover {
+  width: 118px;
+  height: 70px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: var(--shadow-sm);
 }
 
 .loading-row,
@@ -487,8 +674,6 @@ onUnmounted(() => {
 .travel-card {
   border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(255, 255, 255, 0.92);
   display: grid;
   min-height: 338px;
 }
@@ -545,6 +730,12 @@ onUnmounted(() => {
   color: var(--color-text-muted);
 }
 
+.card-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
 .testimonials {
   display: grid;
   gap: 14px;
@@ -591,6 +782,10 @@ onUnmounted(() => {
 }
 
 @media (max-width: 980px) {
+  .section-cover {
+    display: none;
+  }
+
   .testimonial-grid {
     grid-template-columns: 1fr;
   }
@@ -609,6 +804,10 @@ onUnmounted(() => {
   .section-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .card-actions-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

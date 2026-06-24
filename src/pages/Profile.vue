@@ -156,6 +156,11 @@ const achievements = computed(() => {
 
 const vaultDocs = computed(() => vaultStore.documents || []);
 
+const wrappedHeroImage = computed(() => {
+  const focus = String(uniqueDestinations.value[0] || "travel adventure").trim() || "travel adventure";
+  return `https://source.unsplash.com/1600x900/?${encodeURIComponent(`${focus} cinematic travel`)}`;
+});
+
 function formatDate(timestamp) {
   return new Date(Number(timestamp || Date.now())).toLocaleDateString([], {
     year: "numeric",
@@ -217,6 +222,8 @@ watch(
 <template>
   <div class="profile-page container animate-fade-in" style="padding-top: 100px;">
     <header class="profile-hero glass-card">
+      <img :src="wrappedHeroImage" alt="Travel wrapped hero" class="profile-hero-image" loading="lazy" />
+      <div class="profile-hero-shade"></div>
       <div>
         <span class="hero-badge">TRAVEL WRAPPED</span>
         <h1>Your Year In Travel</h1>
@@ -393,6 +400,8 @@ watch(
 }
 
 .profile-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
@@ -400,6 +409,26 @@ watch(
   padding: 22px;
   background: linear-gradient(140deg, rgba(224, 242, 254, 0.84), rgba(236, 253, 245, 0.8));
   border: 1px solid rgba(14, 165, 233, 0.24);
+}
+
+.profile-hero > * {
+  position: relative;
+  z-index: 2;
+}
+
+.profile-hero-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.22;
+}
+
+.profile-hero-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.2));
 }
 
 .hero-badge {
@@ -451,6 +480,7 @@ watch(
 
 .kpi {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .kpi span {
@@ -478,6 +508,7 @@ watch(
 .loading-panel,
 .error-panel {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .card-head {
@@ -559,12 +590,13 @@ watch(
   display: inline-block;
   border: 1px solid rgba(14, 165, 233, 0.32);
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   color: #0369a1;
   font-size: 0.68rem;
   font-weight: 700;
   padding: 5px 8px;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
 }
 
 .pill-list {
@@ -610,6 +642,20 @@ watch(
   padding: 9px;
 }
 
+.achievement-item {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(240, 249, 255, 0.9));
+  position: relative;
+  overflow: hidden;
+}
+
+.achievement-item::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -40% 40%;
+  height: 70px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.16), rgba(14, 165, 233, 0));
+}
+
 .achievement-item p,
 .timeline-item p,
 .vault-item p {
@@ -623,6 +669,18 @@ watch(
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
+  position: relative;
+  padding-left: 16px;
+}
+
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.64), rgba(16, 185, 129, 0.48));
 }
 
 .timeline-item small {

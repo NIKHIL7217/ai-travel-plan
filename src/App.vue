@@ -553,17 +553,17 @@ onMounted(() => {
 
 /* Footer styles */
 .app-footer {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.98));
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
-  padding: 70px 0 30px;
-  margin-top: 60px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 250, 252, 0.88));
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 42px 0 22px;
+  margin-top: 28px;
 }
 
 .footer-content {
   display: flex;
   justify-content: space-between;
-  gap: 48px;
-  margin-bottom: 40px;
+  gap: 36px;
+  margin-bottom: 22px;
 }
 
 @media (max-width: 768px) {
@@ -574,27 +574,28 @@ onMounted(() => {
 }
 
 .footer-brand {
-  max-width: 400px;
+  max-width: 360px;
 }
 
 .brand-name {
   font-family: var(--font-heading);
-  font-size: 1.35rem;
+  font-size: 1.12rem;
   font-weight: 800;
   color: var(--color-text);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   display: block;
 }
 
 .brand-desc {
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: 1.5;
+  opacity: 0.9;
 }
 
 .footer-links-grid {
   display: flex;
-  gap: 60px;
+  gap: 36px;
 }
 
 @media (max-width: 480px) {
@@ -608,19 +609,20 @@ onMounted(() => {
 .links-column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
 
 .links-column h4 {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 
 .links-column a {
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   color: var(--color-text-muted);
+  opacity: 0.9;
 }
 
 .links-column a:hover {
@@ -629,13 +631,14 @@ onMounted(() => {
 
 .footer-bottom {
   border-top: 1px solid var(--color-border);
-  padding-top: 24px;
+  padding-top: 14px;
   text-align: center;
 }
 
 .copyright {
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   color: var(--color-text-muted);
+  opacity: 0.85;
 }
 
 /* Section 10: Mobile Bottom Navigation */
