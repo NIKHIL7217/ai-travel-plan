@@ -43,7 +43,10 @@ const routes = [
   {
     path: "/planner",
     name: "Planner",
-    component: Planner
+    component: Planner,
+    meta: {
+      hideFooter: true,
+    }
   },
   {
     path: "/trips",

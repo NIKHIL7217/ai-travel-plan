@@ -244,7 +244,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- Footer -->
-    <footer class="app-footer">
+    <footer v-if="!route.meta?.hideFooter" class="app-footer">
       <div class="container footer-content">
         <div class="footer-brand">
           <span class="brand-name">WanderAI</span>
