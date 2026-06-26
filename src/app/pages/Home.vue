@@ -1008,6 +1008,7 @@ const scrollToConsole = () => {
   font-size: 1.25rem;
   letter-spacing: 0.1em;
   background: linear-gradient(135deg, #FFF 0%, var(--color-secondary) 100%);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
