@@ -96,7 +96,7 @@ const featureStories = [
     title: "Map routes with fuel estimates, scenic stops, and travel timing",
     body: "Convert any destination idea into a road-ready journey with route analysis and practical distance planning.",
     points: ["Route comparisons", "Fuel and distance context", "Scenic stop suggestions"],
-    image: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80",
+    image: "https://www.usnews.com/object/image/0000014a-4eba-d484-a55f-cffb10f80000/141215-coupleroadtrip-stock.jpg?update-time=1418660105034&size=responsive640",
     route: "/roadtrips",
     cta: "Open Roadtrip"
   },
@@ -403,13 +403,13 @@ onUnmounted(() => {
       <div class="hero-noise"></div>
       <div class="container hero-inner">
         <div class="hero-copy">
-          <span class="hero-kicker">Premium AI Travel Platform</span>
-          <h1>Travel Differently With AI</h1>
+          <!-- <span class="hero-kicker">Premium AI Travel Platform</span> -->
+          <h1>Explore smarter with AI.</h1>
           <p>
             Plan, discover, budget, collaborate, and experience trips with one intelligent travel companion.
           </p>
 
-          <form class="hero-prompt" @submit.prevent="handleSearch">
+          <!-- <form class="hero-prompt" @submit.prevent="handleSearch">
             <input
               v-model="searchQuery"
               type="text"
@@ -430,11 +430,16 @@ onUnmounted(() => {
             >
               {{ prompt }}
             </button>
+          </div> -->
+
+          <div class="hero_newButtons" style="display: flex; gap: 12px; margin-top: 12px;">
+            <button type="submit" class="btn btn-primary">Start Planning</button>
+            <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
           </div>
 
-          <div class="trust-indicators">
+          <!-- <div class="trust-indicators">
             <span v-for="item in trustIndicators" :key="item">{{ item }}</span>
-          </div>
+          </div> -->
         </div>
 
         <div class="hero-float-stage">
@@ -454,18 +459,17 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="container hero-stats-row">
+      <!-- <div class="container hero-stats-row">
         <article v-for="stat in heroStats" :key="stat.id" class="hero-stat glass-card">
           <strong>{{ stat.value }}</strong>
           <span>{{ stat.label }}</span>
         </article>
-      </div>
+      </div> -->
     </section>
 
     <section class="container how-section">
       <div class="section-intro">
-        <span class="section-kicker">How It Works</span>
-        <h2>From a simple prompt to real travel execution in four steps</h2>
+        <h2>Prompt to trip in 4 steps</h2>
       </div>
 
       <div class="steps-grid">
@@ -488,14 +492,13 @@ onUnmounted(() => {
 
     <section class="container storytelling-section">
       <div class="section-intro">
-        <span class="section-kicker">Feature Storytelling</span>
-        <h2>Product showcase sections built around core WanderAI capabilities</h2>
+        <h2>Core WanderAI showcase</h2>
       </div>
 
       <article
         v-for="(story, index) in featureStories"
         :key="story.id"
-        class="story-card glass-card"
+        class="story-card "
         :class="{ reverse: index % 2 === 1 }"
       >
         <figure class="story-image">
@@ -503,7 +506,6 @@ onUnmounted(() => {
         </figure>
 
         <div class="story-copy">
-          <span class="story-eyebrow">{{ story.eyebrow }}</span>
           <h3>{{ story.title }}</h3>
           <p>{{ story.body }}</p>
           <div class="story-points">
@@ -516,8 +518,7 @@ onUnmounted(() => {
 
     <section class="container discovery-section">
       <div class="section-intro">
-        <span class="section-kicker">Destination Discovery</span>
-        <h2>Scroll horizontal collections like a premium travel inspiration feed</h2>
+        <h2>Premium travel feed scrolling</h2>
       </div>
 
       <article v-if="loadingError" class="error-panel glass-card">
@@ -561,8 +562,7 @@ onUnmounted(() => {
 
     <section class="container social-proof-section">
       <div class="section-intro">
-        <span class="section-kicker">Social Proof</span>
-        <h2>Community momentum and trust at a glance</h2>
+        <h2>Community trust</h2>
       </div>
 
       <div class="proof-grid">
@@ -585,8 +585,7 @@ onUnmounted(() => {
 
     <section class="container ecosystem-section">
       <div class="section-intro">
-        <span class="section-kicker">WanderAI Ecosystem</span>
-        <h2>Explore, Planner, Trips, Community, Profile, Roadtrip, and Group Travel connected together</h2>
+        <h2>Seamless travel features</h2>
       </div>
 
       <div class="ecosystem-map glass-card">
@@ -617,8 +616,7 @@ onUnmounted(() => {
 
     <section class="container copilot-section">
       <div class="section-intro">
-        <span class="section-kicker">AI Copilot Showcase</span>
-        <h2>Ask naturally and see generated trip outputs instantly</h2>
+        <h2>Ask freely, get trips instantly</h2>
       </div>
 
       <article class="copilot-card glass-card">
@@ -649,8 +647,7 @@ onUnmounted(() => {
 
     <section class="container gallery-section">
       <div class="section-intro">
-        <span class="section-kicker">Travel Gallery</span>
-        <h2>Pinterest-style memories and destination inspiration feed</h2>
+        <h2>Memory and destination feed</h2>
       </div>
 
       <div class="masonry-grid">
@@ -691,6 +688,8 @@ onUnmounted(() => {
   display: grid;
   gap: 10px;
   margin-bottom: 22px;
+  align-items: center;
+  justify-content: center;
 }
 
 .section-kicker {
@@ -707,17 +706,19 @@ onUnmounted(() => {
 }
 
 .section-intro h2 {
-  font-size: clamp(1.7rem, 4vw, 3rem);
+  font-size: clamp(2.4rem, 6vw, 4rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
   max-width: 860px;
+  margin: 28px 0;;
 }
 
 .hero {
   position: relative;
   min-height: 100vh;
-  padding-top: 100px;
-  padding-bottom: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 34px;
   background-size: cover;
   background-position: center;
   transition: background-image 700ms ease;
@@ -737,8 +738,8 @@ onUnmounted(() => {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 50px;
   align-items: center;
 }
 
@@ -761,7 +762,7 @@ onUnmounted(() => {
 }
 
 .hero-copy h1 {
-  font-size: clamp(2.4rem, 7vw, 5.4rem);
+  font-size: clamp(3.5rem, 7vw, 6.5rem);
   line-height: 0.96;
   letter-spacing: -0.05em;
   color: #f8fafc;
@@ -843,12 +844,12 @@ onUnmounted(() => {
 
 .hero-float-stage {
   position: relative;
-  min-height: 460px;
+  min-height: 420px; /* was 460px */
 }
 
 .floating-destination-card {
   position: absolute;
-  width: min(270px, 72vw);
+  width: min(250px, 68vw); /* was 270px, 72vw */
   border-radius: 18px;
   overflow: hidden;
   cursor: pointer;
@@ -858,8 +859,15 @@ onUnmounted(() => {
 
 .floating-destination-card img {
   width: 100%;
-  height: 190px;
+  height: 170px; /* was 190px */
   object-fit: cover;
+}
+
+.floating-overlay {
+  padding: 10px; /* was 12px */
+  display: grid;
+  gap: 4px;
+  background: linear-gradient(180deg, rgba(2, 8, 23, 0.42), rgba(2, 8, 23, 0.72));
 }
 
 .float-1 {
@@ -943,6 +951,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 0.38fr) minmax(0, 0.62fr);
   overflow: hidden;
+  margin: 20px 0;
 }
 
 .step-card.reverse {
@@ -999,6 +1008,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 0.56fr) minmax(0, 0.44fr);
   overflow: hidden;
+  margin: 100px 0;
 }
 
 .story-card.reverse {

@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell pb-24">
+  <div class="app-shell">
     <!-- Section 1: Sticky Glass Navbar -->
     <header class="navbar-header glass-navbar" :class="{ 'hero-transparent': isHeroNavbarTransparent }">
       <div class="container nav-content">
@@ -188,7 +188,7 @@ onBeforeUnmount(() => {
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="nav-link" active-class="active">Trips</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/community" class="nav-link" active-class="active">Community</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="nav-link" active-class="active">Profile</RouterLink>
+          <!-- <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="nav-link" active-class="active">Profile</RouterLink> -->
           <RouterLink v-else to="/login" class="nav-link" active-class="active">Profile</RouterLink>
         </nav>
 
@@ -198,10 +198,10 @@ onBeforeUnmount(() => {
             <span class="geo-text">{{ geoLabel }}</span>
           </div>
 
-          <div class="offline-indicator" :class="{ offline: !offlineStore.isOnline }" :title="offlineTitle">
+          <!-- <div class="offline-indicator" :class="{ offline: !offlineStore.isOnline }" :title="offlineTitle">
             <span class="offline-dot"></span>
             <span class="offline-text">{{ offlineLabel }}</span>
-          </div>
+          </div> -->
 
           <!-- Profile Avatar -->
           <div ref="profileWrapRef" class="nav-profile-wrap">
@@ -371,6 +371,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 100vh;
   background-color: var(--color-bg);
+  padding-bottom: 0;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    padding-bottom: 96px;
+  }
 }
 
 .app-main-viewport {
