@@ -709,6 +709,7 @@ onUnmounted(() => {
   font-size: clamp(2.4rem, 6vw, 4rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
+  color: black;
   max-width: 860px;
   margin: 28px 0;;
 }
