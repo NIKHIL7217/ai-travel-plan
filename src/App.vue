@@ -1,11 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterView, RouterLink, useRoute, useRouter } from "vue-router";
 import { initUserCurrency } from "./services/currency";
 import { useAuthStore } from "./stores/auth";
 import { useOfflineStore } from "./stores/offline";
 import { detectUserLocation, userLocation } from "./services/location";
 import TravelCopilotWidget from "./features/copilot/TravelCopilotWidget.vue";
+
+const NAVBAR_HEIGHT = 78;
+const HERO_EXIT_OFFSET = 28;
 
 const authStore = useAuthStore();
 const offlineStore = useOfflineStore();
@@ -14,6 +17,7 @@ const router = useRouter();
 const profileMenuOpen = ref(false);
 const profileWrapRef = ref(null);
 const geoLoading = ref(true);
+const isHeroNavbarTransparent = ref(false);
 const currentYear = new Date().getFullYear();
 
 const profileName = computed(() => authStore.displayName);
@@ -43,6 +47,8 @@ const offlineTitle = computed(() => {
     ? `${pending} draft(s) queued while offline`
     : "Offline mode active";
 });
+
+  const isExploreRoute = computed(() => route.path === "/");
 
 const toggleProfileMenu = () => {
   profileMenuOpen.value = !profileMenuOpen.value;
@@ -82,10 +88,51 @@ const handleLogout = async () => {
   }
 };
 
+const getHeroBottomOffset = () => {
+  if (!isExploreRoute.value) {
+    return null;
+  }
+
+  const heroSection = document.querySelector(".wander-home .hero");
+  if (!(heroSection instanceof HTMLElement)) {
+    return null;
+  }
+
+  const rect = heroSection.getBoundingClientRect();
+  return window.scrollY + rect.top + rect.height;
+};
+
+const syncNavbarVisualState = () => {
+  if (!isExploreRoute.value) {
+    isHeroNavbarTransparent.value = false;
+    return;
+  }
+
+  const heroBottom = getHeroBottomOffset();
+  if (!heroBottom) {
+    isHeroNavbarTransparent.value = window.scrollY < NAVBAR_HEIGHT;
+    return;
+  }
+
+  const darkTriggerPoint = Math.max(0, heroBottom - NAVBAR_HEIGHT - HERO_EXIT_OFFSET);
+  isHeroNavbarTransparent.value = window.scrollY < darkTriggerPoint;
+};
+
+const handleWindowScroll = () => {
+  syncNavbarVisualState();
+};
+
+const handleWindowResize = () => {
+  syncNavbarVisualState();
+};
+
 watch(
   () => route.fullPath,
-  () => {
+  async () => {
     closeProfileMenu();
+    await nextTick();
+    syncNavbarVisualState();
+    window.requestAnimationFrame(syncNavbarVisualState);
   }
 );
 
@@ -100,6 +147,8 @@ watch(
 onMounted(() => {
   document.addEventListener("pointerdown", handleClickOutsideProfileMenu);
   document.addEventListener("keydown", handleEscapeForProfileMenu);
+  window.addEventListener("scroll", handleWindowScroll, { passive: true });
+  window.addEventListener("resize", handleWindowResize);
 
   detectUserLocation()
     .then(() => initUserCurrency(userLocation.value))
@@ -108,18 +157,24 @@ onMounted(() => {
     });
   authStore.initAuth();
   offlineStore.initForUser(authStore.user?.uid || "guest");
+
+  nextTick(() => {
+    syncNavbarVisualState();
+  });
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", handleClickOutsideProfileMenu);
   document.removeEventListener("keydown", handleEscapeForProfileMenu);
+  window.removeEventListener("scroll", handleWindowScroll);
+  window.removeEventListener("resize", handleWindowResize);
 });
 </script>
 
 <template>
   <div class="app-shell pb-24">
     <!-- Section 1: Sticky Glass Navbar -->
-    <header class="navbar-header glass-navbar">
+    <header class="navbar-header glass-navbar" :class="{ 'hero-transparent': isHeroNavbarTransparent }">
       <div class="container nav-content">
         <!-- Logo -->
         <RouterLink to="/" class="brand-logo">
@@ -379,6 +434,59 @@ onBeforeUnmount(() => {
   z-index: 1000;
   display: flex;
   align-items: center;
+  transition: background 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease, -webkit-backdrop-filter 0.28s ease, backdrop-filter 0.28s ease;
+}
+
+.navbar-header.hero-transparent {
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.22), rgba(2, 6, 23, 0.04));
+  border-bottom-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.navbar-header.hero-transparent .brand-logo {
+  color: #f8fafc;
+}
+
+.navbar-header.hero-transparent .logo-blue {
+  color: #7dd3fc;
+}
+
+.navbar-header.hero-transparent .nav-link {
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.navbar-header.hero-transparent .nav-link:hover,
+.navbar-header.hero-transparent .nav-link.active {
+  color: #ffffff;
+}
+
+.navbar-header.hero-transparent .nav-link::after {
+  background-color: rgba(226, 232, 240, 0.95);
+}
+
+.navbar-header.hero-transparent .geo-indicator {
+  border-color: rgba(226, 232, 240, 0.36);
+  background: rgba(2, 6, 23, 0.44);
+  color: #e2e8f0;
+}
+
+.navbar-header.hero-transparent .offline-indicator {
+  border-color: rgba(110, 231, 183, 0.34);
+  background: rgba(6, 78, 59, 0.4);
+  color: #d1fae5;
+}
+
+.navbar-header.hero-transparent .offline-indicator.offline {
+  border-color: rgba(252, 165, 165, 0.42);
+  background: rgba(127, 29, 29, 0.46);
+  color: #fee2e2;
+}
+
+.navbar-header.hero-transparent .profile-avatar-circle {
+  border-color: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.42);
 }
 
 .nav-content {
