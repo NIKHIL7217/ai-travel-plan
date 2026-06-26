@@ -430,11 +430,19 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   right: 0;
+  width: 100%;
   height: 78px;
   z-index: 1000;
   display: flex;
   align-items: center;
   transition: background 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease, -webkit-backdrop-filter 0.28s ease, backdrop-filter 0.28s ease;
+}
+
+.navbar-header .container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 20px;
 }
 
 .navbar-header.hero-transparent {
