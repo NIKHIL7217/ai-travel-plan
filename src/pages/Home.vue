@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { Motion, useScroll, useTransform } from "motion-v";
 import { useRouter } from "vue-router";
 import { formatPrice, initUserCurrency } from "../services/currency";
 import { detectUserLocation, userLocation } from "../services/location";
@@ -131,6 +132,19 @@ const featureStories = [
     cta: "Open Profile"
   }
 ];
+
+const storyCardRefs = featureStories.map(() => ref(null));
+
+const storyParallax = storyCardRefs.map((cardRef) => {
+  const { scrollYProgress } = useScroll({
+    target: cardRef,
+    offset: ["start end", "end start"]
+  });
+  return {
+    textY: useTransform(scrollYProgress, [0, 1], [150, -150]),
+    imageY: useTransform(scrollYProgress, [0, 1], [50, -50])
+  };
+});
 
 const testimonials = [
   {
@@ -403,43 +417,13 @@ onUnmounted(() => {
       <div class="hero-noise"></div>
       <div class="container hero-inner">
         <div class="hero-copy">
-          <!-- <span class="hero-kicker">Premium AI Travel Platform</span> -->
           <h1>Explore smarter with AI.</h1>
-          <p>
-            Plan, discover, budget, collaborate, and experience trips with one intelligent travel companion.
-          </p>
-
-          <!-- <form class="hero-prompt" @submit.prevent="handleSearch">
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Tell WanderAI your dream trip"
-              aria-label="Travel prompt"
-            />
-            <button type="submit" class="btn btn-primary">Start Planning</button>
-            <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
-          </form>
-
-          <div class="hero-prompt-chips">
-            <button
-              v-for="prompt in quickPrompts"
-              :key="prompt"
-              type="button"
-              class="prompt-chip"
-              @click="usePrompt(prompt)"
-            >
-              {{ prompt }}
-            </button>
-          </div> -->
+          <p>Plan, discover, budget, collaborate, and experience trips with one intelligent travel companion.</p>
 
           <div class="hero_newButtons" style="display: flex; gap: 12px; margin-top: 12px;">
             <button type="submit" class="btn btn-primary">Start Planning</button>
             <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
           </div>
-
-          <!-- <div class="trust-indicators">
-            <span v-for="item in trustIndicators" :key="item">{{ item }}</span>
-          </div> -->
         </div>
 
         <div class="hero-float-stage">
@@ -458,13 +442,6 @@ onUnmounted(() => {
           </article>
         </div>
       </div>
-
-      <!-- <div class="container hero-stats-row">
-        <article v-for="stat in heroStats" :key="stat.id" class="hero-stat glass-card">
-          <strong>{{ stat.value }}</strong>
-          <span>{{ stat.label }}</span>
-        </article>
-      </div> -->
     </section>
 
     <section class="container how-section">
@@ -498,21 +475,30 @@ onUnmounted(() => {
       <article
         v-for="(story, index) in featureStories"
         :key="story.id"
-        class="story-card "
+        :ref="el => { if (el) storyCardRefs[index].value = el }"
+        class="story-card"
         :class="{ reverse: index % 2 === 1 }"
       >
-        <figure class="story-image">
-          <img :src="story.image" :alt="story.title" loading="lazy" />
-        </figure>
+        <Motion
+          tag="figure"
+          class="story-image"
+          :style="{ y: storyParallax[index].imageY }"
+        >
+          <img :src="story.image" :alt="story.title" loading="lazy" style="border-radius: 25px;" />
+        </Motion>
 
-        <div class="story-copy">
+        <Motion
+          tag="div"
+          class="story-copy"
+          :style="{ y: storyParallax[index].textY }"
+        >
           <h3>{{ story.title }}</h3>
           <p>{{ story.body }}</p>
           <div class="story-points">
             <span v-for="point in story.points" :key="point">{{ point }}</span>
           </div>
           <button type="button" class="btn btn-primary" @click="openRoute(story.route)">{{ story.cta }}</button>
-        </div>
+        </Motion>
       </article>
     </section>
 
@@ -619,7 +605,7 @@ onUnmounted(() => {
         <h2>Ask freely, get trips instantly</h2>
       </div>
 
-      <article class="copilot-card glass-card">
+      <article class="copilot-card">
         <div class="chat-column">
           <header class="chat-header">
             <span class="chat-dot"></span>
@@ -1008,7 +994,9 @@ onUnmounted(() => {
 .story-card {
   display: grid;
   grid-template-columns: minmax(0, 0.56fr) minmax(0, 0.44fr);
-  overflow: hidden;
+  /* overflow: hidden intentionally removed — the parallax translateY on both
+     Motion children must be able to bleed outside the card boundary. Clipping
+     is instead scoped to .story-image so the image stays contained. */
   margin: 100px 0;
 }
 
@@ -1024,6 +1012,13 @@ onUnmounted(() => {
   order: 1;
 }
 
+.story-image {
+  /* Clip the image's slower parallax travel so it never escapes the figure.
+     The figure itself is a grid child, so setting overflow here is safe. */
+  overflow: hidden;
+  will-change: transform; /* promote to its own compositor layer */
+}
+
 .story-image img {
   width: 100%;
   height: 100%;
@@ -1036,6 +1031,7 @@ onUnmounted(() => {
   align-content: center;
   gap: 12px;
   padding: clamp(20px, 4vw, 40px);
+  will-change: transform; /* promote to its own compositor layer */
 }
 
 .story-eyebrow {
