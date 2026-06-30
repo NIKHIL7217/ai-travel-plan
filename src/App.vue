@@ -186,6 +186,7 @@ onBeforeUnmount(() => {
         <nav class="nav-links-desktop">
           <RouterLink to="/" class="nav-link" active-class="active">Explore</RouterLink>
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
+          <RouterLink to="/bookings" class="nav-link" active-class="active">Book</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="nav-link" active-class="active">Trips</RouterLink>
           <RouterLink v-if="authStore.isAuthenticated" to="/community" class="nav-link" active-class="active">Community</RouterLink>
           <!-- <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="nav-link" active-class="active">Profile</RouterLink> -->
@@ -347,6 +348,10 @@ onBeforeUnmount(() => {
       <RouterLink to="/planner" class="mobile-nav-link" active-class="active">
         <span class="mob-icon">🧠</span>
         <span class="mob-lbl">Planner</span>
+      </RouterLink>
+      <RouterLink to="/bookings" class="mobile-nav-link" active-class="active">
+        <span class="mob-icon">🎟️</span>
+        <span class="mob-lbl">Book</span>
       </RouterLink>
       <RouterLink to="/trips" class="mobile-nav-link" active-class="active">
         <span class="mob-icon">🧳</span>

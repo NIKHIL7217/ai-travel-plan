@@ -1,0 +1,329 @@
+.destinations-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-bottom: 28px;
+}
+
+.directory-header {
+  text-align: left;
+}
+
+.directory-header h1 {
+  font-size: clamp(2.3rem, 5vw, 3.1rem);
+  font-weight: 800;
+  margin: 8px 0;
+  letter-spacing: -0.03em;
+}
+
+.hud-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #0f766e;
+  background-color: rgba(209, 250, 229, 0.9);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+.subtitle {
+  font-size: 0.98rem;
+  color: var(--color-text-secondary);
+}
+
+/* Filter Controls Panel */
+.filter-controls-panel {
+  padding: 14px 20px !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+}
+
+.filter-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-input-wrap {
+  flex-grow: 1;
+}
+
+.filter-input-wrap.search {
+  flex-grow: 2;
+  min-width: 250px;
+}
+
+.search-box {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 12px 50%;
+  background-size: 16px;
+  padding-left: 38px !important;
+}
+
+.reset-filters-btn {
+  padding: 10px 20px !important;
+}
+
+/* Grid Layout definitions (3 Column Desktop / 2 Tablet / 1 Mobile) */
+.directory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .directory-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .directory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.directory-card {
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+}
+
+.img-container {
+  height: 200px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dest-grid-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-slow);
+}
+
+.directory-card:hover .dest-grid-img {
+  transform: scale(1.06);
+}
+
+.dest-rating {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+}
+
+.dest-card-body {
+  padding: 18px;
+}
+
+.dest-location-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dest-card-body h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 4px 0 10px;
+}
+
+.dest-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  min-height: 62px;
+}
+
+.dest-meta-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.34);
+  padding-top: 14px;
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.m-lbl {
+  font-size: 0.62rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.m-val {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+/* Skeletons loader */
+.listing-loading-skeleton {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .listing-loading-skeleton {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .listing-loading-skeleton {
+    grid-template-columns: 1fr;
+  }
+}
+
+.skeleton-card {
+  height: 380px;
+  overflow: hidden;
+}
+
+.img-sk {
+  height: 200px;
+}
+
+.card-sk-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title-sk {
+  height: 22px;
+  width: 60%;
+  border-radius: var(--radius-sm);
+}
+
+.text-sk {
+  height: 14px;
+  width: 90%;
+  border-radius: var(--radius-sm);
+}
+
+/* Empty State */
+.empty-directory {
+  text-align: center;
+  padding: 40px !important;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+}
+
+.empty-directory span {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.empty-directory p {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.w-full { width: 100%; }
+.mt-2 { margin-top: 8px; }
+.mt-4 { margin-top: 16px; }
+
+/* Maps Analyzer CSS */
+.maps-analyzer-card {
+  padding: 20px 24px !important;
+  background: linear-gradient(140deg, rgba(236, 253, 245, 0.86), rgba(240, 249, 255, 0.84));
+  border: 1px solid rgba(13, 148, 136, 0.24);
+  box-shadow: var(--shadow-md);
+  margin-top: 24px;
+}
+
+.analyzer-header h3 {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 4px 0 2px;
+}
+
+.analyzer-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #0f766e;
+  background-color: rgba(209, 250, 229, 0.8);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+.analyzer-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.analyzer-form {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@media (max-width: 600px) {
+  .analyzer-form {
+    flex-direction: column;
+  }
+}
+
+.analyzer-input-wrap {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  border: 1.5px solid rgba(148, 163, 184, 0.38);
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  background-color: rgba(255, 255, 255, 0.9);
+  transition: all var(--transition-fast);
+}
+
+.analyzer-input-wrap:focus-within {
+  border-color: var(--color-primary);
+  background-color: white;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.16);
+}
+
+.analyzer-icon {
+  font-size: 1rem;
+  margin-right: 8px;
+}
+
+.analyzer-input {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  padding: 10px 0 !important;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.analyze-btn {
+  padding: 10px 24px !important;
+  white-space: nowrap;
+}
+
+.analyzer-error {
+  font-size: 0.8rem;
+  color: #EF4444;
+  font-weight: 600;
+}

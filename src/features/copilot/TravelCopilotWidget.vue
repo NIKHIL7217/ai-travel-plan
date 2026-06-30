@@ -71,7 +71,10 @@ watch(
 );
 
 watch(
-  () => copilotStore.messages.length,
+  () => {
+    const last = copilotStore.messages[copilotStore.messages.length - 1];
+    return `${copilotStore.messages.length}:${last?.text?.length || 0}`;
+  },
   async () => {
     await nextTick();
     scrollMessagesToBottom();
@@ -109,7 +112,10 @@ watch(
         <header class="panel-header">
           <div>
             <h3>AI Travel Copilot</h3>
-            <p>Context-aware planner companion</p>
+            <p>
+              <span class="live-dot" :class="{ demo: !copilotStore.isLiveAi }"></span>
+              {{ copilotStore.isLiveAi ? "Live AI · Gemini" : "Smart guide mode" }}
+            </p>
           </div>
           <div class="header-actions">
             <button type="button" class="mini-btn" @click="copilotStore.clearHistory">Reset</button>
@@ -146,12 +152,20 @@ watch(
             :class="message.role"
           >
             <strong>{{ message.role === "user" ? "You" : "Copilot" }}</strong>
-            <p>{{ message.text }}</p>
+            <p v-if="message.text">{{ message.text }}<span v-if="copilotStore.isTyping && message.role === 'assistant' && message === copilotStore.messages[copilotStore.messages.length - 1]" class="stream-caret"></span></p>
+            <p v-else class="thinking">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </p>
           </article>
 
-          <article v-if="copilotStore.isTyping" class="message assistant typing">
+          <article
+            v-if="copilotStore.isTyping && copilotStore.messages[copilotStore.messages.length - 1]?.role !== 'assistant'"
+            class="message assistant"
+          >
             <strong>Copilot</strong>
-            <p>Thinking...</p>
+            <p class="thinking">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </p>
           </article>
         </div>
 
@@ -160,7 +174,7 @@ watch(
             v-model="promptInput"
             type="text"
             class="form-input"
-            placeholder="Ask for budget, tonight plan, safety, or sync status"
+            placeholder="Ask anything: plan, budget, cheaper, safety, food..."
           />
           <button type="submit" class="btn btn-primary" :disabled="!promptInput.trim() || copilotStore.isTyping">
             Send
@@ -233,6 +247,29 @@ watch(
   margin-top: 3px;
   font-size: 0.74rem;
   color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45);
+  animation: live-pulse 1.8s infinite;
+}
+
+.live-dot.demo {
+  background: #d97706;
+  animation: none;
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
 
 .header-actions {
@@ -323,16 +360,51 @@ watch(
   font-size: 0.81rem;
   color: var(--color-text-secondary);
   line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #2563eb;
+  border-radius: 1px;
+  animation: caret-blink 1s steps(2) infinite;
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.thinking {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.thinking .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-text-muted);
+  animation: thinking-bounce 1.2s infinite ease-in-out both;
+}
+
+.thinking .dot:nth-child(2) { animation-delay: 0.16s; }
+.thinking .dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
 }
 
 .message.user {
   border-color: rgba(37, 99, 235, 0.25);
   background: rgba(239, 246, 255, 0.86);
-}
-
-.message.typing p {
-  color: var(--color-text-muted);
-  font-style: italic;
 }
 
 .composer {

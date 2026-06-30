@@ -91,6 +91,9 @@ const DESTINATION_GEMS = {
 
 import { getTestingHiddenGemsData } from "../../data/testing/featureDataset";
 
+const DEMO_DATA_ENABLED =
+  import.meta.env.VITE_NO_MOCK_DATA_POLICY === "false" && import.meta.env.VITE_DEMO_MODE === "true";
+
 function normalizeText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -154,7 +157,9 @@ export async function getHiddenGems(options = {}) {
   const crowdPreference = normalizeText(options.crowdPreference || "low").toLowerCase() || "low";
   const limit = Math.max(1, Math.min(8, Number(options.limit || 5)));
 
-  const testingGems = getTestingHiddenGemsData(destinationName || destinationLocation || "");
+  const testingGems = DEMO_DATA_ENABLED
+    ? getTestingHiddenGemsData(destinationName || destinationLocation || "")
+    : null;
   if (Array.isArray(testingGems?.gems) && testingGems.gems.length > 0) {
     return {
       destination: destinationName || destinationLocation || testingGems.destination,

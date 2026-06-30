@@ -8,6 +8,12 @@ import {
   signOut,
   updateProfile
 } from "firebase/auth";
+import {
+  backendDeleteTrip,
+  backendListTrips,
+  backendSaveTrip,
+  isBackendEnabled
+} from "./api/backendClient";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
@@ -148,6 +154,18 @@ export async function logoutCurrentUser() {
 export async function saveTripToDb(trip, userId = "guest") {
   const normalizedUserId = userId || "guest";
 
+  if (isBackendEnabled()) {
+    const saved = await backendSaveTrip(trip, normalizedUserId);
+    if (saved) {
+      return {
+        id: saved.id,
+        savedAt: new Date(saved.savedAt || Date.now()).toLocaleDateString(),
+        userId: normalizedUserId,
+        ...trip
+      };
+    }
+  }
+
   if (useFirebase && db) {
     try {
       const docRef = await addDoc(collection(db, "trips"), {
@@ -186,6 +204,18 @@ export async function saveTripToDb(trip, userId = "guest") {
 export async function getSavedTripsFromDb(userId = "guest") {
   const normalizedUserId = userId || "guest";
 
+  if (isBackendEnabled()) {
+    const records = await backendListTrips(normalizedUserId);
+    if (records) {
+      return records.map((record) => ({
+        id: record.id,
+        savedAt: new Date(record.savedAt || Date.now()).toLocaleDateString(),
+        userId: record.userId || normalizedUserId,
+        ...(record.data && typeof record.data === "object" ? record.data : {})
+      }));
+    }
+  }
+
   if (useFirebase && db) {
     try {
       const tripsQuery = query(collection(db, "trips"), where("userId", "==", normalizedUserId));
@@ -209,6 +239,13 @@ export async function getSavedTripsFromDb(userId = "guest") {
  */
 export async function deleteTripFromDb(id, userId = "guest") {
   const normalizedUserId = userId || "guest";
+
+  if (isBackendEnabled() && !String(id).startsWith("local_")) {
+    const removed = await backendDeleteTrip(id);
+    if (removed) {
+      return true;
+    }
+  }
 
   if (useFirebase && db && !String(id).startsWith("local_")) {
     try {

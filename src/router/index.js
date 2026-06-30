@@ -7,6 +7,7 @@ const DestinationDetails = () => import("../pages/DestinationDetails.vue");
 const Planner = () => import("../pages/Planner.vue");
 const Trips = () => import("../pages/Trips.vue");
 const RoadtripPlanner = () => import("../pages/RoadtripPlanner.vue");
+const Bookings = () => import("../pages/Bookings.vue");
 const NotFound = () => import("../pages/NotFound.vue");
 const Login = () => import("../pages/Login.vue");
 const Community = () => import("../pages/Community.vue");
@@ -60,6 +61,11 @@ const routes = [
     path: "/roadtrips",
     name: "RoadtripPlanner",
     component: RoadtripPlanner
+  },
+  {
+    path: "/bookings",
+    name: "Bookings",
+    component: Bookings
   },
   {
     path: "/login",

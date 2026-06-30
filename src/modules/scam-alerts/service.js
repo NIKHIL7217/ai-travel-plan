@@ -30,6 +30,9 @@ const COMMON_ALERTS = [
 
 import { getTestingScamData } from "../../data/testing/featureDataset";
 
+const DEMO_DATA_ENABLED =
+  import.meta.env.VITE_NO_MOCK_DATA_POLICY === "false" && import.meta.env.VITE_DEMO_MODE === "true";
+
 const DESTINATION_ALERTS = {
   goa: [
     {
@@ -150,7 +153,9 @@ export async function getScamAlerts(options = {}) {
   const travelMode = normalizeText(options.travelMode || "general") || "general";
   const band = timeBandLabel(options.timeBand || options.timeOfDay || "auto");
 
-  const testingScam = getTestingScamData(destinationName || destinationLocation || "");
+  const testingScam = DEMO_DATA_ENABLED
+    ? getTestingScamData(destinationName || destinationLocation || "")
+    : null;
   if (testingScam?.alerts?.length) {
     return {
       ...testingScam,

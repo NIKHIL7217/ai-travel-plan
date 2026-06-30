@@ -7,6 +7,9 @@ const COUNTRY_ALIASES = {
 
 import { getTestingVisaData } from "../../data/testing/featureDataset";
 
+const DEMO_DATA_ENABLED =
+  import.meta.env.VITE_NO_MOCK_DATA_POLICY === "false" && import.meta.env.VITE_DEMO_MODE === "true";
+
 const INDIA_VISA_FREE = new Set([
   "Bhutan",
   "Nepal",
@@ -186,7 +189,9 @@ export async function getVisaIntelligence({
     : "tourism";
   const normalizedDuration = Math.max(1, Math.min(180, Number(durationDays || 7)));
 
-  const testingVisa = getTestingVisaData(safeDestination || destinationLocation || "", normalizedNationality, normalizedPurpose, normalizedDuration);
+  const testingVisa = DEMO_DATA_ENABLED
+    ? getTestingVisaData(safeDestination || destinationLocation || "", normalizedNationality, normalizedPurpose, normalizedDuration)
+    : null;
   if (testingVisa?.destination) {
     return {
       ...testingVisa,

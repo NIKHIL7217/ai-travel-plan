@@ -1,0 +1,17 @@
+{
+  "name": "wanderai-api-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Secure backend for WanderAI: server-side Gemini proxy + trip persistence.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2"
+  }
+}

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { useOfflineStore } from "./offline";
 import { usePlannerSessionStore } from "./plannerSession";
+import { isChatConfigured, streamTravelChat } from "../services/ai/chat.service";
 
 const STORAGE_KEY = "travel_os_copilot_session_v1";
 
@@ -17,7 +18,7 @@ function createMessage(role, text) {
 function defaultWelcome() {
   return createMessage(
     "assistant",
-    "Travel Copilot online hai. Ask me for tonight plan, budget split, safety cues, or offline sync guidance."
+    "Hey! Main aapka Travel Copilot hoon. Mujhe kuch bhi pucho - trip plan karna, budget kam karna, din extend karna, safety, food, ya packing. Bas type karke batao, main real-time help karunga."
   );
 }
 
@@ -106,6 +107,25 @@ export const useCopilotStore = defineStore("copilot", () => {
 
   const plannerSessionStore = usePlannerSessionStore();
   const offlineStore = useOfflineStore();
+  const isLiveAi = isChatConfigured();
+  let activeAbort = null;
+
+  function buildChatContext() {
+    const planner = plannerSessionStore.activeContext || {};
+    return {
+      routeName: scope.value.routeName,
+      destination: planner.destination,
+      origin: planner.origin,
+      days: planner.days,
+      travelers: planner.travelers,
+      budgetTotal: planner.budgetTotal,
+      travelMode: planner.travelMode,
+      isOnline: offlineStore.isOnline,
+      pendingDrafts: offlineStore.pendingCount,
+      itineraryPreview: Array.isArray(planner.itineraryPreview) ? planner.itineraryPreview : [],
+      memoryContext: planner.memoryContext
+    };
+  }
 
   function persist() {
     if (typeof localStorage === "undefined") {
@@ -149,11 +169,11 @@ export const useCopilotStore = defineStore("copilot", () => {
     const destination = String(plannerSessionStore.activeContext?.destination || "this trip").trim() || "this trip";
 
     return [
-      { id: "budget", label: "Budget Left", prompt: `What is my budget outlook for ${destination}?` },
+      { id: "plan", label: "Plan a Trip", prompt: `Plan a great 3 day trip to ${destination}` },
+      { id: "cheaper", label: "Make it Cheaper", prompt: `Make my ${destination} plan cheaper without killing the fun` },
       { id: "tonight", label: "Tonight Plan", prompt: `Suggest tonight plan in ${destination}` },
       { id: "safety", label: "Safety Cues", prompt: `Any safety or scam alerts for ${destination}?` },
-      { id: "food", label: "Food Route", prompt: `Where should I eat in ${destination}?` },
-      { id: "offline", label: "Offline Sync", prompt: "How many offline drafts are pending sync?" }
+      { id: "food", label: "Food Route", prompt: `Best local food to try in ${destination}?` }
     ];
   });
 
@@ -178,6 +198,12 @@ export const useCopilotStore = defineStore("copilot", () => {
     persist();
   }
 
+  function replaceMessageText(messageId, nextText) {
+    messages.value = messages.value.map((message) =>
+      message.id === messageId ? { ...message, text: nextText } : message
+    );
+  }
+
   async function sendMessage(text) {
     const query = String(text || "").trim();
     if (!query) {
@@ -186,6 +212,51 @@ export const useCopilotStore = defineStore("copilot", () => {
 
     messages.value = [...messages.value, createMessage("user", query)].slice(-40);
     isTyping.value = true;
+
+    if (isLiveAi) {
+      if (activeAbort) {
+        activeAbort.abort();
+      }
+      activeAbort = new AbortController();
+
+      const assistantMessage = createMessage("assistant", "");
+      messages.value = [...messages.value, assistantMessage].slice(-40);
+
+      const history = messages.value
+        .filter((message) => message.id !== assistantMessage.id)
+        .map((message) => ({ role: message.role, text: message.text }));
+
+      try {
+        const reply = await streamTravelChat({
+          messages: history,
+          context: buildChatContext(),
+          signal: activeAbort.signal,
+          onToken: (_chunk, fullText) => {
+            replaceMessageText(assistantMessage.id, fullText);
+          }
+        });
+
+        const finalText = String(reply || "").trim();
+        if (finalText) {
+          replaceMessageText(assistantMessage.id, finalText);
+        } else {
+          replaceMessageText(
+            assistantMessage.id,
+            buildReply(query, scope.value, plannerSessionStore.activeContext, offlineStore)
+          );
+        }
+      } catch (_error) {
+        replaceMessageText(
+          assistantMessage.id,
+          buildReply(query, scope.value, plannerSessionStore.activeContext, offlineStore)
+        );
+      } finally {
+        activeAbort = null;
+        isTyping.value = false;
+        persist();
+      }
+      return;
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 420));
 
@@ -206,6 +277,7 @@ export const useCopilotStore = defineStore("copilot", () => {
   return {
     isPanelOpen,
     isTyping,
+    isLiveAi,
     scope,
     messages,
     quickActions,

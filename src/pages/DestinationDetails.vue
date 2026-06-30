@@ -11,6 +11,7 @@ import { getScamAlerts } from "../modules/scam-alerts/service";
 import { getHiddenGems } from "../modules/hidden-gems/service";
 import { useAuthStore } from "../stores/auth";
 import { useCommunityStore } from "../stores/community";
+import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -100,6 +101,22 @@ const foodOptions = computed(() => {
 
 const nearbyHospitals = computed(() => liveLocations.value?.hospitals || destination.value?.nearbyExplorer?.hospitals || []);
 const nearbyFuel = computed(() => liveLocations.value?.fuelStations || destination.value?.nearbyExplorer?.fuelStations || []);
+
+const mapPoints = computed(() => {
+  const points = [];
+
+  (liveAttractions.value || []).forEach((item) => {
+    points.push({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Attraction", type: "attraction" });
+  });
+  (stayOptions.value || []).forEach((item) => {
+    points.push({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Stay", type: "hotel" });
+  });
+  (foodOptions.value || []).forEach((item) => {
+    points.push({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Food", type: "food" });
+  });
+
+  return points.filter((point) => Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)));
+});
 
 const destinationReviews = computed(() => communityStore.reviews.slice(0, 6));
 const communityPosts = computed(() => communityStore.posts.slice(0, 4));
@@ -528,6 +545,14 @@ watch(
             </article>
           </div>
 
+          <div v-if="mapPoints.length" class="map-block mt-6">
+            <div class="panel-head">
+              <h4>Live Map</h4>
+              <span class="map-count">{{ mapPoints.length }} places</span>
+            </div>
+            <InteractiveTripMap :points="mapPoints" :show-route="false" height="340px" class="mt-3" />
+          </div>
+
           <div class="visa-card mt-6">
             <div class="panel-head">
               <h4>Visa Intelligence</h4>
@@ -770,410 +795,4 @@ watch(
   </div>
 </template>
 
-<style scoped>
-.destination-guide {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 34px;
-}
-
-.guide-hero {
-  min-height: 430px;
-  background-size: cover;
-  background-position: center;
-  display: flex;
-  align-items: flex-end;
-}
-
-.hero-inner {
-  padding-bottom: 40px;
-  color: #f8fafc;
-}
-
-.hero-badge {
-  display: inline-block;
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
-  font-weight: 800;
-  color: #a7f3d0;
-}
-
-.hero-inner h1 {
-  margin-top: 10px;
-  font-size: clamp(2.5rem, 6vw, 4rem);
-  letter-spacing: -0.04em;
-}
-
-.hero-inner p {
-  margin-top: 8px;
-  max-width: 760px;
-  color: rgba(241, 245, 249, 0.94);
-  line-height: 1.55;
-}
-
-.hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.hero-meta span {
-  border: 1px solid rgba(226, 232, 240, 0.35);
-  border-radius: var(--radius-full);
-  background: rgba(15, 23, 42, 0.4);
-  padding: 5px 10px;
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.hero-message {
-  font-size: 0.8rem;
-  color: #bbf7d0;
-}
-
-.mt-6 {
-  margin-top: 24px;
-}
-
-.mt-4 {
-  margin-top: 16px;
-}
-
-.mt-3 {
-  margin-top: 12px;
-}
-
-.mt-2 {
-  margin-top: 8px;
-}
-
-.quick-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.quick-stat {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
-}
-
-.quick-stat span {
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.quick-stat strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.94rem;
-}
-
-.section-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.section-tab {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--color-text-secondary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 8px 12px;
-  cursor: pointer;
-}
-
-.section-tab.active {
-  border-color: rgba(13, 148, 136, 0.35);
-  background: rgba(209, 250, 229, 0.78);
-  color: #0f766e;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr;
-  gap: 14px;
-}
-
-.main-col,
-.side-col {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.panel,
-.side-panel,
-.error-card,
-.skeleton-card {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
-}
-
-.panel-copy {
-  color: var(--color-text-secondary);
-  font-size: 0.84rem;
-  line-height: 1.5;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.btn-xs {
-  font-size: 0.72rem;
-  padding: 6px 10px;
-}
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.info-card {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.92);
-  padding: 9px;
-  display: grid;
-  gap: 5px;
-}
-
-.info-card strong {
-  font-size: 0.82rem;
-}
-
-.info-card p {
-  font-size: 0.76rem;
-  color: var(--color-text-secondary);
-}
-
-.info-card small {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-}
-
-.tips-grid {
-  display: grid;
-  gap: 8px;
-}
-
-.tip-card {
-  border: 1px dashed rgba(148, 163, 184, 0.42);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.88);
-  padding: 10px;
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-}
-
-.visa-card,
-.signals-card,
-.route-panel {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.9);
-  padding: 10px;
-}
-
-.visa-controls,
-.route-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.visa-grid,
-.metric-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.visa-grid article,
-.metric-list article {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-sm);
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.95);
-}
-
-.visa-grid span,
-.metric-list span {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--color-text-secondary);
-}
-
-.visa-grid strong,
-.metric-list strong {
-  margin-top: 4px;
-  display: block;
-  font-size: 0.82rem;
-}
-
-.route-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.route-grid article {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-sm);
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.95);
-}
-
-.route-grid span {
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.route-grid strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.82rem;
-}
-
-.traffic-chip {
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  border-radius: var(--radius-full);
-  display: inline-block;
-  padding: 6px 10px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: #0369a1;
-  background: rgba(224, 242, 254, 0.78);
-}
-
-.risk-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.risk-pill {
-  border-radius: var(--radius-full);
-  padding: 5px 9px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.risk-pill.status-high {
-  border: 1px solid rgba(220, 38, 38, 0.3);
-  background: rgba(254, 226, 226, 0.74);
-  color: #b91c1c;
-}
-
-.risk-pill.status-medium {
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  background: rgba(254, 243, 199, 0.84);
-  color: #b45309;
-}
-
-.risk-pill.status-low {
-  border: 1px solid rgba(5, 150, 105, 0.3);
-  background: rgba(209, 250, 229, 0.78);
-  color: #047857;
-}
-
-.side-list {
-  display: grid;
-  gap: 8px;
-}
-
-.mini-item {
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.92);
-  padding: 8px;
-}
-
-.mini-item strong {
-  font-size: 0.8rem;
-}
-
-.mini-item p {
-  margin-top: 4px;
-  font-size: 0.76rem;
-  color: var(--color-text-secondary);
-}
-
-.mini-item small {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-}
-
-.review-controls {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.review-controls label {
-  display: grid;
-  gap: 4px;
-}
-
-.review-controls span {
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.error-text {
-  color: #b91c1c;
-  font-size: 0.8rem;
-}
-
-.details-loading {
-  display: grid;
-}
-
-.skeleton-card,
-.error-card {
-  padding: 18px;
-}
-
-@media (max-width: 1100px) {
-  .quick-stats {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 760px) {
-  .quick-stats,
-  .card-grid,
-  .visa-controls,
-  .route-form,
-  .visa-grid,
-  .metric-list,
-  .route-grid,
-  .review-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-</style>
+<style scoped src="./styles/DestinationDetails.css"></style>

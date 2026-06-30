@@ -1,92 +1,71 @@
 <template>
   <div class="planner-layout">
     <div class="main-workspace">
-      <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-header">
           <div class="ai-icon">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>
           </div>
           <div class="ai-title">
-            <strong>AI Travel Planner</strong>
+            <strong>Wander AI</strong>
             <span class="status"><span class="dot"></span> Active</span>
           </div>
-          <button class="more-options">⋮</button>
+          <button class="more-options" aria-label="Planner quick actions" @click="handleMoreOptions">⋮</button>
         </div>
 
-        <div class="chat-container">
-          <!-- AI Message 1 -->
-          <div class="ai-message">
-            <div class="ai-avatar">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg>
-            </div>
-            <div class="ai-content">
-              <p>Hello! I'm your AI travel planner. Tell me about your dream trip and I'll create a complete itinerary for you. ✨</p>
-              <div class="chip-group">
-                <span class="chip">🏖️ Beach getaway</span>
-                <span class="chip">🏕️ Adventure trip</span>
-                <span class="chip">💒 Honeymoon</span>
-                <span class="chip">👨‍👩‍👧‍👦 Family vacation</span>
+        <div ref="chatContainerRef" class="chat-container">
+          <template v-for="message in chatMessages" :key="message.id">
+            <div v-if="message.role === 'assistant'" class="ai-message">
+              <div class="ai-avatar">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg>
               </div>
-            </div>
-          </div>
+              <div class="ai-content">
+                <p v-if="message.thinking" class="thinking-line">
+                  {{ message.text }}<span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
+                </p>
+                <p v-else>{{ message.text }}</p>
 
-          <!-- User Message 1 -->
-          <div class="user-message">
-            <div class="user-content">
-              Plan a 5-day trip to Bali for 2 people under ₹1,50,000. Mix of adventure and relaxation.
-            </div>
-          </div>
+                <div v-if="message.preview" class="itin-preview">
+                  <div class="itin-title">
+                    <span>🌴</span> {{ planner.destination }} <span class="days">• {{ dayPlans.length }} Days</span>
+                  </div>
+                  <div class="itin-badges">
+                    <span class="badge badge-green">₹{{ formatInr(totalBudget) }}</span>
+                    <span class="badge badge-orange">{{ planner.travelers }} Travelers</span>
+                  </div>
+                  <div class="itin-desc">{{ planner.summary }}</div>
+                </div>
 
-          <!-- AI Message 2 -->
-          <div class="ai-message">
-            <div class="ai-avatar">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg>
-            </div>
-            <div class="ai-content">
-              <p>I've crafted a perfect 5-day Bali itinerary! Here's what I've planned:</p>
-              
-              <div class="itin-preview">
-                <div class="itin-title">
-                  <span>🌴</span> Bali, Indonesia <span class="days">• 5 Days</span>
-                </div>
-                <div class="itin-badges">
-                  <span class="badge badge-green">₹1,42,500</span>
-                  <span class="badge badge-orange">2 Travelers</span>
-                </div>
-                <div class="itin-desc">
-                  Ubud temples → Rice terraces → Water sports → Beach sunset → Spa day
+                <div v-if="message.chips?.length" class="chip-group">
+                  <span
+                    v-for="chip in message.chips"
+                    :key="`${message.id}-${chip}`"
+                    class="chip"
+                    :class="{ cyan: message.cyanChips }"
+                    @click="applyChipPrompt(chip)"
+                  >
+                    {{ chip }}
+                  </span>
                 </div>
               </div>
-
-              <p>Your complete itinerary is ready in the workspace. Want me to adjust anything?</p>
-              <div class="chip-group">
-                <span class="chip cyan">Make it cheaper</span>
-                <span class="chip cyan">Add more adventure</span>
-                <span class="chip cyan">Upgrade hotels</span>
-              </div>
             </div>
-          </div>
 
-          <!-- User Message 2 -->
-          <div class="user-message">
-            <div class="user-content">
-              Can you add a sunrise trek on Day 3
+            <div v-else class="user-message">
+              <div class="user-content">{{ message.text }}</div>
             </div>
-          </div>
+          </template>
         </div>
 
         <div class="chat-input-area">
           <div class="input-wrapper">
-            <svg class="icon-attach" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-3.31-2.69-6-6-6S3 1.69 3 5v12.5c0 3.31 2.69 6 6 6s6-2.69 6-6V6h-1.5z" /></svg>
-            <input type="text" placeholder="Ask me to plan, modify, or optimize your trip...">
-            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
-            <button class="btn-send"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z" /></svg></button>
+            <svg class="icon-attach" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8" role="button" tabindex="0" @click="handleAttach" @keydown.enter.prevent="handleAttach"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-3.31-2.69-6-6-6S3 1.69 3 5v12.5c0 3.31 2.69 6 6 6s6-2.69 6-6V6h-1.5z" /></svg>
+            <input v-model="chatInput" type="text" :placeholder="isGenerating ? 'Generating your plan…' : 'Ask me to plan, modify, or optimize your trip...'" :disabled="isGenerating" @keydown.enter.prevent="sendChatMessage">
+            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8" role="button" tabindex="0" @click="handleMic" @keydown.enter.prevent="handleMic"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
+            <button class="btn-send" @click="sendChatMessage"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z" /></svg></button>
           </div>
         </div>
       </aside>
 
-      <!-- Main Content -->
       <main class="content-area">
         <div class="hero-header">
           <div class="hero-bg"></div>
@@ -95,20 +74,15 @@
               <div>
                 <div class="badge-row">
                   <span class="badge-ai">AI GENERATED</span>
-                  <span class="updated-time">• Updated 2 min ago</span>
+                  <span class="updated-time">• Updated {{ planner.updatedAt }}</span>
                 </div>
-                <h1>Bali, Indonesia</h1>
-                <p class="subtitle">A perfect blend of adventure, culture, and tropical relaxation</p>
+                <h1>{{ planner.destination }}</h1>
+                <p class="subtitle">{{ planner.subtitle }}</p>
               </div>
               <div class="hero-actions">
-                <button class="btn btn-outline-light">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
-                  Edit
-                </button>
-                <button class="btn btn-outline-light">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" /></svg>
-                  Regenerate
-                </button>
+                <button class="btn btn-outline-light" @click="handleEditPlan">Edit</button>
+                <button class="btn btn-outline-light" :disabled="isGenerating" @click="handleRegeneratePlan">{{ isGenerating ? "Generating…" : "Regenerate" }}</button>
+                <button class="btn btn-outline-light" @click="router.push('/bookings')">Book</button>
               </div>
             </div>
 
@@ -124,121 +98,123 @@
 
         <div class="main-tabs-container">
           <div class="main-tabs">
-            <button class="tab-btn active">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" /></svg>
-              Itinerary
-            </button>
-            <button class="tab-btn">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z" /></svg>
-              Hotels
-            </button>
-            <button class="tab-btn">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z" /></svg>
-              Restaurants
-            </button>
-            <button class="tab-btn">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" /></svg>
-              Budget
-            </button>
-            <button class="tab-btn">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" /></svg>
-              Map
-            </button>
-            <button class="tab-btn">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6A4.997 4.997 0 0 1 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z" /></svg>
-              AI Tips
-            </button>
+            <button class="tab-btn" :class="{ active: activeTab === 'itinerary' }" @click="handleTabClick('itinerary')">Itinerary</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'hotels' }" @click="handleTabClick('hotels')">Hotels</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'restaurants' }" @click="handleTabClick('restaurants')">Restaurants</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'budget' }" @click="handleTabClick('budget')">Budget</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'map' }" @click="handleTabClick('map')">Map</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'tips' }" @click="handleTabClick('tips')">AI Tips</button>
           </div>
 
-          <div class="day-tabs">
-            <div class="day-tab active">
-              <strong>Day 1</strong> <span>Mar 15</span>
-            </div>
-            <div class="day-tab">
-              <strong>Day 2</strong> <span>Mar 16</span>
-            </div>
-            <div class="day-tab">
-              <strong>Day 3</strong> <span>Mar 17</span>
-            </div>
-            <div class="day-tab">
-              <strong>Day 4</strong> <span>Mar 18</span>
-            </div>
-            <div class="day-tab">
-              <strong>Day 5</strong> <span>Mar 19</span>
-            </div>
+          <div v-if="activeTab === 'itinerary'" class="day-tabs">
+            <button v-for="day in dayPlans" :key="day.id" class="day-tab" :class="{ active: selectedDayId === day.id }" @click="handleDaySelect(day.id)">
+              <strong>Day {{ day.day }}</strong> <span>{{ day.date }}</span>
+            </button>
           </div>
 
           <div class="timeline-section">
-            <div class="timeline-header">
-              <div>
-                <h2>Day 1 — Arrival & Ubud Exploration</h2>
-                <p>Saturday, March 15, 2025 • Ubud Area</p>
-              </div>
-              <div class="day-cost">
-                Day cost: <strong>₹28,500</strong>
-              </div>
-            </div>
-
-            <div class="timeline-list">
-              <!-- Timeline Card 1 -->
-              <div class="timeline-card">
-                <div class="timeline-line"></div>
-                <div class="t-icon-box orange">
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
+            <template v-if="activeTab === 'itinerary'">
+              <div class="timeline-header">
+                <div>
+                  <h2>Day {{ selectedDay.day }} — {{ selectedDay.theme }}</h2>
+                  <p>{{ selectedDay.dateLabel }} • {{ selectedDay.area }}</p>
                 </div>
-                <div class="t-content">
-                  <div class="t-time orange">Morning • 6:00 AM</div>
-                  <h3>Arrive at Ngurah Rai Airport</h3>
-                  <p>Private transfer to Ubud hotel. Enjoy the scenic drive through rice paddies and traditional villages.</p>
-                  <div class="t-tags">
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z" /></svg> 1.5 hrs</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z" /></svg> 2,500</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z" /></svg> 45 min drive</span>
+                <div class="day-cost">Day cost: <strong>₹{{ formatInr(selectedDay.cost) }}</strong></div>
+              </div>
+
+              <div v-if="selectedDay.items.length" class="timeline-list">
+                <div v-for="(item, index) in selectedDay.items" :key="item.id" class="timeline-card" @click="handleTimelineItemClick(item)">
+                  <div v-if="index < selectedDay.items.length - 1" class="timeline-line"></div>
+                  <div class="t-icon-box" :class="item.iconTone">
+                    <svg v-if="item.icon === 'sun'" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
+                    <svg v-else-if="item.icon === 'food'" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1" /><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" /><line x1="6" y1="2" x2="6" y2="4" /><line x1="10" y1="2" x2="10" y2="4" /><line x1="14" y1="2" x2="14" y2="4" /></svg>
+                    <svg v-else viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
+                  </div>
+                  <div class="t-content">
+                    <div class="t-time" :class="item.timeTone">{{ item.slot }} • {{ item.time }} <span v-if="item.aiPick" class="ai-pick">AI Pick</span></div>
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.description }}</p>
+                    <div class="t-tags">
+                      <span class="t-tag" @click.stop="handleTimelineTagClick(item, 'duration', item.duration)">{{ item.duration }}</span>
+                      <span class="t-tag" @click.stop="handleTimelineTagClick(item, 'cost', `₹${formatInr(item.cost)}`)">₹{{ formatInr(item.cost) }}</span>
+                      <span v-for="tag in item.tags" :key="`${item.id}-${tag.text}`" class="t-tag" :class="{ highlight: tag.highlight }" @click.stop="handleTimelineTagClick(item, 'meta', tag.text)">{{ tag.text }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Timeline Card 2 -->
-              <div class="timeline-card">
-                <div class="timeline-line"></div>
-                <div class="t-icon-box pink">
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1" /><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" /><line x1="6" y1="2" x2="6" y2="4" /><line x1="10" y1="2" x2="10" y2="4" /><line x1="14" y1="2" x2="14" y2="4" /></svg>
-                </div>
-                <div class="t-content">
-                  <div class="t-time pink">
-                    Breakfast • 8:30 AM
-                    <span class="ai-pick">AI Pick</span>
+              <div v-else class="timeline-list">
+                <div class="timeline-card">
+                  <div class="t-icon-box cyan">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /></svg>
                   </div>
-                  <h3>Breakfast at Sari Organik</h3>
-                  <p>Farm-to-table organic breakfast with panoramic rice terrace views. Try the Nasi Goreng.</p>
-                  <div class="t-tags">
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z" /></svg> 1 hr</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z" /></svg> 800</span>
-                    <span class="t-tag highlight"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" /></svg> 4.7</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5z" /></svg> 7AM–3PM</span>
+                  <div class="t-content">
+                    <h3>No activities added for this day yet</h3>
+                    <p>Use chat to add plans like "Add sunset beach dinner on Day {{ selectedDay.day }}".</p>
                   </div>
                 </div>
               </div>
+            </template>
 
-              <!-- Timeline Card 3 -->
-              <div class="timeline-card">
-                <div class="t-icon-box cyan">
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
-                </div>
-                <div class="t-content">
-                  <div class="t-time cyan">Sightseeing • 10:00 AM</div>
-                  <h3>Tegallalang Rice Terraces</h3>
-                  <p>Explore the iconic UNESCO-listed rice terraces. Walk through the jungle swing and take stunning photos.</p>
-                  <div class="t-tags">
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z" /></svg> 2.5 hrs</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z" /></svg> 1,200</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7" /></svg> 20 min</span>
-                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5z" /></svg> 8AM–6PM</span>
+            <template v-else-if="activeTab === 'hotels'">
+              <div class="timeline-header"><div><h2>Recommended Hotels</h2><p>Options based on your itinerary</p></div></div>
+              <div class="timeline-list">
+                <div v-for="hotel in hotels" :key="hotel.name" class="timeline-card" @click="handleHotelCardClick(hotel)">
+                  <div class="t-icon-box orange">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z" /></svg>
+                  </div>
+                  <div class="t-content">
+                    <h3>{{ hotel.name }}</h3>
+                    <p>{{ hotel.area }} • {{ hotel.summary }}</p>
+                    <div class="t-tags"><span class="t-tag">{{ hotel.rating }}</span><span class="t-tag">₹{{ formatInr(hotel.nightly) }}/night</span></div>
                   </div>
                 </div>
               </div>
+            </template>
 
-            </div>
+            <template v-else-if="activeTab === 'restaurants'">
+              <div class="timeline-header"><div><h2>Restaurant Picks</h2><p>Food recommendations by area</p></div></div>
+              <div class="timeline-list">
+                <div v-for="restaurant in restaurants" :key="restaurant.name" class="timeline-card" @click="handleRestaurantCardClick(restaurant)">
+                  <div class="t-icon-box pink">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z" /></svg>
+                  </div>
+                  <div class="t-content">
+                    <h3>{{ restaurant.name }}</h3>
+                    <p>{{ restaurant.type }} • {{ restaurant.area }}</p>
+                    <div class="t-tags"><span class="t-tag">{{ restaurant.rating }}</span><span class="t-tag">₹{{ formatInr(restaurant.avgCost) }} avg</span></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="activeTab === 'budget'">
+              <div class="timeline-header"><div><h2>Budget Breakdown</h2><p>Category-wise spend view</p></div></div>
+              <div class="timeline-list">
+                <div v-for="row in budgetRows" :key="row.label" class="timeline-card" @click="handleBudgetRowClick(row)">
+                  <div class="t-icon-box cyan">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" /></svg>
+                  </div>
+                  <div class="t-content"><h3>{{ row.label }}</h3><div class="t-tags"><span class="t-tag">₹{{ formatInr(row.amount) }}</span></div></div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="activeTab === 'map'">
+              <div class="timeline-header"><div><h2>Route Intelligence</h2><p>{{ mapSummary.route }}</p></div></div>
+              <InteractiveTripMap v-if="mapPoints.length" :points="mapPoints" :show-route="true" height="320px" class="planner-map" />
+              <div class="timeline-list">
+                <div class="timeline-card" @click="handleMapCardClick('distance')"><div class="t-icon-box orange"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" /></svg></div><div class="t-content"><h3>Distance</h3><p>{{ mapSummary.distance }}</p></div></div>
+                <div class="timeline-card" @click="handleMapCardClick('transfer')"><div class="t-icon-box pink"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 11h-2V7h2zm0 4h-2v-2h2z" /></svg></div><div class="t-content"><h3>Transfer Time</h3><p>{{ mapSummary.transfer }}</p></div></div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="timeline-header"><div><h2>AI Tips</h2><p>Suggestions to optimize this trip</p></div></div>
+              <div class="timeline-list">
+                <div v-for="tip in aiTips" :key="tip" class="timeline-card" @click="handleTipClick(tip)"><div class="t-icon-box cyan"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" /></svg></div><div class="t-content"><p>{{ tip }}</p></div></div>
+              </div>
+            </template>
           </div>
         </div>
       </main>
@@ -247,774 +223,533 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import {
+  generateTravelPlan,
+  generateBudgetEstimate,
+  extractTripIntent,
+  getRealLocationData
+} from "../services/gemini";
+import { usePlannerSessionStore } from "../stores/plannerSession";
+import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
-const stats = ref([
-  { label: 'Duration', value: '5 Days', valueClass: 'text-dark', subtext: '4 Nights', subtextClass: 'text-muted' },
-  { label: 'Travelers', value: '2', valueClass: 'text-dark', subtext: 'Couple', subtextClass: 'text-muted' },
-  { label: 'Budget', value: '₹1.5L', valueClass: 'text-green', subtext: 'Per person', subtextClass: 'text-muted' },
-  { label: 'Est. Cost', value: '₹1.45L', valueClass: 'text-orange', subtext: 'Under budget', subtextClass: 'text-green' },
-  { label: 'Weather', value: '28°C', valueClass: 'text-dark', subtext: 'Sunny', subtextClass: 'text-muted' },
-  { label: 'Trip Score', value: '9.2', valueClass: 'text-purple', subtext: 'Excellent', subtextClass: 'text-muted' },
-  { label: 'Dates', value: 'Mar 15', valueClass: 'text-dark', subtext: '→ Mar 19', subtextClass: 'text-muted' },
-])
+const router = useRouter();
+const plannerSession = usePlannerSessionStore();
+const isGenerating = ref(false);
+const mapPoints = ref([]);
+const INR_RATE = 83.5;
+
+const activeTab = ref("itinerary");
+const chatInput = ref("");
+const chatContainerRef = ref(null);
+
+const planner = ref({
+  destination: "Bali, Indonesia",
+  subtitle: "A perfect blend of adventure, culture, and tropical relaxation",
+  summary: "Ubud temples -> Rice terraces -> Water sports -> Beach sunset -> Spa day",
+  travelers: 2,
+  updatedAt: "2 min ago",
+  weather: "28°C",
+  score: "9.2"
+});
+
+const STORAGE_KEY = "planner.page.state.v1";
+
+const dayPlans = ref([
+  {
+    id: "d1",
+    day: 1,
+    date: "Mar 15",
+    dateLabel: "Saturday, March 15, 2025",
+    area: "Ubud Area",
+    theme: "Arrival & Ubud Exploration",
+    cost: 28500,
+    items: [
+      { id: "d1-1", icon: "sun", iconTone: "orange", timeTone: "orange", slot: "Morning", time: "6:00 AM", title: "Arrive at Ngurah Rai Airport", description: "Private transfer to Ubud hotel. Enjoy the scenic drive through rice paddies and traditional villages.", duration: "1.5 hrs", cost: 2500, tags: [{ text: "45 min drive" }] },
+      { id: "d1-2", icon: "food", iconTone: "pink", timeTone: "pink", slot: "Breakfast", time: "8:30 AM", title: "Breakfast at Sari Organik", description: "Farm-to-table organic breakfast with panoramic rice terrace views. Try the Nasi Goreng.", duration: "1 hr", cost: 800, aiPick: true, tags: [{ text: "4.7", highlight: true }, { text: "7AM-3PM" }] },
+      { id: "d1-3", icon: "camera", iconTone: "cyan", timeTone: "cyan", slot: "Sightseeing", time: "10:00 AM", title: "Tegallalang Rice Terraces", description: "Explore the iconic UNESCO-listed rice terraces. Walk through the jungle swing and take stunning photos.", duration: "2.5 hrs", cost: 1200, tags: [{ text: "20 min" }, { text: "8AM-6PM" }] }
+    ]
+  },
+  { id: "d2", day: 2, date: "Mar 16", dateLabel: "Sunday, March 16, 2025", area: "Ubud + Kintamani", theme: "Temples & Scenic Drive", cost: 24700, items: [{ id: "d2-1", icon: "sun", iconTone: "orange", timeTone: "orange", slot: "Morning", time: "7:00 AM", title: "Tirta Empul Temple", description: "Traditional purification ritual and temple walk.", duration: "2 hrs", cost: 1500, tags: [{ text: "Culture" }] }] },
+  { id: "d3", day: 3, date: "Mar 17", dateLabel: "Monday, March 17, 2025", area: "North Bali", theme: "Adventure & Trekking", cost: 31200, items: [{ id: "d3-1", icon: "camera", iconTone: "cyan", timeTone: "cyan", slot: "Adventure", time: "8:00 AM", title: "Waterfall Trek", description: "Guided jungle route with waterfall viewpoints.", duration: "3 hrs", cost: 3600, tags: [{ text: "Guide" }] }] },
+  { id: "d4", day: 4, date: "Mar 18", dateLabel: "Tuesday, March 18, 2025", area: "South Bali", theme: "Beach & Sunset", cost: 26800, items: [] },
+  { id: "d5", day: 5, date: "Mar 19", dateLabel: "Wednesday, March 19, 2025", area: "Seminyak", theme: "Spa & Departure", cost: 17300, items: [] }
+]);
+
+const selectedDayId = ref("d1");
+const hotels = ref([{ name: "Maya Ubud Resort", area: "Ubud", summary: "River-view suite with breakfast", rating: "4.8", nightly: 14500 }, { name: "The Seminyak Beach", area: "Seminyak", summary: "Beachfront stay and sunset deck", rating: "4.7", nightly: 18200 }]);
+const restaurants = ref([{ name: "Sari Organik", type: "Organic Balinese", area: "Ubud", rating: "4.7", avgCost: 850 }, { name: "Merah Putih", type: "Fine Dining Indonesian", area: "Seminyak", rating: "4.6", avgCost: 2200 }]);
+const budgetBuckets = ref({ flights: 54000, stay: 45000, food: 17000, transport: 9000, activities: 17500 });
+const mapSummary = ref({ route: "Airport -> Ubud -> Kintamani -> North Bali -> South Bali -> Seminyak", distance: "~178 km total route coverage", transfer: "Approx 9h 20m intercity travel" });
+const aiTips = ref(["Day 3 sunrise trek ke liye 4:30 AM pickup lock karo.", "Temple visits me shoulders covered outfits carry karo.", "Cash + card split rakho for local shops and cabs."]);
+
+const chatMessages = ref([
+  { id: "a-1", role: "assistant", text: "Hello! I'm your AI travel planner. Tell me about your dream trip and I'll create a complete itinerary for you. ✨", chips: ["Beach getaway", "Adventure trip", "Honeymoon", "Family vacation"] },
+  { id: "u-1", role: "user", text: "Plan a 5-day trip to Bali for 2 people under ₹1,50,000. Mix of adventure and relaxation." },
+  { id: "a-2", role: "assistant", text: "I've crafted a perfect 5-day Bali itinerary! Here's what I've planned:", preview: true, chips: ["Make it cheaper", "Add more adventure", "Upgrade hotels"], cyanChips: true },
+  { id: "u-2", role: "user", text: "Can you add a sunrise trek on Day 3" }
+]);
+
+const selectedDay = computed(() => dayPlans.value.find((day) => day.id === selectedDayId.value) || dayPlans.value[0]);
+const totalBudget = computed(() => {
+  const { flights, stay, food, transport, activities } = budgetBuckets.value;
+  return flights + stay + food + transport + activities;
+});
+
+const budgetRows = computed(() => {
+  const { flights, stay, food, transport, activities } = budgetBuckets.value;
+  return [
+    { label: "Flights", amount: flights },
+    { label: "Stay", amount: stay },
+    { label: "Food", amount: food },
+    { label: "Transport", amount: transport },
+    { label: "Activities", amount: activities },
+    { label: "Total", amount: totalBudget.value }
+  ];
+});
+
+const stats = computed(() => [
+  { label: "Duration", value: `${dayPlans.value.length} Days`, valueClass: "text-dark", subtext: "4 Nights", subtextClass: "text-muted" },
+  { label: "Travelers", value: String(planner.value.travelers), valueClass: "text-dark", subtext: "Couple", subtextClass: "text-muted" },
+  { label: "Budget", value: "₹1.5L", valueClass: "text-green", subtext: "Per person", subtextClass: "text-muted" },
+  { label: "Est. Cost", value: `₹${formatInr(totalBudget.value)}`, valueClass: "text-orange", subtext: "Under budget", subtextClass: "text-green" },
+  { label: "Weather", value: planner.value.weather, valueClass: "text-dark", subtext: "Sunny", subtextClass: "text-muted" },
+  { label: "Trip Score", value: planner.value.score, valueClass: "text-purple", subtext: "Excellent", subtextClass: "text-muted" },
+  { label: "Dates", value: dayPlans.value[0]?.date || "", valueClass: "text-dark", subtext: `→ ${dayPlans.value[dayPlans.value.length - 1]?.date || ""}`, subtextClass: "text-muted" }
+]);
+
+function formatInr(value) {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value || 0));
+}
+
+function applyChipPrompt(chip) {
+  chatInput.value = chip;
+  sendChatMessage();
+}
+
+function pushAssistantMessage(text, chips = null, cyanChips = false) {
+  chatMessages.value.push({ id: `a-${Date.now()}-${Math.random().toString(16).slice(2)}`, role: "assistant", text, chips, cyanChips });
+}
+
+function applyBudgetDelta(field, delta) {
+  if (!(field in budgetBuckets.value)) {
+    return;
+  }
+  budgetBuckets.value[field] = Math.max(0, budgetBuckets.value[field] + delta);
+}
+
+function scrollChatToBottom() {
+  nextTick(() => {
+    if (chatContainerRef.value) {
+      chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight;
+    }
+  });
+}
+
+const ITINERARY_SLOTS = [
+  { key: "morning", slot: "Morning", time: "8:00 AM", icon: "sun", iconTone: "orange" },
+  { key: "afternoon", slot: "Afternoon", time: "1:00 PM", icon: "camera", iconTone: "cyan" },
+  { key: "evening", slot: "Evening", time: "7:00 PM", icon: "food", iconTone: "pink" }
+];
+
+function buildDateMeta(offset) {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  return {
+    short: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+  };
+}
+
+function deriveTitle(text, fallback) {
+  const clean = String(text || "").trim();
+  if (!clean) {
+    return fallback;
+  }
+  const firstSentence = clean.split(/[.!?]/)[0];
+  const words = firstSentence.split(/\s+/).slice(0, 7).join(" ");
+  return words || fallback;
+}
+
+function mapPlanToDays(plan, perDayCost) {
+  return (plan.itinerary || []).map((dayData, index) => {
+    const meta = buildDateMeta(index);
+    const items = ITINERARY_SLOTS.map((slot, slotIndex) => {
+      const text = dayData[slot.key];
+      if (!text) {
+        return null;
+      }
+      const tags = [];
+      if (slotIndex === 2 && dayData.foodRecommendation) {
+        tags.push({ text: dayData.foodRecommendation.split(/[(,]/)[0].slice(0, 24), highlight: true });
+      }
+      return {
+        id: `d${index + 1}-${slotIndex}`,
+        icon: slot.icon,
+        iconTone: slot.iconTone,
+        timeTone: slot.iconTone,
+        slot: slot.slot,
+        time: slot.time,
+        title: deriveTitle(text, `${slot.slot} plan`),
+        description: text,
+        duration: "2 hrs",
+        cost: Math.round(perDayCost / 3),
+        aiPick: slotIndex === 0,
+        tags
+      };
+    }).filter(Boolean);
+
+    return {
+      id: `d${index + 1}`,
+      day: dayData.day || index + 1,
+      date: meta.short,
+      dateLabel: meta.label,
+      area: dayData.theme || `Day ${index + 1}`,
+      theme: dayData.theme || `Day ${index + 1} Plan`,
+      cost: perDayCost,
+      items
+    };
+  });
+}
+
+function applyLocationData(location) {
+  if (!location) {
+    return;
+  }
+
+  const liveHotels = Array.isArray(location.hotels) ? location.hotels : [];
+  if (liveHotels.length) {
+    hotels.value = liveHotels.slice(0, 6).map((hotel) => ({
+      name: hotel.name,
+      area: hotel.address || hotel.distance || "Central area",
+      summary: [hotel.tier, hotel.distance].filter(Boolean).join(" • ") || "Recommended stay",
+      rating: String(hotel.rating ?? "4.5"),
+      nightly: Math.round(Number(hotel.price || 0)) || 6500
+    }));
+  }
+
+  const liveFood = Array.isArray(location.restaurants) ? location.restaurants : [];
+  if (liveFood.length) {
+    restaurants.value = liveFood.slice(0, 6).map((restaurant) => ({
+      name: restaurant.name,
+      type: restaurant.type || "Local cuisine",
+      area: restaurant.address || restaurant.distance || "City center",
+      rating: String(restaurant.rating ?? "4.4"),
+      avgCost: Math.round(Number(restaurant.averagePrice || 0)) || 700
+    }));
+  }
+
+  const points = [
+    ...(location.attractions || []).map((item) => ({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Attraction", type: "attraction" })),
+    ...liveHotels.map((item) => ({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Stay", type: "hotel" })),
+    ...liveFood.map((item) => ({ lat: item.lat, lng: item.lng, label: item.name, sublabel: "Food", type: "food" }))
+  ].filter((point) => Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)));
+
+  if (points.length) {
+    mapPoints.value = points;
+  }
+
+  if (location.weather?.temp) {
+    planner.value.weather = String(location.weather.temp);
+  }
+}
+
+function applyBudgetEstimate(budget, fallbackTotal) {
+  if (!budget) {
+    return;
+  }
+  budgetBuckets.value = {
+    flights: Math.round((Number(budget.flights) || 0) * INR_RATE),
+    stay: Math.round((Number(budget.accommodation) || 0) * INR_RATE),
+    food: Math.round((Number(budget.food) || 0) * INR_RATE),
+    transport: Math.round((Number(budget.transportation) || 0) * INR_RATE),
+    activities: Math.round((Number(budget.activities) || 0) * INR_RATE)
+  };
+  if (!totalBudget.value && fallbackTotal) {
+    budgetBuckets.value.activities += Math.round(fallbackTotal);
+  }
+}
+
+async function generateRealPlan(query) {
+  if (isGenerating.value) {
+    return;
+  }
+  isGenerating.value = true;
+
+  const thinkingId = `a-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  chatMessages.value.push({ id: thinkingId, role: "assistant", text: "Generating your itinerary…", thinking: true });
+  scrollChatToBottom();
+
+  try {
+    const intent = await extractTripIntent(query).catch(() => ({ patch: {} }));
+    const patch = intent.patch || {};
+
+    const hasNewDestination = Boolean(patch.destination);
+    const destination = patch.destination || planner.value.destination || query;
+    const days = patch.days || dayPlans.value.length || 5;
+    const travelers = patch.travelers || planner.value.travelers || 2;
+    const style = patch.style || "Balanced";
+    const travelMode = patch.travelMode || "Flight";
+    const budgetLimit = patch.maxBudget || 0;
+    const stayPreference = patch.stayPreference || "mid-range";
+    const foodPreference = patch.foodPreference || "mixed";
+    const effectiveQuery = hasNewDestination ? query : `${destination} trip — ${query}`;
+
+    const planOptions = {
+      userQuery: effectiveQuery,
+      sourceQuery: query,
+      allowFallbackWithoutLive: true,
+      stayPreference,
+      foodPreference
+    };
+
+    const [plan, budget, location] = await Promise.all([
+      generateTravelPlan(destination, style, days, travelers, budgetLimit, travelMode, planOptions),
+      generateBudgetEstimate(destination, days, travelers, style, travelMode, { ...planOptions, budgetLimit }).catch(() => null),
+      getRealLocationData(destination).catch(() => null)
+    ]);
+
+    if (!plan || !Array.isArray(plan.itinerary) || plan.itinerary.length === 0) {
+      throw new Error("No itinerary returned");
+    }
+
+    const resolvedDays = plan.itinerary.length;
+    const totalEstimate = budget?.total ? Math.round(budget.total * INR_RATE) : 0;
+    const perDayCost = Math.round((totalEstimate || 90000) / Math.max(1, resolvedDays));
+
+    planner.value = {
+      ...planner.value,
+      destination: plan.destination || destination,
+      subtitle: plan.tagline || planner.value.subtitle,
+      summary: plan.summary || plan.itinerary.map((day) => day.theme).filter(Boolean).slice(0, 5).join(" → "),
+      travelers,
+      updatedAt: "just now",
+      score: planner.value.score
+    };
+
+    dayPlans.value = mapPlanToDays(plan, perDayCost);
+    selectedDayId.value = dayPlans.value[0]?.id || "d1";
+
+    applyBudgetEstimate(budget, perDayCost * resolvedDays);
+    applyLocationData(location);
+
+    mapSummary.value = {
+      route: dayPlans.value.map((day) => day.area).join(" → "),
+      distance: `${resolvedDays}-day route across ${planner.value.destination}`,
+      transfer: `${travelMode} based travel · ${travelers} traveller(s)`
+    };
+
+    if (Array.isArray(plan.tips) && plan.tips.length) {
+      aiTips.value = plan.tips.slice(0, 6);
+    }
+
+    plannerSession.setActiveContext({
+      destination: planner.value.destination,
+      origin: patch.origin || "Current Location",
+      summary: planner.value.summary,
+      style,
+      travelMode,
+      days: resolvedDays,
+      budgetTotal: totalBudget.value,
+      suggestions: aiTips.value,
+      itineraryPreview: dayPlans.value.slice(0, 3).map((day) => `Day ${day.day}: ${day.theme}`)
+    });
+
+    const previewMessage = {
+      id: thinkingId,
+      role: "assistant",
+      text: `Here's your ${resolvedDays}-day ${planner.value.destination} itinerary! ✨`,
+      preview: true,
+      chips: ["Make it cheaper", "Add more adventure", "Upgrade hotels"],
+      cyanChips: true
+    };
+    const index = chatMessages.value.findIndex((message) => message.id === thinkingId);
+    if (index >= 0) {
+      chatMessages.value[index] = previewMessage;
+    } else {
+      chatMessages.value.push(previewMessage);
+    }
+
+    activeTab.value = "itinerary";
+  } catch (_error) {
+    const errorMessage = {
+      id: thinkingId,
+      role: "assistant",
+      text: "Sorry, plan generate karne me dikkat aa gayi. Destination aur days ke saath dobara try karo (e.g. \"Plan a 5 day trip to Manali for 2\")."
+    };
+    const index = chatMessages.value.findIndex((message) => message.id === thinkingId);
+    if (index >= 0) {
+      chatMessages.value[index] = errorMessage;
+    } else {
+      chatMessages.value.push(errorMessage);
+    }
+  } finally {
+    isGenerating.value = false;
+    scrollChatToBottom();
+  }
+}
+
+function sendChatMessage() {
+  const text = String(chatInput.value || "").trim();
+  if (!text || isGenerating.value) {
+    return;
+  }
+  chatMessages.value.push({ id: `u-${Date.now()}`, role: "user", text });
+  chatInput.value = "";
+  scrollChatToBottom();
+  generateRealPlan(text);
+}
+
+function handleEditPlan() {
+  activeTab.value = "itinerary";
+  pushAssistantMessage("Edit mode ready. Select karo kya modify karna hai.", ["Change budget", "Add activity", "Upgrade hotels", "Reduce travel time"], true);
+}
+
+function handleRegeneratePlan() {
+  generateRealPlan(`Regenerate a fresh, well-balanced ${planner.value.destination} itinerary`);
+}
+
+function handleTabClick(tab) {
+  activeTab.value = tab;
+  const labels = {
+    itinerary: "Itinerary",
+    hotels: "Hotels",
+    restaurants: "Restaurants",
+    budget: "Budget",
+    map: "Map",
+    tips: "AI Tips"
+  };
+  pushAssistantMessage(`${labels[tab] || "Section"} tab open ho gaya.`);
+}
+
+function handleDaySelect(dayId) {
+  selectedDayId.value = dayId;
+  const day = dayPlans.value.find((entry) => entry.id === dayId);
+  if (day) {
+    pushAssistantMessage(`Day ${day.day} selected: ${day.theme}`);
+  }
+}
+
+function handleTimelineItemClick(item) {
+  pushAssistantMessage(`${item.title} • ${item.slot} ${item.time} • ${item.duration} • ₹${formatInr(item.cost)}. ${item.description}`);
+}
+
+function handleTimelineTagClick(item, field, value) {
+  pushAssistantMessage(`${item.title} ${field}: ${value}`);
+}
+
+function handleHotelCardClick(hotel) {
+  const nights = Math.max(1, dayPlans.value.length - 1);
+  const newStay = hotel.nightly * nights;
+  budgetBuckets.value.stay = newStay;
+  hotels.value = hotels.value.map((entry) => ({ ...entry, selected: entry.name === hotel.name }));
+  planner.value.updatedAt = "just now";
+  pushAssistantMessage(`${hotel.name} selected for ${nights} nights. Stay budget ₹${formatInr(newStay)} set.`);
+}
+
+function handleRestaurantCardClick(restaurant) {
+  const day = selectedDay.value;
+  const alreadyAdded = day.items.some((item) => item.title === `Dinner at ${restaurant.name}`);
+  if (alreadyAdded) {
+    pushAssistantMessage(`${restaurant.name} already added to Day ${day.day}.`);
+    return;
+  }
+  day.items.push({
+    id: `${day.id}-meal-${Date.now()}`,
+    icon: "food",
+    iconTone: "pink",
+    timeTone: "pink",
+    slot: "Dinner",
+    time: "8:00 PM",
+    title: `Dinner at ${restaurant.name}`,
+    description: `${restaurant.type} dinner experience in ${restaurant.area}.`,
+    duration: "1.5 hrs",
+    cost: restaurant.avgCost,
+    tags: [{ text: restaurant.rating, highlight: true }]
+  });
+  day.cost += restaurant.avgCost;
+  applyBudgetDelta("food", restaurant.avgCost);
+  activeTab.value = "itinerary";
+  planner.value.updatedAt = "just now";
+  pushAssistantMessage(`${restaurant.name} added as dinner on Day ${day.day}.`);
+}
+
+function handleBudgetRowClick(row) {
+  if (row.label === "Total") {
+    pushAssistantMessage(`Total planned spend: ₹${formatInr(row.amount)} across all categories.`);
+    return;
+  }
+  pushAssistantMessage(`${row.label} budget: ₹${formatInr(row.amount)}. Chat me "reduce ${row.label.toLowerCase()}" likho to optimize kar dunga.`);
+}
+
+function handleMapCardClick(kind) {
+  if (kind === "distance") {
+    pushAssistantMessage(`Route distance detail: ${mapSummary.value.distance}`);
+  } else {
+    pushAssistantMessage(`Transfer detail: ${mapSummary.value.transfer}`);
+  }
+}
+
+function handleTipClick(tip) {
+  chatInput.value = tip;
+}
+
+function handleMoreOptions() {
+  pushAssistantMessage("Quick actions open. Aap direct command de sakte ho.", ["Export itinerary", "Share plan", "Duplicate trip"], true);
+}
+
+function handleAttach() {
+  pushAssistantMessage("Attachment support queued hai. Filhaal aap text me flight/hotel details share karo.");
+}
+
+function handleMic() {
+  pushAssistantMessage("Voice input beta mode me hai. Abhi text command se best response milega.");
+}
+
+onMounted(() => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved && typeof saved === "object") {
+      if (saved.planner) planner.value = saved.planner;
+      if (Array.isArray(saved.dayPlans)) dayPlans.value = saved.dayPlans;
+      if (Array.isArray(saved.hotels)) hotels.value = saved.hotels;
+      if (Array.isArray(saved.restaurants)) restaurants.value = saved.restaurants;
+      if (saved.budgetBuckets) budgetBuckets.value = saved.budgetBuckets;
+      if (saved.mapSummary) mapSummary.value = saved.mapSummary;
+      if (Array.isArray(saved.aiTips)) aiTips.value = saved.aiTips;
+      if (Array.isArray(saved.chatMessages)) chatMessages.value = saved.chatMessages;
+      if (typeof saved.activeTab === "string") activeTab.value = saved.activeTab;
+      if (typeof saved.selectedDayId === "string") selectedDayId.value = saved.selectedDayId;
+    }
+  } catch {
+    // Ignore malformed local state and continue with defaults.
+  }
+});
+
+watch(
+  [planner, dayPlans, hotels, restaurants, budgetBuckets, mapSummary, aiTips, chatMessages, activeTab, selectedDayId],
+  () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        planner: planner.value,
+        dayPlans: dayPlans.value,
+        hotels: hotels.value,
+        restaurants: restaurants.value,
+        budgetBuckets: budgetBuckets.value,
+        mapSummary: mapSummary.value,
+        aiTips: aiTips.value,
+        chatMessages: chatMessages.value,
+        activeTab: activeTab.value,
+        selectedDayId: selectedDayId.value
+      })
+    );
+  },
+  { deep: true }
+);
 </script>
 
-<style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: 'Inter', sans-serif;
-}
-
-body {
-  background-color: #f8fafc;
-  color: #1e293b;
-}
-
-.planner-layout {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  padding-top: 70px;
-  overflow: hidden;
-  background-color: #f8fafc;
-}
-
-/* TOP NAV */
-.top-nav {
-  height: 64px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  flex-shrink: 0;
-}
-
-.nav-left, .nav-right {
-  display: flex;
-  align-items: center;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  margin-right: 40px;
-}
-
-.logo-icon-bg {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-}
-
-.logo-title {
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.nav-links {
-  display: flex;
-  gap: 8px;
-}
-
-.nav-links a {
-  text-decoration: none;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 8px 16px;
-  border-radius: 999px;
-  transition: all 0.2s;
-}
-
-.nav-links a:hover {
-  background: #f1f5f9;
-}
-
-.nav-links a.active {
-  background: #eef2ff;
-  color: #4f46e5;
-  font-weight: 600;
-}
-
-.btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-}
-
-.btn-outline {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
-}
-
-.btn-primary {
-  background: #4f46e5;
-  color: #ffffff;
-}
-
-.btn-outline-light {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-}
-
-.nav-right .btn {
-  margin-right: 16px;
-}
-
-.user-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-/* MAIN WORKSPACE */
-.main-workspace {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* SIDEBAR */
-.sidebar {
-  width: 380px;
-  background: #f8fafc;
-  border-right: 1px solid #e2e8f0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-header {
-  height: 64px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  flex-shrink: 0;
-}
-
-.ai-icon {
-  width: 36px;
-  height: 36px;
-  background: #eef2ff;
-  color: #4f46e5;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-}
-
-.ai-title {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.ai-title strong {
-  font-size: 14px;
-  color: #1e293b;
-}
-
-.ai-title .status {
-  font-size: 12px;
-  color: #10b981;
-  display: flex;
-  align-items: center;
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  background: #10b981;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-
-.more-options {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: #94a3b8;
-  cursor: pointer;
-}
-
-.chat-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.chat-container::-webkit-scrollbar {
-  display: none;
-}
-
-/* AI Message */
-.ai-message {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.ai-avatar {
-  width: 28px;
-  height: 28px;
-  background: #6366f1;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-  margin-top: 4px;
-}
-
-.ai-content {
-  background: #ffffff;
-  padding: 16px;
-  border-radius: 16px;
-  border-top-left-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  max-width: 85%;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #334155;
-  border: 1px solid #f1f5f9;
-}
-
-.chip-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.chip {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: #ffffff;
-  border: 1px solid #e0e7ff;
-  color: #4f46e5;
-  cursor: pointer;
-}
-
-.chip.cyan {
-  border-color: #cffafe;
-  color: #0891b2;
-}
-
-.chip:hover {
-  background: #f8fafc;
-}
-
-/* User Message */
-.user-message {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.user-content {
-  background: #6366f1;
-  color: #ffffff;
-  padding: 12px 16px;
-  border-radius: 16px;
-  border-top-right-radius: 4px;
-  max-width: 85%;
-  font-size: 14px;
-  line-height: 1.5;
-  box-shadow: 0 2px 8px rgba(99,102,241,0.2);
-}
-
-/* Itinerary Preview Card */
-.itin-preview {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px;
-  margin-top: 12px;
-  margin-bottom: 12px;
-}
-
-.itin-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 14px;
-  color: #1e293b;
-}
-
-.itin-title span.days {
-  color: #64748b;
-  font-weight: 400;
-  font-size: 12px;
-}
-
-.itin-badges {
-  display: flex;
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.badge {
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.badge-green {
-  background: #ecfdf5;
-  color: #059669;
-}
-
-.badge-orange {
-  background: #fff7ed;
-  color: #ea580c;
-}
-
-.itin-desc {
-  font-size: 12px;
-  color: #64748b;
-}
-
-/* Chat Input */
-.chat-input-area {
-  padding: 20px;
-  background: #ffffff;
-  border-top: 1px solid #e2e8f0;
-  flex-shrink: 0;
-}
-
-.input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input-wrapper input {
-  width: 100%;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  padding: 12px 90px 12px 40px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.input-wrapper input:focus {
-  border-color: #6366f1;
-}
-
-.icon-attach {
-  position: absolute;
-  left: 12px;
-  cursor: pointer;
-}
-
-.icon-mic {
-  position: absolute;
-  right: 48px;
-  cursor: pointer;
-}
-
-.btn-send {
-  position: absolute;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  background: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-/* MAIN CONTENT */
-.content-area {
-  flex: 1;
-  overflow-y: auto;
-  background: #f8fafc;
-  position: relative;
-}
-
-.content-area::-webkit-scrollbar {
-  display: none;
-}
-
-.hero-header {
-  position: relative;
-  padding: 40px 40px 20px 40px;
-}
-
-.hero-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(to bottom, rgba(248, 250, 252, 0.4), #f8fafc 90%), url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=80') center/cover;
-  opacity: 0.6;
-  z-index: 0;
-}
-
-.hero-content {
-  position: relative;
-  z-index: 1;
-}
-
-.hero-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.badge-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.badge-ai {
-  background: #6366f1;
-  color: white;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-}
-
-.updated-time {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.hero-top h1 {
-  font-size: 36px;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 8px;
-  letter-spacing: -0.5px;
-}
-
-.subtitle {
-  font-size: 15px;
-  color: #475569;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.stats-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 32px;
-  overflow-x: auto;
-  padding-bottom: 10px;
-}
-
-.stats-row::-webkit-scrollbar {
-  display: none;
-}
-
-.stat-card {
-  background: #ffffff;
-  border: 1px solid #f1f5f9;
-  border-radius: 16px;
-  padding: 16px;
-  min-width: 120px;
-  text-align: center;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.stat-value {
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 4px;
-}
-
-.stat-subtext {
-  font-size: 12px;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.text-green { color: #10b981; }
-.text-orange { color: #d97706; }
-.text-purple { color: #6366f1; }
-.text-dark { color: #0f172a; }
-.text-muted { color: #94a3b8; }
-
-.main-tabs-container {
-  padding: 0 40px;
-}
-
-.main-tabs {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 16px 0;
-}
-
-.tab-btn {
-  background: none;
-  border: none;
-  font-size: 14px;
-  font-weight: 600;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 8px 12px;
-}
-
-.tab-btn.active {
-  background: #000000;
-  color: white;
-  border-radius: 999px;
-  padding: 8px 20px;
-}
-
-.tab-btn.active svg {
-  fill: white;
-}
-
-.tab-btn svg {
-  fill: #94a3b8;
-}
-
-.day-tabs {
-  display: flex;
-  gap: 12px;
-  padding: 24px 0;
-}
-
-.day-tab {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  padding: 10px 24px;
-  border-radius: 999px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.day-tab strong {
-  color: #334155;
-}
-
-.day-tab span {
-  color: #94a3b8;
-}
-
-.day-tab.active {
-  background: #000000;
-  border-color: #ffffff;
-}
-
-.day-tab.active strong, .day-tab.active span {
-  color: #ffffff;
-}
-
-.day-tab.active span {
-  opacity: 0.8;
-}
-
-.timeline-section {
-  max-width: 800px;
-  padding-bottom: 60px;
-}
-
-.timeline-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 32px;
-}
-
-.timeline-header h2 {
-  font-size: 20px;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 6px;
-}
-
-.timeline-header p {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.day-cost {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.day-cost strong {
-  font-size: 16px;
-  color: #10b981;
-  font-weight: 800;
-}
-
-/* Timeline Cards */
-.timeline-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  position: relative;
-}
-
-.timeline-card {
-  background: #ffffff;
-  border: 1px solid #f1f5f9;
-  border-radius: 20px;
-  padding: 24px;
-  display: flex;
-  gap: 24px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.02);
-  position: relative;
-  z-index: 1;
-}
-
-.t-icon-box {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  z-index: 2;
-  background-color: white; /* to cover line */
-}
-
-.t-icon-box.orange { background: #fff7ed; color: #ea580c; }
-.t-icon-box.pink { background: #fdf2f8; color: #db2777; }
-.t-icon-box.cyan { background: #ecfeff; color: #0891b2; }
-
-.t-content {
-  flex: 1;
-}
-
-.t-time {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.t-time.orange { color: #ea580c; }
-.t-time.pink { color: #db2777; }
-.t-time.cyan { color: #0891b2; }
-
-.ai-pick {
-  background: #6366f1;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.t-content h3 {
-  font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 8px;
-}
-
-.t-content p {
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-
-.t-tags {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.t-tag {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.t-tag.highlight {
-  color: #d97706;
-  font-weight: 700;
-}
-
-/* Connecting line */
-.timeline-line {
-  position: absolute;
-  left: 47px; /* 24px padding + 23px half icon box (approx) */
-  top: 72px; /* 24px padding + 48px icon box */
-  bottom: -24px; /* to bridge gap */
-  width: 2px;
-  background: #e2e8f0;
-  z-index: 0;
-}
-</style>
+<style scoped src="./styles/Planner.css"></style>
