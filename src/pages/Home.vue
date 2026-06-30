@@ -141,7 +141,7 @@ const storyParallax = storyCardRefs.map((cardRef) => {
     offset: ["start end", "end start"]
   });
   return {
-    textY: useTransform(scrollYProgress, [0, 1], [150, -150]),
+    textY: useTransform(scrollYProgress, [0, 1], [50, -50]),
     imageY: useTransform(scrollYProgress, [0, 1], [50, -50])
   };
 });
@@ -431,7 +431,7 @@ onUnmounted(() => {
             v-for="(card, index) in floatingDestinationCards"
             :key="card.id"
             class="floating-destination-card glass-card"
-            :class="`float-${index + 1}`"
+            :class="`float-${index + 1 }`"
             @click="openPlanner(card.title)"
           >
             <img :src="card.image" :alt="card.title" loading="lazy" />
@@ -841,7 +841,7 @@ onUnmounted(() => {
   overflow: hidden;
   cursor: pointer;
   box-shadow: 0 22px 52px rgba(2, 8, 23, 0.3);
-  animation: floatCard 6.8s ease-in-out infinite;
+  animation: floatCard 5.8s ease-in-out infinite;
 }
 
 .floating-destination-card img {
@@ -1287,6 +1287,7 @@ onUnmounted(() => {
 
 .chat-column {
   display: grid;
+  border-radius: 25px;
   background: linear-gradient(160deg, rgba(8, 47, 73, 0.95), rgba(15, 23, 42, 0.92));
 }
 

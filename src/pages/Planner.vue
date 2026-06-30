@@ -1,2499 +1,1019 @@
-<script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { useAuthStore } from "../stores/auth";
-import {
-  extractTripIntent,
-  generateTravelPlan,
-  generateBudgetEstimate,
-  geocodePlace,
-  getRouteDistance,
-  isGeminiConfigured
-} from "../services/gemini";
-import { getSavedTripsFromDb, saveTripToDb } from "../services/firebase";
-import { formatPrice, initUserCurrency, userCurrency } from "../services/currency";
-import { createLoadingState } from "../core/monitoring/loading";
-import { getFriendlyErrorMessage } from "../core/errors";
-import { detectUserLocation, userLocation } from "../services/location";
-import { fetchWeather } from "../services/travel/weather.service";
-import { fetchNearbyPlaces } from "../services/travel/places.service";
-import { useProfileMemoryStore } from "../stores/profileMemory";
-import { useOfflineStore } from "../stores/offline";
-import { usePlannerSessionStore } from "../stores/plannerSession";
-import { useGroupTravelStore } from "../stores/groupTravel";
-import { createPlanProfiles, rankItineraryOptions } from "../modules/planner-options";
-import { generateRoadtripEngine, isRoadtripMode } from "../modules/roadtrip";
-import PlanComparisonView from "../features/planner/PlanComparisonView.vue";
-import RoadtripIntelligencePanel from "../features/roadtrip/RoadtripIntelligencePanel.vue";
-
-const route = useRoute();
-const router = useRouter();
-const authStore = useAuthStore();
-const profileMemoryStore = useProfileMemoryStore();
-const offlineStore = useOfflineStore();
-const plannerSessionStore = usePlannerSessionStore();
-const groupTravelStore = useGroupTravelStore();
-
-const DEFAULT_PLANNER_SETTINGS = {
-  budget: 1800,
-  travelers: 2,
-  style: "Balanced",
-  stayPreference: "mid-range",
-  travelMode: "Car"
-};
-
-const liveAiReady = isGeminiConfigured();
-const generationLoading = createLoadingState(false);
-
-const loading = generationLoading.isLoading;
-const plannerError = ref("");
-const saveStatus = ref(false);
-const offlineDraftMessage = ref("");
-const groupShareStatus = ref("");
-const expandedDay = ref(1);
-const showPreferencesModal = ref(false);
-const preferencesLocked = ref(false);
-const roadtripLoading = ref(false);
-const activeRoadtrip = ref(null);
-const generatedPlanOptions = ref([]);
-const selectedPlanId = ref("");
-const roadtripByPlanId = ref({});
-const showSavedProfilesDrawer = ref(false);
-
-const promptInput = ref("");
-const conversationListRef = ref(null);
-
-function createDefaultControls() {
-  return {
-    origin: "Current Location",
-    destination: "",
-    days: 5,
-    travelers: DEFAULT_PLANNER_SETTINGS.travelers,
-    style: DEFAULT_PLANNER_SETTINGS.style,
-    maxBudget: DEFAULT_PLANNER_SETTINGS.budget,
-    travelMode: DEFAULT_PLANNER_SETTINGS.travelMode,
-    stayPreference: DEFAULT_PLANNER_SETTINGS.stayPreference,
-    foodPreference: "mixed"
-  };
-}
-
-const controls = ref(createDefaultControls());
-const preferenceDraft = ref(createDefaultControls());
-
-const activeItinerary = ref(null);
-const activeBudget = ref(null);
-
-const assistantReply = ref("");
-const assistantSuggestions = ref([]);
-const refinementPrompts = ref([]);
-const conversation = ref([]);
-const recentTrips = ref([]);
-
-const tripSnapshotLoading = ref(false);
-const tripSnapshot = ref({
-  distance: "Distance unavailable",
-  weather: null,
-  attractions: [],
-  hotels: [],
-  restaurants: []
-});
-
-function getActiveCurrencyRate() {
-  const nextRate = Number(userCurrency.value?.rate || 1);
-  return Number.isFinite(nextRate) && nextRate > 0 ? nextRate : 1;
-}
-
-function toLocalBudget(usdAmount) {
-  const nextAmount = Number(usdAmount || 0);
-  if (!Number.isFinite(nextAmount)) {
-    return 0;
-  }
-  return Math.round(nextAmount * getActiveCurrencyRate());
-}
-
-function toUsdBudget(localAmount) {
-  const nextAmount = Number(localAmount || 0);
-  if (!Number.isFinite(nextAmount)) {
-    return DEFAULT_PLANNER_SETTINGS.budget;
-  }
-  return Math.round(nextAmount / getActiveCurrencyRate());
-}
-
-function promptMentionsUsd(prompt) {
-  return /(\busd\b|\bdollar\b|\bdollars\b|\$)/i.test(String(prompt || ""));
-}
-
-function normalizePromptBudgetToUsd(rawBudget, sourcePrompt) {
-  const numericBudget = Number(rawBudget);
-  if (!Number.isFinite(numericBudget)) {
-    return null;
-  }
-
-  if (promptMentionsUsd(sourcePrompt)) {
-    return Math.round(numericBudget);
-  }
-
-  return toUsdBudget(numericBudget);
-}
-
-const activeCurrencyCode = computed(() => String(userCurrency.value?.currency || "USD"));
-const activeCurrencyCountry = computed(() => String(userCurrency.value?.country || "your location"));
-const budgetMinLocal = computed(() => toLocalBudget(200));
-const budgetMaxLocal = computed(() => toLocalBudget(100000));
-const budgetLocalHint = computed(() => {
-  return `Total trip budget cap in ${activeCurrencyCode.value} for ${activeCurrencyCountry.value} (not per-day).`;
-});
-
-const hasResults = computed(() => Boolean(activeItinerary.value && activeBudget.value));
-const canSavePlan = computed(() => Boolean(activeItinerary.value?.itinerary && activeBudget.value));
-const isOnline = computed(() => Boolean(offlineStore.isOnline));
-const pendingOfflineDrafts = computed(() => Number(offlineStore.pendingCount || 0));
-const normalizedTravelMode = computed(() => String(controls.value.travelMode || "").toLowerCase());
-const shouldShowFlights = computed(() => normalizedTravelMode.value.includes("flight"));
-const transportModeBudgetLabel = computed(() => {
-  if (normalizedTravelMode.value.includes("train")) return "Train + Local";
-  if (normalizedTravelMode.value.includes("bus")) return "Bus + Local";
-  if (normalizedTravelMode.value.includes("car")) return "Fuel + Toll + Local";
-  if (normalizedTravelMode.value.includes("bike")) return "Bike Fuel + Local";
-  return "Transport";
-});
-const selectedPlan = computed(() => {
-  return generatedPlanOptions.value.find((option) => option.id === selectedPlanId.value) || generatedPlanOptions.value[0] || null;
-});
-const profileConfidence = computed(() => Number(profileMemoryStore?.scores?.overall || 0));
-const personalityLabel = computed(() => profileMemoryStore?.personality?.label || "Explorer");
-const savedPreferenceProfiles = computed(() => profileMemoryStore.preferenceProfiles || []);
-const activePreferenceProfile = computed(() => profileMemoryStore.activePreferenceProfile || null);
-const preferenceSummary = computed(() => {
-  return [
-    `${controls.value.style} style`,
-    `${controls.value.travelMode}`,
-    `${controls.value.days} days`,
-    `${controls.value.travelers} travelers`,
-    `${formatPrice(controls.value.maxBudget)} total trip cap`,
-    `${controls.value.stayPreference} stay`,
-    `${controls.value.foodPreference} food`
-  ].join(" | ");
-});
-const appliedPreferenceRows = computed(() => {
-  return [
-    `Origin: ${controls.value.origin}`,
-    `Destination: ${controls.value.destination || "From prompt"}`,
-    `Duration: ${controls.value.days} days`,
-    `Travelers: ${controls.value.travelers}`,
-    `Style: ${controls.value.style}`,
-    `Mode: ${controls.value.travelMode}`,
-    `Total Trip Budget Cap: ${formatPrice(controls.value.maxBudget)} (${activeCurrencyCode.value})`,
-    `Budget Basis: This cap is for complete ${controls.value.days}-day trip, not per-day.`,
-    `Stay: ${controls.value.stayPreference}`,
-    `Food: ${controls.value.foodPreference}`
-  ];
-});
-const LOCKED_PREFERENCE_KEYS = new Set([
-  "origin",
-  "destination",
-  "days",
-  "travelers",
-  "style",
-  "maxBudget",
-  "travelMode",
-  "stayPreference",
-  "foodPreference"
-]);
-
-function normalizeControlsValue(rawControls = {}) {
-  const rawDays = Number(rawControls.days);
-  const rawTravelers = Number(rawControls.travelers);
-  const rawBudget = Number(rawControls.maxBudget);
-
-  const days = Number.isFinite(rawDays) ? Math.max(2, Math.min(15, Math.round(rawDays))) : 5;
-  const travelers = Number.isFinite(rawTravelers) ? Math.max(1, Math.min(8, Math.round(rawTravelers))) : 2;
-  const maxBudget = Number.isFinite(rawBudget) ? Math.max(200, Math.min(100000, Math.round(rawBudget))) : DEFAULT_PLANNER_SETTINGS.budget;
-
-  const destination = String(rawControls.destination || "").trim();
-  const originRaw = String(rawControls.origin || "").trim();
-  const origin = originRaw || "Current Location";
-
-  return {
-    ...rawControls,
-    origin,
-    destination,
-    days,
-    travelers,
-    maxBudget,
-    style: String(rawControls.style || DEFAULT_PLANNER_SETTINGS.style),
-    travelMode: String(rawControls.travelMode || DEFAULT_PLANNER_SETTINGS.travelMode),
-    stayPreference: String(rawControls.stayPreference || DEFAULT_PLANNER_SETTINGS.stayPreference),
-    foodPreference: String(rawControls.foodPreference || "mixed")
-  };
-}
-
-function updateControls(nextControls) {
-  controls.value = normalizeControlsValue({
-    ...controls.value,
-    ...(nextControls || {})
-  });
-}
-
-function updatePreferenceDraft(nextControls) {
-  preferenceDraft.value = normalizeControlsValue({
-    ...preferenceDraft.value,
-    ...(nextControls || {})
-  });
-}
-
-function openPreferencesModal() {
-  if (showPreferencesModal.value) {
-    closePreferencesModal();
-    return;
-  }
-
-  preferenceDraft.value = normalizeControlsValue({ ...controls.value });
-  showPreferencesModal.value = true;
-}
-
-function toggleSavedProfilesDrawer() {
-  showSavedProfilesDrawer.value = !showSavedProfilesDrawer.value;
-}
-
-function closeSavedProfilesDrawer() {
-  showSavedProfilesDrawer.value = false;
-}
-
-function closePreferencesModal() {
-  showPreferencesModal.value = false;
-}
-
-function applyPreferences() {
-  updateControls(preferenceDraft.value);
-  preferencesLocked.value = true;
-  showPreferencesModal.value = false;
-  addConversation("assistant", `Trip preferences applied for current chat: ${preferenceSummary.value}.`);
-}
-
-function toPlannerControlsFromProfile(profile) {
-  const prefs = profile?.preferences || {};
-  const budgetTarget = Number(prefs?.budgetPreference?.target || 0);
-  const topFavorite = Array.isArray(prefs?.favoriteDestinations)
-    ? prefs.favoriteDestinations
-      .map((item) => (typeof item === "string" ? item : item?.name))
-      .find(Boolean)
-    : "";
-
-  return normalizeControlsValue({
-    ...controls.value,
-    destination: topFavorite || controls.value.destination,
-    style: prefs.travelStyle || controls.value.style,
-    travelMode: prefs.transportPreference || controls.value.travelMode,
-    stayPreference: prefs.stayPreference || controls.value.stayPreference,
-    foodPreference: prefs.foodPreference || controls.value.foodPreference,
-    maxBudget: budgetTarget > 0 ? budgetTarget : controls.value.maxBudget
-  });
-}
-
-function applyNamedPreferenceProfile(profileId) {
-  const profile = savedPreferenceProfiles.value.find((item) => item.id === profileId);
-  if (!profile) {
-    return;
-  }
-
-  const nextControls = toPlannerControlsFromProfile(profile);
-  updateControls(nextControls);
-  preferenceDraft.value = normalizeControlsValue({ ...nextControls });
-  preferencesLocked.value = true;
-  closeSavedProfilesDrawer();
-  profileMemoryStore.setActivePreferenceProfile(profile.id);
-
-  addConversation(
-    "assistant",
-    `Applied saved preferences for ${profile.name}. Planner will now generate trip plan as per this profile.`
-  );
-}
-
-function resetPreferencesToDefaults() {
-  const defaults = createDefaultControls();
-  controls.value = normalizeControlsValue(defaults);
-  preferenceDraft.value = normalizeControlsValue(defaults);
-  preferencesLocked.value = false;
-  showPreferencesModal.value = false;
-  addConversation("assistant", "Preferences reset to smart defaults. You can re-apply custom preferences anytime.");
-}
-
-function mergeIntentWithControls(intentPatch = {}) {
-  const patch = { ...(intentPatch || {}) };
-
-  if (preferencesLocked.value) {
-    for (const key of Object.keys(patch)) {
-      if (LOCKED_PREFERENCE_KEYS.has(key)) {
-        delete patch[key];
-      }
-    }
-  }
-
-  return normalizeControlsValue({
-    ...controls.value,
-    ...patch
-  });
-}
-
-function buildPreferenceContext(input) {
-  const localBudgetCap = formatPrice(Number(input.maxBudget || DEFAULT_PLANNER_SETTINGS.budget));
-  return [
-    "User Preferences (must follow strictly):",
-    `- Origin: ${String(input.origin || "Current Location").trim() || "Current Location"}`,
-    `- Destination: ${String(input.destination || "").trim() || "From prompt"}`,
-    `- Duration: ${Number(input.days || 5)} days`,
-    `- Travelers: ${Number(input.travelers || 2)}`,
-    `- Style: ${String(input.style || "Balanced")}`,
-    `- Travel mode: ${String(input.travelMode || "Car")}`,
-    `- Stay preference: ${String(input.stayPreference || "mid-range")}`,
-    `- Food preference: ${String(input.foodPreference || "mixed")}`,
-    `- Total trip budget cap (not per-day): ${localBudgetCap} (${activeCurrencyCode.value}, ${activeCurrencyCountry.value})`,
-    `- Internal USD reference for calculations: ${Math.round(Number(input.maxBudget || DEFAULT_PLANNER_SETTINGS.budget))}`,
-    "Do not ignore these preferences when creating itinerary, activities, stay suggestions, food suggestions, and budget split."
-  ].join("\n");
-}
-
-function inferLikelyTransport(sourcePrompt, destinationName) {
-  const normalized = `${String(sourcePrompt || "")} ${String(destinationName || "")}`.toLowerCase();
-  if (/(roadtrip|drive|car|bike|scooter)/i.test(normalized)) return "Car";
-  if (/(train|rail)/i.test(normalized)) return "Train";
-  if (/(bus|coach)/i.test(normalized)) return "Bus";
-  if (/(flight|plane|air|international|overseas|abroad)/i.test(normalized)) return "Flight";
-  return DEFAULT_PLANNER_SETTINGS.travelMode;
-}
-
-function applyIntelligentDefaults(effectiveInput, sourcePrompt) {
-  const destination = String(effectiveInput.destination || "").trim() || "Goa";
-  const style = String(effectiveInput.style || "").trim() || DEFAULT_PLANNER_SETTINGS.style;
-  const stayPreference = String(effectiveInput.stayPreference || "").trim() || DEFAULT_PLANNER_SETTINGS.stayPreference;
-  const travelMode = String(effectiveInput.travelMode || "").trim() || inferLikelyTransport(sourcePrompt, destination);
-
-  return {
-    ...effectiveInput,
-    destination,
-    travelers: Number(effectiveInput.travelers || DEFAULT_PLANNER_SETTINGS.travelers) || DEFAULT_PLANNER_SETTINGS.travelers,
-    maxBudget: Number(effectiveInput.maxBudget || DEFAULT_PLANNER_SETTINGS.budget) || DEFAULT_PLANNER_SETTINGS.budget,
-    style,
-    stayPreference,
-    travelMode
-  };
-}
-
-function getValidationErrorMessage(effectiveInput) {
-  if (!Number.isFinite(Number(effectiveInput.days)) || Number(effectiveInput.days) < 2) {
-    return "Trip days must be at least 2.";
-  }
-
-  if (!Number.isFinite(Number(effectiveInput.travelers)) || Number(effectiveInput.travelers) < 1) {
-    return "Number of travelers must be at least 1.";
-  }
-
-  if (!Number.isFinite(Number(effectiveInput.maxBudget)) || Number(effectiveInput.maxBudget) < 200) {
-    return `Minimum total trip budget cap must be at least ${formatPrice(200)}.`;
-  }
-
-  return "";
-}
-
-function normalizeBudgetByTravelMode(rawBudget, travelMode) {
-  const safeBudget = {
-    flights: Math.max(0, Math.round(Number(rawBudget?.flights || 0))),
-    accommodation: Math.max(0, Math.round(Number(rawBudget?.accommodation || 0))),
-    food: Math.max(0, Math.round(Number(rawBudget?.food || 0))),
-    transportation: Math.max(0, Math.round(Number(rawBudget?.transportation || 0))),
-    activities: Math.max(0, Math.round(Number(rawBudget?.activities || 0))),
-    total: Math.max(0, Math.round(Number(rawBudget?.total || 0)))
-  };
-
-  const mode = String(travelMode || "").toLowerCase();
-  if (!mode.includes("flight")) {
-    safeBudget.transportation = Math.max(0, safeBudget.transportation + safeBudget.flights);
-    safeBudget.flights = 0;
-  }
-
-  safeBudget.total = safeBudget.flights + safeBudget.accommodation + safeBudget.food + safeBudget.transportation + safeBudget.activities;
-  return safeBudget;
-}
-
-function buildPreferenceChangeMessage(previousInput, nextInput) {
-  const changes = [];
-
-  if (String(previousInput.destination || "").trim() !== String(nextInput.destination || "").trim()) {
-    changes.push(`destination to ${nextInput.destination || "your destination"}`);
-  }
-  if (Number(previousInput.days || 0) !== Number(nextInput.days || 0)) {
-    changes.push(`duration to ${nextInput.days} days`);
-  }
-  if (Number(previousInput.travelers || 0) !== Number(nextInput.travelers || 0)) {
-    changes.push(`travelers to ${nextInput.travelers}`);
-  }
-  if (String(previousInput.style || "") !== String(nextInput.style || "")) {
-    changes.push(`style to ${nextInput.style}`);
-  }
-  if (String(previousInput.travelMode || "") !== String(nextInput.travelMode || "")) {
-    changes.push(`travel mode to ${nextInput.travelMode}`);
-  }
-  if (Math.round(Number(previousInput.maxBudget || 0)) !== Math.round(Number(nextInput.maxBudget || 0))) {
-    changes.push(`total budget cap to ${formatPrice(nextInput.maxBudget)}`);
-  }
-
-  if (changes.length === 0) {
-    return "";
-  }
-
-  return `Understood. I updated your preferences from this chat: ${changes.join(", ")}.`;
-}
-
-function addConversation(role, text) {
-  const messageText = String(text || "").trim();
-  if (!messageText) {
-    return;
-  }
-
-  const message = {
-    id: `${role}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    role,
-    text: messageText,
-    at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  };
-
-  conversation.value = [...conversation.value, message].slice(-18);
-}
-
-function scrollConversationToBottom() {
-  if (!conversationListRef.value) {
-    return;
-  }
-
-  requestAnimationFrame(() => {
-    if (conversationListRef.value) {
-      conversationListRef.value.scrollTop = conversationListRef.value.scrollHeight;
-    }
-  });
-}
-
-function buildRefinementPrompts(destinationName) {
-  const destination = String(destinationName || "this destination").trim() || "this destination";
-  return [
-    `Make this ${destination} plan more budget friendly without missing key spots.`,
-    `Make this ${destination} plan family friendly with low fatigue transitions.`,
-    `Make this ${destination} plan food focused with local specialties.`
-  ];
-}
-
-function buildAssistantReply(effectiveInput, itinerary, budget, snapshot) {
-  const destination = String(itinerary?.destination || effectiveInput.destination || "your destination").trim();
-  const totalBudget = formatPrice(Number(budget?.total || 0));
-  const days = Number(itinerary?.itinerary?.length || effectiveInput.days || 0);
-  const firstTheme = itinerary?.itinerary?.[0]?.theme || "arrival and local orientation";
-  const topAttraction = snapshot?.attractions?.[0]?.name || "local highlights";
-  const topHotel = snapshot?.hotels?.[0]?.name || "stay options";
-
-  return `Great prompt. A ${days}-day itinerary for ${destination} is ready with your preferences applied: ${effectiveInput.style} style, ${effectiveInput.travelMode} mode, ${effectiveInput.stayPreference} stay, ${effectiveInput.foodPreference} food focus, and a total trip budget cap of ${formatPrice(effectiveInput.maxBudget)} (not per-day). Estimated total budget: ${totalBudget}. Day 1 focus: ${firstTheme}. Local highlights: ${topAttraction}. Recommended stay: ${topHotel}.`;
-}
-
-function planProsCons(planId, effectiveInput) {
-  if (planId === "budget") {
-    return {
-      pros: [
-        "Lowest total trip cost",
-        "Great for long-duration affordability",
-        "Strong fit for budget-first travelers"
-      ],
-      cons: [
-        "Lower accommodation comfort",
-        "Fewer premium activities",
-        "Transit can be less convenient"
-      ]
-    };
-  }
-
-  if (planId === "premium") {
-    return {
-      pros: [
-        "Best comfort and service quality",
-        "Higher experience depth",
-        "Convenient transport and premium stays"
-      ],
-      cons: [
-        "Highest budget footprint",
-        "Overkill for short/simple trips",
-        "Lower cost-efficiency"
-      ]
-    };
-  }
-
-  return {
-    pros: [
-      "Balanced cost to experience ratio",
-      "Moderate comfort with broad coverage",
-      "Default best-fit for most trips"
-    ],
-    cons: [
-      "Not the cheapest option",
-      "Not fully premium",
-      "Trade-offs in both cost and luxury"
-    ]
-  };
-}
-
-function buildAssistantSuggestions(itinerary, budget, snapshot) {
-  const dayOne = itinerary?.itinerary?.[0];
-  const dayTwo = itinerary?.itinerary?.[1];
-  const attraction = snapshot?.attractions?.[0]?.name;
-  const restaurant = snapshot?.restaurants?.[0]?.name;
-  const distance = snapshot?.distance;
-
-  const suggestions = [
-    dayOne ? `Keep Day 1 focused on ${dayOne.theme} to ensure a stable trip start.` : "Make Day 1 a light arrival and orientation day for a smoother start.",
-    dayTwo ? `For Day 2, prioritize ${dayTwo.theme} and consider pre-booking to reduce wait times.` : "Prioritize main attractions on Day 2 and lock key slots early.",
-    Number(budget?.total || 0) > 0 ? `Current total is ${formatPrice(budget.total)}. Consider splitting bookings to ease cash flow.` : "Split your budget across transport, stay, food, and activities to track spending.",
-    attraction ? `Top attraction: ${attraction}. Aim to avoid peak hours for a better experience.` : "Prefer earlier time slots for top attractions.",
-    restaurant ? `Recommended food spot: ${restaurant}. Choose off-peak dining windows.` : "Choose off-peak dining times for local food spots.",
-    distance ? `Approximate route distance: ${distance}. Add a transit buffer.` : "Include a 15–20% transit buffer for travel time.",
-    `Preference mode is ${controls.value.travelMode}; plan pacing and transfers accordingly.`,
-    `Style is ${controls.value.style}; tune activity intensity and spend priority to match this style.`
-  ];
-
-  return suggestions.filter(Boolean).slice(0, 6);
-}
-
-async function generateTripSnapshot(effectiveInput, itinerary) {
-  tripSnapshotLoading.value = true;
-
-  const destinationName = String(itinerary?.destination || effectiveInput.destination || "").trim();
-  const originName = String(effectiveInput.origin || "Current Location").trim();
-
-  let destinationGeo = null;
-  let originGeo = null;
-  let distanceKm = null;
-  let weather = null;
-  let attractions = [];
-  let hotels = [];
-  let restaurants = [];
-
-  try {
-    destinationGeo = await geocodePlace(destinationName);
-
-    if (/^current location$/i.test(originName)) {
-      if (userLocation.value?.lat === null || userLocation.value?.lng === null || userLocation.value?.lat === undefined || userLocation.value?.lng === undefined) {
-        await detectUserLocation();
-      }
-
-      if (userLocation.value?.lat !== null && userLocation.value?.lng !== null) {
-        originGeo = {
-          lat: userLocation.value.lat,
-          lng: userLocation.value.lng
-        };
-      }
-    } else {
-      originGeo = await geocodePlace(originName);
-    }
-
-    if (originGeo && destinationGeo) {
-      try {
-        const routeInfo = await getRouteDistance(
-          { lat: originGeo.lat, lng: originGeo.lng },
-          { lat: destinationGeo.lat, lng: destinationGeo.lng }
-        );
-
-        if (routeInfo?.distance) {
-          distanceKm = Math.round(routeInfo.distance);
-        }
-      } catch (_routeError) {
-        distanceKm = null;
-      }
-    }
-
-    if (destinationGeo) {
-      const [weatherResult, attractionsResult, hotelsResult, restaurantsResult] = await Promise.allSettled([
-        fetchWeather(destinationGeo.lat, destinationGeo.lng),
-        fetchNearbyPlaces(destinationGeo.lat, destinationGeo.lng, "attraction", destinationName),
-        fetchNearbyPlaces(destinationGeo.lat, destinationGeo.lng, "lodging", destinationName),
-        fetchNearbyPlaces(destinationGeo.lat, destinationGeo.lng, "restaurant", destinationName)
-      ]);
-
-      weather = weatherResult.status === "fulfilled" ? weatherResult.value : null;
-      attractions = attractionsResult.status === "fulfilled" ? (attractionsResult.value || []).slice(0, 5) : [];
-      hotels = hotelsResult.status === "fulfilled" ? (hotelsResult.value || []).slice(0, 5) : [];
-      restaurants = restaurantsResult.status === "fulfilled" ? (restaurantsResult.value || []).slice(0, 5) : [];
-    }
-
-    tripSnapshot.value = {
-      distance: Number.isFinite(distanceKm) ? `${distanceKm.toLocaleString()} km` : "Distance unavailable",
-      weather,
-      attractions,
-      hotels,
-      restaurants
-    };
-  } catch (_error) {
-    tripSnapshot.value = {
-      distance: "Distance unavailable",
-      weather: null,
-      attractions: [],
-      hotels: [],
-      restaurants: []
-    };
-  } finally {
-    tripSnapshotLoading.value = false;
-  }
-}
-
-async function buildRoadtripForOption(option, effectiveInput) {
-  if (!option || !isRoadtripMode(effectiveInput.travelMode)) {
-    activeRoadtrip.value = null;
-    return;
-  }
-
-  if (roadtripByPlanId.value?.[option.id]) {
-    activeRoadtrip.value = roadtripByPlanId.value[option.id];
-    return;
-  }
-
-  roadtripLoading.value = true;
-  try {
-    const roadtrip = await generateRoadtripEngine({
-      origin: String(effectiveInput.origin || "Current Location").trim() || "Current Location",
-      destination: String(option?.itinerary?.destination || effectiveInput.destination || "").trim(),
-      travelMode: effectiveInput.travelMode,
-      days: effectiveInput.days,
-      travelers: effectiveInput.travelers
-    });
-
-    roadtripByPlanId.value = {
-      ...roadtripByPlanId.value,
-      [option.id]: roadtrip
-    };
-    activeRoadtrip.value = roadtrip;
-  } catch (_error) {
-    activeRoadtrip.value = null;
-  } finally {
-    roadtripLoading.value = false;
-  }
-}
-
-async function selectGeneratedPlan(planId) {
-  if (!planId) {
-    return;
-  }
-
-  const previousPlanId = selectedPlanId.value;
-  const option = generatedPlanOptions.value.find((item) => item.id === planId);
-  if (!option) {
-    return;
-  }
-
-  selectedPlanId.value = option.id;
-  activeItinerary.value = option.itinerary;
-  activeBudget.value = option.budget;
-  updateControls({
-    style: option.style,
-    stayPreference: option.stayPreference,
-    foodPreference: option.foodPreference,
-    maxBudget: option.budgetLimit
-  });
-
-  await generateTripSnapshot(controls.value, option.itinerary);
-  assistantReply.value = buildAssistantReply(controls.value, option.itinerary, option.budget, tripSnapshot.value);
-  assistantSuggestions.value = buildAssistantSuggestions(option.itinerary, option.budget, tripSnapshot.value);
-  refinementPrompts.value = buildRefinementPrompts(option?.itinerary?.destination || controls.value.destination);
-  await buildRoadtripForOption(option, controls.value);
-
-  if (previousPlanId && previousPlanId !== option.id) {
-    addConversation(
-      "assistant",
-      `Plan switched to ${option.label}. Travel mode ${controls.value.travelMode} and budget cap ${formatPrice(controls.value.maxBudget)} remain applied.`
-    );
-  }
-
-  syncPlannerSessionContext();
-}
-
-function applyRefinementPrompt(nextPrompt) {
-  promptInput.value = String(nextPrompt || "").trim();
-  handleGenerate();
-}
-
-function toggleDay(day) {
-  expandedDay.value = expandedDay.value === day ? null : day;
-}
-
-function useRecentTrip(trip) {
-  if (!trip) {
-    return;
-  }
-
-  updateControls({
-    origin: trip.origin || controls.value.origin,
-    destination: trip.destination || controls.value.destination,
-    days: Number(trip.days || controls.value.days),
-    travelers: Number(trip.travelers || controls.value.travelers),
-    style: trip.style || controls.value.style,
-    maxBudget: Number(trip?.budget?.total || controls.value.maxBudget),
-    travelMode: trip.travelMode || controls.value.travelMode,
-    stayPreference: trip.stayPreference || controls.value.stayPreference,
-    foodPreference: trip.foodPreference || controls.value.foodPreference
-  });
-
-  promptInput.value = `Create an updated plan for ${trip.destination} with better local suggestions.`;
-}
-
-async function refreshRecentTrips() {
-  if (!authStore.user?.uid) {
-    recentTrips.value = [];
-    return;
-  }
-
-  try {
-    const trips = await getSavedTripsFromDb(authStore.user.uid);
-    recentTrips.value = [...trips]
-      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
-      .slice(0, 6);
-  } catch (error) {
-    console.error("Failed to load recent trips", error);
-    recentTrips.value = [];
-  }
-}
-
-function createTripRecord() {
-  return {
-    origin: controls.value.origin,
-    destination: activeItinerary.value?.destination,
-    tagline: activeItinerary.value?.tagline,
-    summary: activeItinerary.value?.summary,
-    days: controls.value.days,
-    travelers: controls.value.travelers,
-    style: controls.value.style,
-    travelMode: controls.value.travelMode,
-    stayPreference: controls.value.stayPreference,
-    foodPreference: controls.value.foodPreference,
-    itinerary: activeItinerary.value?.itinerary || [],
-    budget: activeBudget.value,
-    planOptionId: selectedPlan.value?.id || "balanced",
-    planType: selectedPlan.value?.label || "Balanced",
-    planRank: selectedPlan.value?.rank || 1,
-    planScore: selectedPlan.value?.totalScore || 0,
-    planScores: selectedPlan.value?.scores || null,
-    pros: selectedPlan.value?.pros || [],
-    cons: selectedPlan.value?.cons || [],
-    roadtripIntelligence: activeRoadtrip.value,
-    assistantReply: assistantReply.value,
-    assistantSuggestions: assistantSuggestions.value
-  };
-}
-
-function syncPlannerSessionContext() {
-  if (!activeItinerary.value || !activeBudget.value) {
-    return;
-  }
-
-  plannerSessionStore.setActiveContext({
-    origin: controls.value.origin,
-    destination: activeItinerary.value.destination,
-    summary: activeItinerary.value.summary,
-    style: controls.value.style,
-    travelMode: controls.value.travelMode,
-    days: controls.value.days,
-    budgetTotal: Number(activeBudget.value?.total || 0),
-    suggestions: assistantSuggestions.value,
-    itineraryPreview: Array.isArray(activeItinerary.value?.itinerary)
-      ? activeItinerary.value.itinerary.map((day) => day.theme).filter(Boolean).slice(0, 3)
-      : []
-  });
-}
-
-function handleSaveOfflineDraft() {
-  if (!canSavePlan.value) {
-    return;
-  }
-
-  const record = createTripRecord();
-
-  offlineStore.queueDraft({
-    source: "planner",
-    destination: record.destination,
-    days: record.days,
-    travelMode: record.travelMode,
-    budgetTotal: Number(record?.budget?.total || 0),
-    payload: record
-  });
-
-  syncPlannerSessionContext();
-  offlineDraftMessage.value = "Offline draft queued. It will sync when network is stable.";
-  setTimeout(() => {
-    offlineDraftMessage.value = "";
-  }, 2200);
-}
-
-async function handleGenerate() {
-  if (loading.value) {
-    return;
-  }
-
-  plannerError.value = "";
-  saveStatus.value = false;
-  generatedPlanOptions.value = [];
-  selectedPlanId.value = "";
-  activeRoadtrip.value = null;
-  roadtripByPlanId.value = {};
-
-  const rawPrompt = String(promptInput.value || "").trim();
-  if (!rawPrompt && !String(controls.value.destination || "").trim()) {
-    plannerError.value = "Please provide a prompt or destination to generate an itinerary.";
-    return;
-  }
-
-  const sourcePrompt = rawPrompt || `Plan a ${controls.value.days}-day trip to ${controls.value.destination}`;
-  promptInput.value = sourcePrompt;
-  addConversation("user", sourcePrompt);
-  const previousInput = normalizeControlsValue({ ...controls.value });
-
-  let intentPatch = {};
-  try {
-    const intentResult = await extractTripIntent(sourcePrompt, controls.value);
-    intentPatch = intentResult?.patch || {};
-  } catch (_error) {
-    intentPatch = {};
-  }
-
-  if (Number.isFinite(Number(intentPatch.maxBudget))) {
-    const normalizedBudget = normalizePromptBudgetToUsd(intentPatch.maxBudget, sourcePrompt);
-    if (normalizedBudget !== null) {
-      intentPatch.maxBudget = normalizedBudget;
-    }
-  }
-
-  const mergedInput = mergeIntentWithControls(intentPatch);
-  const normalizedInput = applyIntelligentDefaults(mergedInput, sourcePrompt);
-
-  const personalizationPlan = profileMemoryStore.createPlannerPersonalization({
-    destination: normalizedInput.destination,
-    naturalQuery: sourcePrompt,
-    days: normalizedInput.days,
-    travelers: normalizedInput.travelers,
-    style: normalizedInput.style,
-    maxBudget: normalizedInput.maxBudget,
-    travelMode: normalizedInput.travelMode,
-    stayPreference: normalizedInput.stayPreference,
-    foodPreference: normalizedInput.foodPreference
-  });
-
-  const effectiveInput = applyIntelligentDefaults(personalizationPlan.effectiveInput, sourcePrompt);
-  const preferenceContext = buildPreferenceContext(effectiveInput);
-  const planningPrompt = `${sourcePrompt}\n\n${preferenceContext}\n\n${personalizationPlan.memoryDirective}`;
-  const preferenceChangeMessage = buildPreferenceChangeMessage(previousInput, effectiveInput);
-
-  updateControls(effectiveInput);
-
-  const validationError = getValidationErrorMessage(effectiveInput);
-  if (validationError) {
-    plannerError.value = validationError;
-    return;
-  }
-
-  generationLoading.start();
-
-  try {
-    const destinationHint = String(effectiveInput.destination || sourcePrompt || "Goa").trim();
-    const profiles = createPlanProfiles(effectiveInput);
-
-    const settled = await Promise.allSettled(
-      profiles.map(async (profile) => {
-        const profilePrompt = `${planningPrompt}\n\nPlan Profile: ${profile.label}. Keep trade-offs transparent.`;
-
-        const [itinerary, budget] = await Promise.all([
-          generateTravelPlan(
-            destinationHint,
-            profile.style,
-            effectiveInput.days,
-            effectiveInput.travelers,
-            profile.budgetLimit,
-            effectiveInput.travelMode,
-            {
-              userQuery: profilePrompt,
-              sourceQuery: sourcePrompt,
-              requireLive: false,
-              allowFallbackWithoutLive: true,
-              stayPreference: profile.stayPreference,
-              foodPreference: profile.foodPreference,
-              budgetLimit: profile.budgetLimit
-            }
-          ),
-          generateBudgetEstimate(
-            destinationHint,
-            effectiveInput.days,
-            effectiveInput.travelers,
-            profile.style,
-            effectiveInput.travelMode,
-            {
-              userQuery: profilePrompt,
-              sourceQuery: sourcePrompt,
-              requireLive: false,
-              allowFallbackWithoutLive: true,
-              stayPreference: profile.stayPreference,
-              foodPreference: profile.foodPreference,
-              budgetLimit: profile.budgetLimit
-            }
-          )
-        ]);
-
-        const normalizedBudget = normalizeBudgetByTravelMode(budget, effectiveInput.travelMode);
-
-        const prosCons = planProsCons(profile.id, effectiveInput);
-
-        return {
-          id: profile.id,
-          label: profile.label,
-          style: profile.style,
-          stayPreference: profile.stayPreference,
-          foodPreference: profile.foodPreference,
-          budgetLimit: profile.budgetLimit,
-          itinerary,
-          budget: normalizedBudget,
-          transportation: effectiveInput.travelMode,
-          hotels: itinerary?.hotels || [],
-          activities: Array.isArray(itinerary?.itinerary) ? itinerary.itinerary.map((day) => day.theme).filter(Boolean) : [],
-          pros: prosCons.pros,
-          cons: prosCons.cons
-        };
-      })
-    );
-
-    const options = settled
-      .filter((entry) => entry.status === "fulfilled")
-      .map((entry) => entry.value);
-
-    if (options.length === 0) {
-      throw new Error("No plan option could be generated.");
-    }
-
-    const rankedOptions = rankItineraryOptions(options, {
-      maxBudget: effectiveInput.maxBudget,
-      style: effectiveInput.style,
-      travelMode: effectiveInput.travelMode,
-      stayPreference: effectiveInput.stayPreference,
-      foodPreference: effectiveInput.foodPreference
-    });
-
-    generatedPlanOptions.value = rankedOptions;
-    selectedPlanId.value = rankedOptions[0].id;
-    activeItinerary.value = rankedOptions[0].itinerary;
-    activeBudget.value = rankedOptions[0].budget;
-    expandedDay.value = 1;
-
-    await generateTripSnapshot(effectiveInput, rankedOptions[0].itinerary);
-    await buildRoadtripForOption(rankedOptions[0], effectiveInput);
-
-    assistantReply.value = buildAssistantReply(effectiveInput, rankedOptions[0].itinerary, rankedOptions[0].budget, tripSnapshot.value);
-    assistantSuggestions.value = buildAssistantSuggestions(rankedOptions[0].itinerary, rankedOptions[0].budget, tripSnapshot.value);
-    refinementPrompts.value = buildRefinementPrompts(rankedOptions[0]?.itinerary?.destination || destinationHint);
-
-    profileMemoryStore.trackGeneratedTrip({
-      destination: rankedOptions[0]?.itinerary?.destination || destinationHint,
-      travelStyle: rankedOptions[0]?.style || effectiveInput.style,
-      budgetTotal: rankedOptions[0]?.budget?.total,
-      transportPreference: effectiveInput.travelMode,
-      foodPreference: rankedOptions[0]?.foodPreference || effectiveInput.foodPreference,
-      stayPreference: rankedOptions[0]?.stayPreference || effectiveInput.stayPreference,
-      days: effectiveInput.days,
-      travelers: effectiveInput.travelers,
-      sourceQuery: sourcePrompt
-    });
-
-    if (preferenceChangeMessage) {
-      addConversation("assistant", preferenceChangeMessage);
-    }
-    addConversation("assistant", assistantReply.value);
-    syncPlannerSessionContext();
-  } catch (error) {
-    console.error("Planner generation failed", error);
-    plannerError.value = getFriendlyErrorMessage(error, "AI plan generation failed. Please try again later.");
-    addConversation("assistant", "I had an issue generating a response. Try simplifying the prompt and retry.");
-  } finally {
-    generationLoading.stop();
-  }
-}
-
-async function handleSaveTrip() {
-  if (!activeItinerary.value?.itinerary || !activeBudget.value) {
-    return;
-  }
-
-  if (!authStore.user?.uid) {
-    router.push({ path: "/login", query: { redirect: "/planner" } });
-    return;
-  }
-
-  const record = createTripRecord();
-
-  try {
-    await saveTripToDb(record, authStore.user.uid);
-    profileMemoryStore.trackSavedTrip({
-      destination: record.destination,
-      travelStyle: record.style,
-      budgetTotal: record?.budget?.total,
-      transportPreference: record.travelMode,
-      foodPreference: record.foodPreference,
-      stayPreference: record.stayPreference,
-      days: record.days,
-      travelers: record.travelers,
-      sourceQuery: promptInput.value
-    });
-
-    saveStatus.value = true;
-    setTimeout(() => {
-      saveStatus.value = false;
-    }, 2200);
-
-    await refreshRecentTrips();
-    syncPlannerSessionContext();
-  } catch (error) {
-    plannerError.value = getFriendlyErrorMessage(error, "Failed to save the trip.");
-  }
-}
-
-async function handleCreateGroupTrip() {
-  if (!canSavePlan.value) {
-    return;
-  }
-
-  if (!authStore.user?.uid) {
-    router.push({ path: "/login", query: { redirect: "/planner" } });
-    return;
-  }
-
-  const record = createTripRecord();
-
-  try {
-    const group = await groupTravelStore.createFromPlanner({
-      record,
-      user: authStore.user,
-      name: `${record.destination || "Trip"} Crew`
-    });
-
-    groupShareStatus.value = "Group workspace created. Redirecting to collaboration panel.";
-    setTimeout(() => {
-      groupShareStatus.value = "";
-    }, 2200);
-
-    router.push({ path: "/group-trips", query: { group: group.id } });
-  } catch (error) {
-    plannerError.value = getFriendlyErrorMessage(error, "Failed to create group trip.");
-  }
-}
-
-onMounted(async () => {
-  await authStore.initAuth();
-  profileMemoryStore.initForUser(authStore.user?.uid || "guest");
-  offlineStore.initForUser(authStore.user?.uid || "guest");
-  groupTravelStore.initForUser(authStore.user || { uid: "guest" });
-
-  try {
-    await detectUserLocation();
-    await initUserCurrency(userLocation.value);
-  } catch (_currencyError) {
-    // Currency fallback stays handled in currency service defaults.
-  }
-
-  const routeDestination = String(route.query.destination || "").trim();
-  const routeOrigin = String(route.query.origin || "").trim();
-  const routePrompt = String(route.query.q || route.query.prompt || route.query.search || "").trim();
-
-  if (routeOrigin) {
-    controls.value.origin = routeOrigin;
-  }
-
-  if (routeDestination) {
-    controls.value.destination = routeDestination;
-    promptInput.value = `Plan a ${controls.value.days}-day trip to ${routeDestination} with practical local suggestions.`;
-  } else if (routePrompt) {
-    promptInput.value = routePrompt;
-  }
-
-  await refreshRecentTrips();
-});
-
-watch(
-  () => authStore.user?.uid,
-  async (nextUserId) => {
-    profileMemoryStore.initForUser(nextUserId || "guest");
-    offlineStore.initForUser(nextUserId || "guest");
-    groupTravelStore.initForUser(authStore.user || { uid: nextUserId || "guest" });
-    showSavedProfilesDrawer.value = false;
-    await refreshRecentTrips();
-  }
-);
-
-watch(
-  () => controls.value,
-  (nextControls) => {
-    if (!showPreferencesModal.value) {
-      preferenceDraft.value = normalizeControlsValue({ ...nextControls });
-    }
-  },
-  { deep: true }
-);
-
-watch(
-  () => conversation.value.length,
-  () => {
-    scrollConversationToBottom();
-  }
-);
-
-watch(
-  () => loading.value,
-  () => {
-    scrollConversationToBottom();
-  }
-);
-</script>
-
 <template>
-  <div class="planner-chat-page container animate-fade-in" style="padding-top: 100px;">
-    <div class="planner-header">
-      <span class="planner-badge">PLANNER CHAT</span>
-      <h1>Talk To Your AI Trip Planner</h1>
-      <p>
-        Enter a normal prompt. The planner will interpret it and return practical suggestions, a budget split, and a day-wise itinerary.
-      </p>
-    </div>
+  <div class="planner-layout">
+    <div class="main-workspace">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="ai-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>
+          </div>
+          <div class="ai-title">
+            <strong>AI Travel Planner</strong>
+            <span class="status"><span class="dot"></span> Active</span>
+          </div>
+          <button class="more-options">⋮</button>
+        </div>
 
-    <div class="planner-layout mt-6">
-      <section class="input-column">
-        <article class="glass-card prompt-card">
-          <h2>Live Planner Context</h2>
-          <p class="prompt-intro mt-2">
-            Chat below like WhatsApp. Every message can update itinerary, preferences, and budget planning in real time.
-          </p>
-
-          <p v-if="!liveAiReady" class="ai-status mt-2">
-            Live Gemini API key is missing. Planner will use fallback intelligence.
-          </p>
-
-          <div class="offline-strip mt-2">
-            <span class="offline-chip" :class="{ offline: !isOnline }">
-              {{ isOnline ? "Online Sync Active" : "Offline Mode Active" }}
-            </span>
-            <span v-if="pendingOfflineDrafts > 0" class="offline-count">
-              {{ pendingOfflineDrafts }} pending draft(s)
-            </span>
+        <div class="chat-container">
+          <!-- AI Message 1 -->
+          <div class="ai-message">
+            <div class="ai-avatar">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+            </div>
+            <div class="ai-content">
+              <p>Hello! I'm your AI travel planner. Tell me about your dream trip and I'll create a complete itinerary for you. ✨</p>
+              <div class="chip-group">
+                <span class="chip">🏖️ Beach getaway</span>
+                <span class="chip">🏕️ Adventure trip</span>
+                <span class="chip">💒 Honeymoon</span>
+                <span class="chip">👨‍👩‍👧‍👦 Family vacation</span>
+              </div>
+            </div>
           </div>
 
-          <div class="context-note-grid mt-3">
-            <article class="context-note">
-              <strong>Budget Meaning</strong>
-              <p>{{ budgetLocalHint }}</p>
-            </article>
-            <article class="context-note">
-              <strong>Detected Budget Region</strong>
-              <p>{{ activeCurrencyCountry }} | {{ activeCurrencyCode }}</p>
-            </article>
+          <!-- User Message 1 -->
+          <div class="user-message">
+            <div class="user-content">
+              Plan a 5-day trip to Bali for 2 people under ₹1,50,000. Mix of adventure and relaxation.
+            </div>
           </div>
-        </article>
 
-        <article v-if="recentTrips.length > 0" class="glass-card recent-card">
-          <div class="card-head">
-            <h3>Recent Saved Trips</h3>
-            <small>Reuse as baseline</small>
+          <!-- AI Message 2 -->
+          <div class="ai-message">
+            <div class="ai-avatar">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+            </div>
+            <div class="ai-content">
+              <p>I've crafted a perfect 5-day Bali itinerary! Here's what I've planned:</p>
+              
+              <div class="itin-preview">
+                <div class="itin-title">
+                  <span>🌴</span> Bali, Indonesia <span class="days">• 5 Days</span>
+                </div>
+                <div class="itin-badges">
+                  <span class="badge badge-green">₹1,42,500</span>
+                  <span class="badge badge-orange">2 Travelers</span>
+                </div>
+                <div class="itin-desc">
+                  Ubud temples → Rice terraces → Water sports → Beach sunset → Spa day
+                </div>
+              </div>
+
+              <p>Your complete itinerary is ready in the workspace. Want me to adjust anything?</p>
+              <div class="chip-group">
+                <span class="chip cyan">Make it cheaper</span>
+                <span class="chip cyan">Add more adventure</span>
+                <span class="chip cyan">Upgrade hotels</span>
+              </div>
+            </div>
           </div>
-          <div class="recent-list mt-3">
-            <button
-              v-for="trip in recentTrips"
-              :key="trip.id"
-              type="button"
-              class="recent-item"
-              @click="useRecentTrip(trip)"
-            >
-              <span>{{ trip.destination }}</span>
-              <small>{{ trip.days }} days · {{ formatPrice(trip?.budget?.total || 0) }}</small>
+
+          <!-- User Message 2 -->
+          <div class="user-message">
+            <div class="user-content">
+              Can you add a sunrise trek on Day 3
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <div class="input-wrapper">
+            <svg class="icon-attach" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-3.31-2.69-6-6-6S3 1.69 3 5v12.5c0 3.31 2.69 6 6 6s6-2.69 6-6V6h-1.5z"/></svg>
+            <input type="text" placeholder="Ask me to plan, modify, or optimize your trip...">
+            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z"/></svg>
+            <button class="btn-send"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></svg></button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="content-area">
+        <div class="hero-header">
+          <div class="hero-bg"></div>
+          <div class="hero-content">
+            <div class="hero-top">
+              <div>
+                <div class="badge-row">
+                  <span class="badge-ai">AI GENERATED</span>
+                  <span class="updated-time">• Updated 2 min ago</span>
+                </div>
+                <h1>Bali, Indonesia</h1>
+                <p class="subtitle">A perfect blend of adventure, culture, and tropical relaxation</p>
+              </div>
+              <div class="hero-actions">
+                <button class="btn btn-outline-light">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                  Edit
+                </button>
+                <button class="btn btn-outline-light">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                  Regenerate
+                </button>
+              </div>
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-card" v-for="stat in stats" :key="stat.label">
+                <div class="stat-label">{{ stat.label }}</div>
+                <div class="stat-value" :class="stat.valueClass">{{ stat.value }}</div>
+                <div class="stat-subtext" :class="stat.subtextClass">{{ stat.subtext }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="main-tabs-container">
+          <div class="main-tabs">
+            <button class="tab-btn active">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+              Itinerary
+            </button>
+            <button class="tab-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg>
+              Hotels
+            </button>
+            <button class="tab-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>
+              Restaurants
+            </button>
+            <button class="tab-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+              Budget
+            </button>
+            <button class="tab-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              Map
+            </button>
+            <button class="tab-btn">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6A4.997 4.997 0 0 1 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z"/></svg>
+              AI Tips
             </button>
           </div>
-        </article>
 
-        <article class="glass-card conversation-card">
-          <div class="card-head">
-            <h3>Planner Chat</h3>
-            <div class="card-head-actions">
-              <div class="preferences-popover-host">
-                <button
-                  type="button"
-                  class="btn btn-outline btn-xs"
-                  :disabled="loading"
-                  @click.stop="toggleSavedProfilesDrawer"
-                >
-                  Saved Preferences
-                </button>
-
-                <button
-                  type="button"
-                  class="btn btn-outline btn-xs"
-                  :disabled="loading"
-                  @click.stop="openPreferencesModal"
-                >
-                  Edit Preferences
-                </button>
-
-                <transition name="drawer-fade">
-                  <button
-                    v-if="showPreferencesModal"
-                    type="button"
-                    class="preferences-screen-backdrop"
-                    aria-label="Close preferences drawer"
-                    @click="closePreferencesModal"
-                  ></button>
-                </transition>
-
-                <transition name="drawer-slide">
-                  <article v-if="showSavedProfilesDrawer" class="preferences-drawer saved-profiles-drawer glass-card" @click.stop>
-                    <div class="preferences-head">
-                      <h3>Saved Preference Profiles</h3>
-                      <button type="button" class="prefs-close" @click="closeSavedProfilesDrawer">x</button>
-                    </div>
-
-                    <p class="preferences-note">
-                      Select a profile to apply trip preferences instantly. Manage names and details from Profile section.
-                    </p>
-
-                    <div class="memory-traits mt-3">
-                      <span class="memory-pill">Personality: {{ personalityLabel }}</span>
-                      <span class="memory-pill muted">Confidence: {{ profileConfidence }}/100</span>
-                    </div>
-
-                    <div class="saved-profile-list mt-3">
-                      <button
-                        v-for="profile in savedPreferenceProfiles"
-                        :key="profile.id"
-                        type="button"
-                        class="saved-profile-item"
-                        :class="{ active: activePreferenceProfile?.id === profile.id }"
-                        @click="applyNamedPreferenceProfile(profile.id)"
-                      >
-                        <span class="saved-profile-name">{{ profile.name }}</span>
-                        <small class="saved-profile-summary">{{ profile.summary }}</small>
-                      </button>
-                    </div>
-
-                    <p v-if="savedPreferenceProfiles.length === 0" class="conversation-empty mt-2">
-                      No saved preference profile found. Add profile entries from Profile page.
-                    </p>
-                  </article>
-                </transition>
-
-                <transition name="drawer-slide">
-                  <article v-if="showPreferencesModal" class="preferences-drawer glass-card" @click.stop>
-                    <div class="preferences-head">
-                      <h3>Edit Trip Preferences</h3>
-                      <button type="button" class="prefs-close" @click="closePreferencesModal">x</button>
-                    </div>
-
-                    <p class="preferences-note">
-                      Update trip preferences for this chat only. To create or edit saved named profiles, use the Profile page.
-                    </p>
-
-                    <div class="control-grid mt-3">
-                      <label>
-                        <span>Origin</span>
-                        <input
-                          class="form-input"
-                          :value="preferenceDraft.origin"
-                          @input="updatePreferenceDraft({ origin: $event.target.value })"
-                        />
-                      </label>
-
-                      <label>
-                        <span>Destination</span>
-                        <input
-                          class="form-input"
-                          :value="preferenceDraft.destination"
-                          @input="updatePreferenceDraft({ destination: $event.target.value })"
-                        />
-                      </label>
-
-                      <label>
-                        <span>Days</span>
-                        <input
-                          class="form-input"
-                          type="number"
-                          min="2"
-                          max="15"
-                          :value="preferenceDraft.days"
-                          @input="updatePreferenceDraft({ days: Number($event.target.value || preferenceDraft.days) })"
-                        />
-                      </label>
-
-                      <label>
-                        <span>Travelers</span>
-                        <input
-                          class="form-input"
-                          type="number"
-                          min="1"
-                          max="8"
-                          :value="preferenceDraft.travelers"
-                          @input="updatePreferenceDraft({ travelers: Number($event.target.value || preferenceDraft.travelers) })"
-                        />
-                      </label>
-
-                      <label>
-                        <span>Style</span>
-                        <select class="form-select" :value="preferenceDraft.style" @change="updatePreferenceDraft({ style: $event.target.value })">
-                          <option value="Balanced">Balanced</option>
-                          <option value="Budget">Budget</option>
-                          <option value="Comfort">Comfort</option>
-                          <option value="Luxury">Luxury</option>
-                          <option value="Adventure">Adventure</option>
-                        </select>
-                      </label>
-
-                      <label>
-                        <span>Transport</span>
-                        <select class="form-select" :value="preferenceDraft.travelMode" @change="updatePreferenceDraft({ travelMode: $event.target.value })">
-                          <option value="Flight">Flight</option>
-                          <option value="Train">Train</option>
-                          <option value="Bus">Bus</option>
-                          <option value="Car">Car</option>
-                          <option value="Bike">Bike</option>
-                        </select>
-                      </label>
-
-                      <label>
-                        <span>Stay</span>
-                        <select class="form-select" :value="preferenceDraft.stayPreference" @change="updatePreferenceDraft({ stayPreference: $event.target.value })">
-                          <option value="hostel">Hostel</option>
-                          <option value="budget">Budget</option>
-                          <option value="mid-range">Mid-range</option>
-                          <option value="premium">Premium</option>
-                          <option value="luxury">Luxury</option>
-                        </select>
-                      </label>
-
-                      <label>
-                        <span>Food</span>
-                        <select class="form-select" :value="preferenceDraft.foodPreference" @change="updatePreferenceDraft({ foodPreference: $event.target.value })">
-                          <option value="street">Street</option>
-                          <option value="local">Local</option>
-                          <option value="mixed">Mixed</option>
-                          <option value="fine-dining">Fine Dining</option>
-                        </select>
-                      </label>
-
-                      <label>
-                        <span>Total Budget Cap ({{ activeCurrencyCode }})</span>
-                        <small class="budget-help">{{ budgetLocalHint }}</small>
-                        <input
-                          class="form-input"
-                          type="number"
-                          :min="budgetMinLocal"
-                          :max="budgetMaxLocal"
-                          step="50"
-                          :value="toLocalBudget(preferenceDraft.maxBudget)"
-                          @input="updatePreferenceDraft({ maxBudget: toUsdBudget(Number($event.target.value || toLocalBudget(preferenceDraft.maxBudget))) })"
-                        />
-                      </label>
-                    </div>
-
-                    <div class="preferences-actions mt-4">
-                      <button type="button" class="btn btn-outline" :disabled="loading" @click="resetPreferencesToDefaults">Reset Defaults</button>
-                      <button type="button" class="btn btn-outline" :disabled="loading" @click="closePreferencesModal">Cancel</button>
-                      <button type="button" class="btn btn-primary" :disabled="loading" @click="applyPreferences">Apply Preferences</button>
-                    </div>
-                  </article>
-                </transition>
-              </div>
+          <div class="day-tabs">
+            <div class="day-tab active">
+              <strong>Day 1</strong> <span>Mar 15</span>
+            </div>
+            <div class="day-tab">
+              <strong>Day 2</strong> <span>Mar 16</span>
+            </div>
+            <div class="day-tab">
+              <strong>Day 3</strong> <span>Mar 17</span>
+            </div>
+            <div class="day-tab">
+              <strong>Day 4</strong> <span>Mar 18</span>
+            </div>
+            <div class="day-tab">
+              <strong>Day 5</strong> <span>Mar 19</span>
             </div>
           </div>
 
-          <div class="preference-strip mt-2">
-            <p>
-              <strong>AI understood from your prompt:</strong> {{ preferenceSummary }}
-            </p>
-            <span class="preference-lock" :class="{ active: preferencesLocked }">
-              {{ preferencesLocked ? "Manual Override On" : "Auto From Chat" }}
-            </span>
-          </div>
-
-          <p v-if="conversation.length === 0 && !loading" class="conversation-empty mt-2">
-            Start chatting with your trip request. Planner AI will respond here with suggestions and plan context.
-          </p>
-
-          <div v-else ref="conversationListRef" class="conversation-list mt-3">
-            <article
-              v-for="message in conversation"
-              :key="message.id"
-              class="chat-message"
-              :class="message.role"
-            >
-              <div class="chat-meta">
-                <strong>{{ message.role === "user" ? "You" : "Planner" }}</strong>
-                <small>{{ message.at }}</small>
+          <div class="timeline-section">
+            <div class="timeline-header">
+              <div>
+                <h2>Day 1 — Arrival & Ubud Exploration</h2>
+                <p>Saturday, March 15, 2025 • Ubud Area</p>
               </div>
-              <p>{{ message.text }}</p>
-            </article>
-
-            <article v-if="loading" class="chat-message assistant typing">
-              <div class="chat-meta">
-                <strong>Planner</strong>
-                <small>thinking...</small>
+              <div class="day-cost">
+                Day cost: <strong>₹28,500</strong>
               </div>
-              <p>Reading your prompt, understanding preferences, and drafting your plan...</p>
-            </article>
-          </div>
-
-          <div class="chat-composer mt-3">
-            <textarea
-              v-model="promptInput"
-              class="chat-composer-input"
-              rows="2"
-              placeholder="Type your trip message... for example: plan 6 days in Bali for couple, total budget under 1,20,000"
-              @keydown.enter.exact.prevent="handleGenerate"
-            ></textarea>
-            <button type="button" class="btn btn-primary chat-send-btn" :disabled="loading" @click="handleGenerate">
-              {{ loading ? "Sending..." : "Send" }}
-            </button>
-          </div>
-          <p class="chat-composer-hint">Press Enter to send | Shift+Enter for next line</p>
-          <p v-if="plannerError" class="planner-error mt-2">{{ plannerError }}</p>
-          <p v-if="offlineDraftMessage" class="offline-message mt-2">{{ offlineDraftMessage }}</p>
-          <p v-if="groupShareStatus" class="group-share-message mt-2">{{ groupShareStatus }}</p>
-        </article>
-      </section>
-
-      <section class="result-column">
-        <article v-if="loading" class="glass-card loading-card">
-          <div class="spinner"></div>
-          <p>AI planner is building your itinerary and suggestions...</p>
-        </article>
-
-        <article v-else-if="!hasResults" class="glass-card empty-card">
-          <h3>Ready when you are</h3>
-          <p>Send a natural prompt and I will return a clean, actionable plan.</p>
-        </article>
-
-        <article v-else class="glass-card result-card">
-          <PlanComparisonView
-            v-if="generatedPlanOptions.length > 0"
-            :options="generatedPlanOptions"
-            :selected-plan-id="selectedPlanId"
-            :loading="loading"
-            @select-plan="selectGeneratedPlan"
-          />
-
-          <div v-if="selectedPlan" class="selected-plan-strip mt-4">
-            <span class="selected-label">Selected: {{ selectedPlan.label }}</span>
-            <span class="selected-score">Rank #{{ selectedPlan.rank }} • Score {{ selectedPlan.totalScore }}/100</span>
-          </div>
-
-          <div class="result-header">
-            <div>
-              <span class="tagline">{{ activeItinerary.tagline }}</span>
-              <h2>{{ activeItinerary.destination }}</h2>
-              <p>{{ activeItinerary.summary }}</p>
             </div>
 
-            <div class="result-actions">
-              <button
-                type="button"
-                class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="handleSaveOfflineDraft"
-              >
-                Save Offline Draft
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
-                :disabled="!canSavePlan"
-                @click="handleCreateGroupTrip"
-              >
-                Create Group Trip
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-outline"
-                :class="{ saved: saveStatus }"
-                :disabled="!canSavePlan"
-                @click="handleSaveTrip"
-              >
-                {{ saveStatus ? "Saved" : "Save Trip" }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="assistantReply" class="assistant-reply-card mt-4">
-            <h3>Assistant Response</h3>
-            <p>{{ assistantReply }}</p>
-          </div>
-
-          <div class="assistant-suggestion-card mt-4">
-            <h4>Applied Preferences</h4>
-            <ul class="suggestion-list">
-              <li v-for="item in appliedPreferenceRows" :key="item">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="assistantSuggestions.length > 0" class="assistant-suggestion-card mt-4">
-            <h4>Suggested Next Moves</h4>
-            <ul class="suggestion-list">
-              <li v-for="(suggestion, index) in assistantSuggestions" :key="`suggestion-${index}`">{{ suggestion }}</li>
-            </ul>
-          </div>
-
-          <div class="budget-grid mt-4">
-            <article v-if="shouldShowFlights" class="budget-cell">
-              <span>Flights</span>
-              <strong>{{ formatPrice(activeBudget.flights) }}</strong>
-            </article>
-            <article class="budget-cell">
-              <span>Stay</span>
-              <strong>{{ formatPrice(activeBudget.accommodation) }}</strong>
-            </article>
-            <article class="budget-cell">
-              <span>Food</span>
-              <strong>{{ formatPrice(activeBudget.food) }}</strong>
-            </article>
-            <article class="budget-cell">
-              <span>{{ transportModeBudgetLabel }}</span>
-              <strong>{{ formatPrice(activeBudget.transportation) }}</strong>
-            </article>
-            <article class="budget-cell">
-              <span>Activities</span>
-              <strong>{{ formatPrice(activeBudget.activities) }}</strong>
-            </article>
-            <article class="budget-cell total">
-              <span>Total</span>
-              <strong>{{ formatPrice(activeBudget.total) }}</strong>
-            </article>
-          </div>
-
-          <div class="snapshot-grid mt-4">
-            <article class="snapshot-cell">
-              <span>Distance</span>
-              <strong>{{ tripSnapshot.distance }}</strong>
-            </article>
-            <article class="snapshot-cell">
-              <span>Weather</span>
-              <strong v-if="tripSnapshot.weather">{{ tripSnapshot.weather.temp }} · {{ tripSnapshot.weather.humidity }} humidity</strong>
-              <strong v-else>{{ tripSnapshotLoading ? "Refreshing..." : "Unavailable" }}</strong>
-            </article>
-            <article class="snapshot-cell">
-              <span>Top Attraction</span>
-              <strong>{{ tripSnapshot.attractions[0]?.name || "Not available" }}</strong>
-            </article>
-            <article class="snapshot-cell">
-              <span>Top Hotel</span>
-              <strong>{{ tripSnapshot.hotels[0]?.name || "Not available" }}</strong>
-            </article>
-          </div>
-
-          <RoadtripIntelligencePanel
-            v-if="isRoadtripMode(controls.travelMode)"
-            class="mt-4"
-            :roadtrip="activeRoadtrip"
-            :loading="roadtripLoading || loading"
-          />
-
-          <div class="itinerary-list mt-4">
-            <article v-for="day in activeItinerary.itinerary" :key="day.day" class="day-card">
-              <button type="button" class="day-head" @click="toggleDay(day.day)">
-                <span>Day {{ day.day }} - {{ day.theme }}</span>
-                <span>{{ expandedDay === day.day ? "-" : "+" }}</span>
-              </button>
-              <div v-if="expandedDay === day.day" class="day-body">
-                <p><strong>Morning:</strong> {{ day.morning }}</p>
-                <p><strong>Afternoon:</strong> {{ day.afternoon }}</p>
-                <p><strong>Evening:</strong> {{ day.evening }}</p>
-                <p class="food-line"><strong>Food:</strong> {{ day.foodRecommendation }}</p>
+            <div class="timeline-list">
+              <!-- Timeline Card 1 -->
+              <div class="timeline-card">
+                <div class="timeline-line"></div>
+                <div class="t-icon-box orange">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                </div>
+                <div class="t-content">
+                  <div class="t-time orange">Morning • 6:00 AM</div>
+                  <h3>Arrive at Ngurah Rai Airport</h3>
+                  <p>Private transfer to Ubud hotel. Enjoy the scenic drive through rice paddies and traditional villages.</p>
+                  <div class="t-tags">
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z"/></svg> 1.5 hrs</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z"/></svg> 2,500</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg> 45 min drive</span>
+                  </div>
+                </div>
               </div>
-            </article>
-          </div>
 
-          <div class="refinement-card mt-4" v-if="refinementPrompts.length > 0">
-            <h4>Refine This Plan</h4>
-            <div class="refinement-row">
-              <button
-                v-for="suggestion in refinementPrompts"
-                :key="suggestion"
-                type="button"
-                class="btn btn-outline"
-                :disabled="loading"
-                @click="applyRefinementPrompt(suggestion)"
-              >
-                {{ suggestion }}
-              </button>
+              <!-- Timeline Card 2 -->
+              <div class="timeline-card">
+                <div class="timeline-line"></div>
+                <div class="t-icon-box pink">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                </div>
+                <div class="t-content">
+                  <div class="t-time pink">
+                    Breakfast • 8:30 AM
+                    <span class="ai-pick">AI Pick</span>
+                  </div>
+                  <h3>Breakfast at Sari Organik</h3>
+                  <p>Farm-to-table organic breakfast with panoramic rice terrace views. Try the Nasi Goreng.</p>
+                  <div class="t-tags">
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z"/></svg> 1 hr</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z"/></svg> 800</span>
+                    <span class="t-tag highlight"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg> 4.7</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5z"/></svg> 7AM–3PM</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Timeline Card 3 -->
+              <div class="timeline-card">
+                <div class="t-icon-box cyan">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                </div>
+                <div class="t-content">
+                  <div class="t-time cyan">Sightseeing • 10:00 AM</div>
+                  <h3>Tegallalang Rice Terraces</h3>
+                  <p>Explore the iconic UNESCO-listed rice terraces. Walk through the jungle swing and take stunning photos.</p>
+                  <div class="t-tags">
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-1-13h2v6l4.2 2.1-1 1.7L11 13V7z"/></svg> 2.5 hrs</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.66 7C13.1 5.82 11.9 5 10.5 5H6V3h12v2h-3.26c.48.58.84 1.25 1.05 2H18v2h-2.12c-.36 2.45-2.22 4.41-4.63 4.96L17.5 21H15l-5.66-6.59H6v-2h4.5c1.47 0 2.76-.92 3.27-2.27H6V9h7.77c-.12-.4-.28-.78-.47-1.14L13.66 7z"/></svg> 1,200</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/></svg> 20 min</span>
+                    <span class="t-tag"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5z"/></svg> 8AM–6PM</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
-        </article>
-      </section>
+        </div>
+      </main>
     </div>
-
   </div>
 </template>
 
+<script setup>
+import { ref } from 'vue'
+
+const stats = ref([
+  { label: 'Duration', value: '5 Days', valueClass: 'text-dark', subtext: '4 Nights', subtextClass: 'text-muted' },
+  { label: 'Travelers', value: '2', valueClass: 'text-dark', subtext: 'Couple', subtextClass: 'text-muted' },
+  { label: 'Budget', value: '₹1.5L', valueClass: 'text-green', subtext: 'Per person', subtextClass: 'text-muted' },
+  { label: 'Est. Cost', value: '₹1.45L', valueClass: 'text-orange', subtext: 'Under budget', subtextClass: 'text-green' },
+  { label: 'Weather', value: '28°C', valueClass: 'text-dark', subtext: 'Sunny', subtextClass: 'text-muted' },
+  { label: 'Trip Score', value: '9.2', valueClass: 'text-purple', subtext: 'Excellent', subtextClass: 'text-muted' },
+  { label: 'Dates', value: 'Mar 15', valueClass: 'text-dark', subtext: '→ Mar 19', subtextClass: 'text-muted' },
+])
+</script>
+
 <style scoped>
-.planner-chat-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-bottom: 28px;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
 }
 
-.planner-header h1 {
-  margin: 8px 0;
-  font-size: clamp(1.9rem, 4vw, 2.7rem);
-}
-
-.planner-header p {
-  color: var(--color-text-secondary);
-  max-width: 760px;
-}
-
-.planner-badge {
-  display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  color: var(--color-primary);
-  background: var(--color-primary-light);
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-}
-
-.mt-6 {
-  margin-top: 24px;
-}
-
-.mt-4 {
-  margin-top: 16px;
-}
-
-.mt-3 {
-  margin-top: 12px;
-}
-
-.mt-2 {
-  margin-top: 8px;
+body {
+  background-color: #f8fafc;
+  color: #1e293b;
 }
 
 .planner-layout {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  gap: 16px;
-}
-
-.input-column,
-.result-column {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
-.prompt-card,
-.recent-card,
-.conversation-card,
-.loading-card,
-.empty-card,
-.result-card {
-  background: #ffffff !important;
-}
-
-.conversation-card {
-  position: relative;
-  overflow: visible !important;
-}
-
-.prompt-card h2,
-.recent-card h3,
-.conversation-card h3 {
-  font-size: 1rem;
-}
-
-.memory-card {
-  border: 1px solid rgba(2, 132, 199, 0.25);
-  background: linear-gradient(160deg, rgba(236, 254, 255, 0.7) 0%, rgba(248, 250, 252, 0.8) 100%) !important;
-}
-
-.memory-score {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #0f766e;
-}
-
-.memory-note {
-  color: var(--color-text-secondary);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.memory-traits {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #f8fafc;
 }
 
-.memory-pill {
-  border: 1px solid rgba(37, 99, 235, 0.24);
-  background: rgba(219, 234, 254, 0.52);
-  color: var(--color-primary);
-  border-radius: var(--radius-full);
-  padding: 5px 10px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.memory-pill.muted {
-  border-color: var(--color-border);
+/* TOP NAV */
+.top-nav {
+  height: 64px;
   background: #ffffff;
-  color: var(--color-text-secondary);
-}
-
-.saved-profiles-drawer {
-  width: min(520px, calc(100vw - 40px));
-}
-
-.saved-profile-list {
-  display: grid;
-  gap: 8px;
-}
-
-.saved-profile-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-  padding: 10px;
-  text-align: left;
-  display: grid;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.saved-profile-item:hover {
-  border-color: rgba(37, 99, 235, 0.35);
-}
-
-.saved-profile-item.active {
-  border-color: rgba(5, 150, 105, 0.45);
-  background: rgba(209, 250, 229, 0.45);
-}
-
-.saved-profile-name {
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.saved-profile-summary {
-  font-size: 0.74rem;
-  color: var(--color-text-secondary);
-}
-
-.planner-textarea {
-  width: 100%;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  resize: vertical;
-  min-height: 160px;
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.planner-textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
-}
-
-.action-row {
+  border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.nav-left, .nav-right {
+  display: flex;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  margin-right: 40px;
+}
+
+.logo-icon-bg {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.logo-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.nav-links {
+  display: flex;
   gap: 8px;
 }
 
-.prompt-action-row {
+.nav-links a {
+  text-decoration: none;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 999px;
+  transition: all 0.2s;
+}
+
+.nav-links a:hover {
+  background: #f1f5f9;
+}
+
+.nav-links a.active {
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.btn-outline {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+.btn-primary {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.btn-outline-light {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.nav-right .btn {
+  margin-right: 16px;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* MAIN WORKSPACE */
+.main-workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* SIDEBAR */
+.sidebar {
+  width: 380px;
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  height: 64px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+
+.ai-icon {
+  width: 36px;
+  height: 36px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.ai-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-title strong {
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.ai-title .status {
+  font-size: 12px;
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.more-options {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.chat-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* AI Message */
+.ai-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ai-avatar {
+  width: 28px;
+  height: 28px;
+  background: #6366f1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.ai-content {
+  background: #ffffff;
+  padding: 16px;
+  border-radius: 16px;
+  border-top-left-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  max-width: 85%;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #334155;
+  border: 1px solid #f1f5f9;
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #ffffff;
+  border: 1px solid #e0e7ff;
+  color: #4f46e5;
+  cursor: pointer;
+}
+
+.chip.cyan {
+  border-color: #cffafe;
+  color: #0891b2;
+}
+
+.chip:hover {
+  background: #f8fafc;
+}
+
+/* User Message */
+.user-message {
+  display: flex;
   justify-content: flex-end;
 }
 
-.prompt-intro {
-  color: var(--color-text-secondary);
-  font-size: 0.84rem;
-  line-height: 1.55;
+.user-content {
+  background: #6366f1;
+  color: #ffffff;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border-top-right-radius: 4px;
+  max-width: 85%;
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.2);
 }
 
-.context-note-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.context-note {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(248, 250, 252, 0.8);
-  padding: 9px 10px;
-}
-
-.context-note strong {
-  display: block;
-  font-size: 0.74rem;
-  color: var(--color-text);
-}
-
-.context-note p {
-  margin-top: 5px;
-  font-size: 0.76rem;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
-}
-
-.planner-error {
-  color: #dc2626;
-  font-size: 0.82rem;
-}
-
-.ai-status {
-  color: #92400e;
-  font-size: 0.78rem;
-}
-
-.offline-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.offline-chip {
-  border: 1px solid rgba(5, 150, 105, 0.25);
-  border-radius: var(--radius-full);
-  background: rgba(209, 250, 229, 0.6);
-  color: #047857;
-  padding: 5px 9px;
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.offline-chip.offline {
-  border-color: rgba(220, 38, 38, 0.25);
-  background: rgba(254, 226, 226, 0.72);
-  color: #b91c1c;
-}
-
-.offline-count {
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.offline-message {
-  color: #0f766e;
-  font-size: 0.82rem;
-}
-
-.group-share-message {
-  color: #1d4ed8;
-  font-size: 0.82rem;
-}
-
-.preference-strip {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(248, 250, 252, 0.82);
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.preference-strip p {
-  margin: 0;
-  font-size: 0.74rem;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
-}
-
-.preference-lock {
-  border-radius: var(--radius-full);
-  border: 1px solid rgba(37, 99, 235, 0.2);
-  background: rgba(219, 234, 254, 0.5);
-  color: var(--color-text-secondary);
-  padding: 5px 9px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.preference-lock.active {
-  border-color: rgba(5, 150, 105, 0.35);
-  background: rgba(209, 250, 229, 0.62);
-  color: #047857;
-}
-
-.control-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.control-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.77rem;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.card-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-}
-
-.preferences-popover-host {
-  position: relative;
-}
-
-.card-head small {
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-
-.btn-xs {
-  font-size: 0.72rem;
-  padding: 6px 10px;
-}
-
-.recent-list {
-  display: grid;
-  gap: 8px;
-}
-
-.recent-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+/* Itinerary Preview Card */
+.itin-preview {
   background: #ffffff;
-  padding: 9px 10px;
-  text-align: left;
-  display: grid;
-  gap: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.itin-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.itin-title span.days {
+  color: #64748b;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.itin-badges {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-green {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.badge-orange {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.itin-desc {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Chat Input */
+.chat-input-area {
+  padding: 20px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 12px 90px 12px 40px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-wrapper input:focus {
+  border-color: #6366f1;
+}
+
+.icon-attach {
+  position: absolute;
+  left: 12px;
   cursor: pointer;
 }
 
-.recent-item span {
-  font-size: 0.86rem;
-  font-weight: 700;
-  color: var(--color-text);
+.icon-mic {
+  position: absolute;
+  right: 48px;
+  cursor: pointer;
 }
 
-.recent-item small {
-  font-size: 0.73rem;
-  color: var(--color-text-muted);
-}
-
-.recent-item:hover {
-  border-color: rgba(37, 99, 235, 0.4);
-}
-
-.conversation-empty {
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-}
-
-.conversation-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 420px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.chat-message {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  background: #ffffff;
-  max-width: 88%;
-}
-
-.chat-message.user {
-  border-color: rgba(37, 99, 235, 0.26);
-  background: rgba(239, 246, 255, 0.8);
-  margin-left: auto;
-}
-
-.chat-message.assistant {
-  border-color: rgba(2, 132, 199, 0.25);
-  background: rgba(236, 254, 255, 0.8);
-  margin-right: auto;
-}
-
-.chat-message.typing {
-  border-style: dashed;
-  opacity: 0.95;
-}
-
-.chat-meta {
+.btn-send {
+  position: absolute;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 5px;
+  justify-content: center;
+  cursor: pointer;
 }
 
-.chat-message.user .chat-meta {
-  flex-direction: row-reverse;
+/* MAIN CONTENT */
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  background: #f8fafc;
+  position: relative;
 }
 
-.chat-meta strong {
-  font-size: 0.75rem;
+.content-area::-webkit-scrollbar {
+  display: none;
 }
 
-.chat-meta small {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
+.hero-header {
+  position: relative;
+  padding: 40px 40px 20px 40px;
 }
 
-.chat-message p {
-  font-size: 0.84rem;
-  line-height: 1.5;
-  color: var(--color-text);
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(248, 250, 252, 0.4), #f8fafc 90%), url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=80') center/cover;
+  opacity: 0.6;
+  z-index: 0;
 }
 
-.chat-message.user p {
-  text-align: right;
+.hero-content {
+  position: relative;
+  z-index: 1;
 }
 
-.chat-composer {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.chat-composer-input {
-  width: 100%;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  font-size: 0.86rem;
-  line-height: 1.45;
-  min-height: 74px;
-  max-height: 140px;
-  resize: vertical;
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.chat-composer-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-.chat-send-btn {
-  min-width: 94px;
-}
-
-.chat-composer-hint {
-  margin-top: 6px;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-
-.loading-card,
-.empty-card {
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 18px;
-  text-align: center;
-  color: var(--color-text-secondary);
-}
-
-.spinner {
-  width: 22px;
-  height: 22px;
-  border: 2px solid rgba(37, 99, 235, 0.2);
-  border-top-color: var(--color-primary);
-  border-radius: var(--radius-full);
-  margin: 0 auto 10px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.result-header {
+.hero-top {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
+  align-items: flex-start;
+}
+
+.badge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.badge-ai {
+  background: #6366f1;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.updated-time {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.hero-top h1 {
+  font-size: 36px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 8px;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: #475569;
+}
+
+.hero-actions {
+  display: flex;
   gap: 12px;
 }
 
-.result-actions {
-  display: grid;
-  gap: 8px;
-  justify-items: end;
-}
-
-.selected-plan-strip {
-  border: 1px solid rgba(37, 99, 235, 0.28);
-  border-radius: var(--radius-md);
-  background: rgba(239, 246, 255, 0.72);
-  padding: 10px 12px;
+.stats-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  margin-top: 32px;
+  overflow-x: auto;
+  padding-bottom: 10px;
 }
 
-.selected-label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--color-primary);
+.stats-row::-webkit-scrollbar {
+  display: none;
 }
 
-.selected-score {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-}
-
-.tagline {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: var(--color-secondary);
-  margin-bottom: 4px;
-}
-
-.result-header h2 {
-  font-size: 1.35rem;
-}
-
-.result-header p {
-  margin-top: 6px;
-  color: var(--color-text-secondary);
-  max-width: 700px;
-}
-
-.btn.saved {
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.45);
-}
-
-.assistant-reply-card,
-.assistant-suggestion-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 12px;
+.stat-card {
   background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 16px;
+  padding: 16px;
+  min-width: 120px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
 }
 
-.assistant-reply-card h3,
-.assistant-suggestion-card h4 {
-  font-size: 0.95rem;
+.stat-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
   margin-bottom: 8px;
 }
 
-.assistant-reply-card p {
-  color: var(--color-text-secondary);
-  line-height: 1.55;
-  font-size: 0.88rem;
+.stat-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 4px;
 }
 
-.suggestion-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
+.stat-subtext {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
 }
 
-.suggestion-list li {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font-size: 0.82rem;
-  color: var(--color-text-secondary);
-  background: rgba(248, 250, 252, 0.8);
+.text-green { color: #10b981; }
+.text-orange { color: #d97706; }
+.text-purple { color: #6366f1; }
+.text-dark { color: #0f172a; }
+.text-muted { color: #94a3b8; }
+
+.main-tabs-container {
+  padding: 0 40px;
 }
 
-.budget-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.budget-cell {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  background: #ffffff;
-}
-
-.budget-cell span {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.budget-cell strong {
-  margin-top: 4px;
-  display: block;
-  font-size: 0.95rem;
-  color: var(--color-text);
-}
-
-.budget-cell.total {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: var(--color-primary-light);
-}
-
-.snapshot-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.snapshot-cell {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  background: #ffffff;
-}
-
-.snapshot-cell span {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--color-text-secondary);
-}
-
-.snapshot-cell strong {
-  margin-top: 4px;
-  display: block;
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-
-.itinerary-list {
-  display: grid;
-  gap: 8px;
-}
-
-.day-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: #ffffff;
-}
-
-.day-head {
-  width: 100%;
-  border: none;
-  background: transparent;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  font-size: 0.86rem;
-  font-weight: 700;
-  cursor: pointer;
-  color: var(--color-text);
-}
-
-.day-body {
-  border-top: 1px solid var(--color-border);
-  padding: 10px 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.day-body p {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 0.84rem;
-  line-height: 1.5;
-}
-
-.food-line {
-  color: #0f766e;
-}
-
-.refinement-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 12px;
-}
-
-.refinement-card h4 {
-  font-size: 0.92rem;
-}
-
-.refinement-row {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.preferences-drawer {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  left: auto;
-  width: min(460px, calc(100vw - 40px));
-  max-height: min(78vh, 720px);
-  overflow-y: auto;
-  z-index: 60;
-  background: #ffffff !important;
-  border: 1px solid var(--color-border);
-  border-left: 4px solid var(--color-primary);
-  box-shadow: var(--shadow-xl);
-  transform-origin: top right;
-}
-
-.preferences-screen-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 58;
-  border: none;
-  background: rgba(15, 23, 42, 0.12);
-  cursor: pointer;
-}
-
-.preferences-head {
+.main-tabs {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  position: sticky;
-  top: 0;
+  gap: 24px;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 0;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.tab-btn.active {
+  background: #6366f1;
+  color: white;
+  border-radius: 999px;
+  padding: 8px 20px;
+}
+
+.tab-btn.active svg {
+  fill: white;
+}
+
+.tab-btn svg {
+  fill: #94a3b8;
+}
+
+.day-tabs {
+  display: flex;
+  gap: 12px;
+  padding: 24px 0;
+}
+
+.day-tab {
   background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 10px 24px;
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.day-tab strong {
+  color: #334155;
+}
+
+.day-tab span {
+  color: #94a3b8;
+}
+
+.day-tab.active {
+  background: #6366f1;
+  border-color: #6366f1;
+}
+
+.day-tab.active strong, .day-tab.active span {
+  color: #ffffff;
+}
+
+.day-tab.active span {
+  opacity: 0.8;
+}
+
+.timeline-section {
+  max-width: 800px;
+  padding-bottom: 60px;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 32px;
+}
+
+.timeline-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.timeline-header p {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.day-cost {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.day-cost strong {
+  font-size: 16px;
+  color: #10b981;
+  font-weight: 800;
+}
+
+/* Timeline Cards */
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+}
+
+.timeline-card {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  gap: 24px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.02);
+  position: relative;
+  z-index: 1;
+}
+
+.t-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   z-index: 2;
-  padding-bottom: 8px;
+  background-color: white; /* to cover line */
 }
 
-.preferences-head h3 {
-  font-size: 1.05rem;
+.t-icon-box.orange { background: #fff7ed; color: #ea580c; }
+.t-icon-box.pink { background: #fdf2f8; color: #db2777; }
+.t-icon-box.cyan { background: #ecfeff; color: #0891b2; }
+
+.t-content {
+  flex: 1;
 }
 
-.prefs-close {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  width: 32px;
-  height: 32px;
-  background: #ffffff;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.preferences-note {
-  margin-top: 8px;
-  font-size: 0.82rem;
-  color: var(--color-text-secondary);
-}
-
-.budget-help {
-  margin-top: 4px;
-  font-size: 0.68rem;
-  color: var(--color-text-muted);
-  line-height: 1.4;
-}
-
-.preferences-actions {
+.t-time {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
   display: flex;
-  justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.drawer-slide-enter-active,
-.drawer-slide-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+.t-time.orange { color: #ea580c; }
+.t-time.pink { color: #db2777; }
+.t-time.cyan { color: #0891b2; }
+
+.ai-pick {
+  background: #6366f1;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
-.drawer-slide-enter-from,
-.drawer-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.98);
+.t-content h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 8px;
 }
 
-.drawer-fade-enter-active,
-.drawer-fade-leave-active {
-  transition: opacity 0.16s ease;
+.t-content p {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+  margin-bottom: 16px;
 }
 
-.drawer-fade-enter-from,
-.drawer-fade-leave-to {
-  opacity: 0;
+.t-tags {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
-@media (max-width: 1080px) {
-  .planner-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .preferences-drawer {
-    width: min(460px, calc(100vw - 24px));
-    max-height: none;
-    border-left-width: 1px;
-  }
+.t-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
 }
 
-@media (max-width: 760px) {
-  .context-note-grid,
-  .control-grid,
-  .budget-grid,
-  .snapshot-grid {
-    grid-template-columns: 1fr;
-  }
+.t-tag.highlight {
+  color: #d97706;
+  font-weight: 700;
+}
 
-  .preference-strip {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .selected-plan-strip {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .result-header {
-    flex-direction: column;
-  }
-
-  .result-actions {
-    width: 100%;
-    justify-items: stretch;
-  }
-
-  .action-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .chat-composer {
-    grid-template-columns: 1fr;
-  }
-
-  .preferences-actions {
-    justify-content: stretch;
-  }
+/* Connecting line */
+.timeline-line {
+  position: absolute;
+  left: 47px; /* 24px padding + 23px half icon box (approx) */
+  top: 72px; /* 24px padding + 48px icon box */
+  bottom: -24px; /* to bridge gap */
+  width: 2px;
+  background: #e2e8f0;
+  z-index: 0;
 }
 </style>
