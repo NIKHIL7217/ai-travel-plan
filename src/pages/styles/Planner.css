@@ -135,8 +135,8 @@ body {
   overflow: hidden;
 }
 
-/* SIDEBAR */
-.sidebar {
+/* left_panel */
+.left_panel {
   width: 380px;
   background: #f8fafc;
   border-right: 1px solid #e2e8f0;
@@ -144,7 +144,7 @@ body {
   flex-direction: column;
 }
 
-.sidebar-header {
+.left_panel-header {
   height: 64px;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
