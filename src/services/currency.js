@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { requestWithRetry } from "../core/monitoring/request";
+import { lookupIpLocation } from "./geo/ipLookup";
 
 export const userCurrency = ref({
   country: "Global",
@@ -85,16 +85,16 @@ export async function initUserCurrency(locationHint = null) {
   }
 
   try {
-    const res = await requestWithRetry("https://ipapi.co/json/", {}, {
-      operation: "currency.ip_lookup",
-      timeoutMs: 7000,
-      retries: 1
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.currency) {
-        setCurrencyByCode(data.currency, data.country_name || "Global");
-        console.log("Detected User Currency:", userCurrency.value);
+    const data = await lookupIpLocation();
+    if (data?.currency) {
+      setCurrencyByCode(data.currency, data.country || "Global");
+      console.log("Detected User Currency:", userCurrency.value);
+      return;
+    }
+    if (data?.country) {
+      const fromCountry = resolveCurrencyFromCountry(data.country);
+      if (fromCountry) {
+        setCurrencyByCode(fromCountry, data.country);
         return;
       }
     }

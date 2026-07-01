@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { requestWithRetry } from "../core/monitoring/request";
+import { lookupIpLocation } from "./geo/ipLookup";
 
 const REAL_DATA_ONLY = import.meta.env.VITE_REAL_DATA_ONLY !== "false";
 
@@ -86,18 +87,13 @@ async function loadLocationFromIp() {
   }
 
   try {
-    const res = await requestWithRetry("https://ipapi.co/json/", {}, {
-      operation: "location.ip_lookup",
-      timeoutMs: 7000,
-      retries: 1
-    });
-    if (res.ok) {
-      const data = await res.json();
-      userLocation.value.lat = data.latitude;
-      userLocation.value.lng = data.longitude;
+    const data = await lookupIpLocation();
+    if (data) {
+      userLocation.value.lat = data.lat;
+      userLocation.value.lng = data.lng;
       userLocation.value.city = data.city || "New Delhi";
       userLocation.value.state = data.region || "Delhi";
-      userLocation.value.country = data.country_name || "India";
+      userLocation.value.country = data.country || "India";
       userLocation.value.loaded = true;
     } else {
       throw new Error("IP API failed");

@@ -1,5 +1,6 @@
 import { CacheBuckets, withCache } from "../../core/cache/dataCache";
 import { requestWithRetry } from "../../core/monitoring/request";
+import { destinationImageUrl } from "../../utils/destinationImage";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const PHOTO_TTL_MS = 1000 * 60 * 60 * 6;
@@ -14,7 +15,7 @@ function encodePhotoToken(token: string): string {
 
 function unsplashLiveUrl(query: string): string {
   const text = String(query || "destination").trim();
-  return `https://source.unsplash.com/1600x900/?${encodeURIComponent(`${text},travel,destination`)}`;
+  return destinationImageUrl(`${text} travel`, { width: 1600, height: 900 });
 }
 
 async function fetchGooglePlacesPhoto(query: string, lat?: number | null, lng?: number | null): Promise<string | null> {

@@ -6,6 +6,7 @@ import { getSavedTripsFromDb } from "../services/firebase";
 import { useAuthStore } from "../stores/auth";
 import { useProfileMemoryStore } from "../stores/profileMemory";
 import { useVaultStore } from "../stores/vault";
+import { destinationImageUrl } from "../utils/destinationImage";
 
 const route = useRoute();
 const router = useRouter();
@@ -177,7 +178,7 @@ const vaultDocs = computed(() => vaultStore.documents || []);
 
 const wrappedHeroImage = computed(() => {
   const focus = String(uniqueDestinations.value[0] || "travel adventure").trim() || "travel adventure";
-  return `https://source.unsplash.com/1600x900/?${encodeURIComponent(`${focus} cinematic travel`)}`;
+  return destinationImageUrl(`${focus} cinematic travel`, { width: 1600, height: 900 });
 });
 
 function formatDate(timestamp) {

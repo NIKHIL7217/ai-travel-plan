@@ -6,6 +6,7 @@ import { useCommunityStore } from "../stores/community";
 import { getScamAlerts } from "../modules/scam-alerts/service";
 import { getHiddenGems } from "../modules/hidden-gems/service";
 import { getFriendlyErrorMessage } from "../core/errors";
+import { destinationImageUrl } from "../utils/destinationImage";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -110,13 +111,13 @@ function mediaForPost(post) {
   const destination = String(destinationInput.value || "travel").trim() || "travel";
   const seed = String(post?.id || post?.text || destination);
   const theme = (post?.tags || []).slice(0, 2).join(" ") || "travel stories";
-  return `https://source.unsplash.com/1200x900/?${encodeURIComponent(`${destination} ${theme} ${seed}`)}`;
+  return destinationImageUrl(`${destination} ${theme}`, { width: 1200, height: 900, seed });
 }
 
 function mediaForReview(review) {
   const destination = String(destinationInput.value || "travel").trim() || "travel";
   const theme = `${review?.visitType || "trip"} ${review?.costLevel || "moderate"}`;
-  return `https://source.unsplash.com/1200x900/?${encodeURIComponent(`${destination} ${theme} travel`)}`;
+  return destinationImageUrl(`${destination} ${theme} travel`, { width: 1200, height: 900, seed: review?.id });
 }
 
 function formatRelativeTime(timestamp) {

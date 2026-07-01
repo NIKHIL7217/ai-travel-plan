@@ -7,6 +7,7 @@ import { useAuthStore } from "../stores/auth";
 import { useOfflineStore } from "../stores/offline";
 import { useProfileMemoryStore } from "../stores/profileMemory";
 import { useVaultStore } from "../stores/vault";
+import { destinationImageUrl } from "../utils/destinationImage";
 
 const router = useRouter();
 const route = useRoute();
@@ -83,7 +84,7 @@ const achievements = computed(() => {
 function tripCover(destination, style = "travel") {
   const label = String(destination || "travel").trim() || "travel";
   const hint = String(style || "travel").trim() || "travel";
-  return `https://source.unsplash.com/1200x800/?${encodeURIComponent(`${label} ${hint} travel`)}`;
+  return destinationImageUrl(`${label} ${hint} travel`, { width: 1200, height: 800, seed: `${label}-${hint}` });
 }
 
 function formatDate(value) {

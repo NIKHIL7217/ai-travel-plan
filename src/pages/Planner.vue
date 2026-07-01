@@ -6,10 +6,26 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           New chat
         </button>
-        <div class="sidebar-label">Previous chats</div>
+        <div class="sidebar-label-row">
+          <div class="sidebar-label">{{ showArchived ? "Archived chats" : "Previous chats" }}</div>
+          <button
+            v-if="showArchived || archivedSessions.length"
+            class="sidebar-archive-toggle"
+            @click="toggleArchivedView"
+          >
+            <template v-if="showArchived">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+              Back
+            </template>
+            <template v-else>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" /><line x1="10" y1="12" x2="14" y2="12" /></svg>
+              Archived ({{ archivedSessions.length }})
+            </template>
+          </button>
+        </div>
         <div class="sidebar-list">
           <div
-            v-for="session in sortedSessions"
+            v-for="session in visibleSessions"
             :key="session.id"
             class="sidebar-item"
             :class="{ active: session.id === activeSessionId, 'menu-open': openMenuId === session.id }"
@@ -42,7 +58,11 @@
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z" /></svg>
                 Rename
               </button>
-              <button class="session-menu-item" @click="handleSessionAction('archive', session)">
+              <button v-if="session.archived" class="session-menu-item" @click="handleSessionAction('unarchive', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" /><polyline points="9 15 12 12 15 15" /><line x1="12" y1="12" x2="12" y2="18" /></svg>
+                Unarchive
+              </button>
+              <button v-else class="session-menu-item" @click="handleSessionAction('archive', session)">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" /><line x1="10" y1="12" x2="14" y2="12" /></svg>
                 Archive
               </button>
@@ -57,7 +77,7 @@
               </button>
             </div>
           </div>
-          <p v-if="!sortedSessions.length" class="sidebar-empty">No previous chats yet.</p>
+          <p v-if="!visibleSessions.length" class="sidebar-empty">{{ showArchived ? "No archived chats." : "No previous chats yet." }}</p>
         </div>
         <div v-if="openMenuId" class="session-menu-backdrop" @click="closeSessionMenu"></div>
       </aside>
@@ -393,10 +413,18 @@ const openMenuId = ref(null);
 const renamingId = ref(null);
 const renameText = ref("");
 const renameInputs = new Map();
+const showArchived = ref(false);
 
 const showChatEmptyState = computed(() => !chatMessages.value.some((message) => message.role === "user"));
 const displayMessages = computed(() => (showChatEmptyState.value ? [] : chatMessages.value));
-const sortedSessions = computed(() => [...chatSessions.value].filter((session) => !session.archived).sort((a, b) => b.updatedAt - a.updatedAt));
+
+function sortByRecent(list) {
+  return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+const activeSessions = computed(() => sortByRecent(chatSessions.value.filter((session) => !session.archived)));
+const archivedSessions = computed(() => sortByRecent(chatSessions.value.filter((session) => session.archived)));
+const visibleSessions = computed(() => (showArchived.value ? archivedSessions.value : activeSessions.value));
 
 const selectedDay = computed(
   () => dayPlans.value.find((day) => day.id === selectedDayId.value) || dayPlans.value[0] || { day: 1, theme: "", dateLabel: "", area: "", cost: 0, items: [] }
@@ -833,17 +861,37 @@ function archiveSession(session) {
     target.archived = true;
   }
   if (session.id === activeSessionId.value) {
-    startNewChat();
+    startFreshWorkingState();
+  }
+  saveToStorage();
+}
+
+function unarchiveSession(session) {
+  const target = chatSessions.value.find((entry) => entry.id === session.id);
+  if (target) {
+    target.archived = false;
+  }
+  if (!archivedSessions.value.length) {
+    showArchived.value = false;
   }
   saveToStorage();
 }
 
 function deleteSession(session) {
+  const wasActive = session.id === activeSessionId.value;
   chatSessions.value = chatSessions.value.filter((entry) => entry.id !== session.id);
-  if (session.id === activeSessionId.value) {
-    startNewChat();
+  if (wasActive) {
+    startFreshWorkingState();
+  }
+  if (showArchived.value && !archivedSessions.value.length) {
+    showArchived.value = false;
   }
   saveToStorage();
+}
+
+function toggleArchivedView() {
+  showArchived.value = !showArchived.value;
+  closeSessionMenu();
 }
 
 async function shareSession(session) {
@@ -870,6 +918,9 @@ function handleSessionAction(action, session) {
       break;
     case "archive":
       archiveSession(session);
+      break;
+    case "unarchive":
+      unarchiveSession(session);
       break;
     case "delete":
       deleteSession(session);
@@ -981,6 +1032,15 @@ function resetWorkingState() {
 
 function startNewChat() {
   persistActiveSession();
+  activeSessionId.value = genId("session");
+  resetWorkingState();
+  scrollChatToBottom();
+}
+
+// Resets the working view to a blank chat WITHOUT persisting the current
+// session first. Used after deleting/archiving the active chat so it is not
+// re-saved back into the sidebar history.
+function startFreshWorkingState() {
   activeSessionId.value = genId("session");
   resetWorkingState();
   scrollChatToBottom();
