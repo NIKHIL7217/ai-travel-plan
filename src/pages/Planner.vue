@@ -1,6 +1,66 @@
 <template>
   <div class="planner-layout">
     <div class="main-workspace">
+      <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
+        <button class="new-chat-btn" @click="startNewChat">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          New chat
+        </button>
+        <div class="sidebar-label">Previous chats</div>
+        <div class="sidebar-list">
+          <div
+            v-for="session in sortedSessions"
+            :key="session.id"
+            class="sidebar-item"
+            :class="{ active: session.id === activeSessionId, 'menu-open': openMenuId === session.id }"
+          >
+            <input
+              v-if="renamingId === session.id"
+              :ref="(el) => registerRenameInput(session.id, el)"
+              v-model="renameText"
+              class="sidebar-item-rename"
+              type="text"
+              @keydown.enter.prevent="commitRename(session)"
+              @keydown.esc.prevent="cancelRename"
+              @blur="commitRename(session)"
+            >
+            <button v-else class="sidebar-item-main" @click="openChat(session.id)">
+              <svg class="sidebar-item-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+              <span class="sidebar-item-title">{{ session.title }}</span>
+            </button>
+
+            <button class="sidebar-item-menu-btn" aria-label="Chat options" @click.stop="toggleSessionMenu(session.id)">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
+            </button>
+
+            <div v-if="openMenuId === session.id" class="session-menu" @click.stop>
+              <button class="session-menu-item" @click="handleSessionAction('share', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
+                Share
+              </button>
+              <button class="session-menu-item" @click="handleSessionAction('rename', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z" /></svg>
+                Rename
+              </button>
+              <button class="session-menu-item" @click="handleSessionAction('archive', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" /><line x1="10" y1="12" x2="14" y2="12" /></svg>
+                Archive
+              </button>
+              <button class="session-menu-item danger" @click="handleSessionAction('delete', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                Delete
+              </button>
+              <div class="session-menu-divider"></div>
+              <button class="session-menu-item" @click="handleSessionAction('settings', session)">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+                Settings
+              </button>
+            </div>
+          </div>
+          <p v-if="!sortedSessions.length" class="sidebar-empty">No previous chats yet.</p>
+        </div>
+        <div v-if="openMenuId" class="session-menu-backdrop" @click="closeSessionMenu"></div>
+      </aside>
       <aside class="left_panel">
         <div class="left_panel-header">
           <div class="ai-icon">
@@ -10,11 +70,20 @@
             <strong>Wander AI</strong>
             <span class="status"><span class="dot"></span> Active</span>
           </div>
-          <button class="more-options" aria-label="Planner quick actions" @click="handleMoreOptions">⋮</button>
+          <button class="sidebar-toggle" :aria-label="sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'" :aria-pressed="sidebarOpen" @click="toggleSidebar">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg>
+          </button>
         </div>
 
         <div ref="chatContainerRef" class="chat-container">
-          <template v-for="message in chatMessages" :key="message.id">
+          <div v-if="showChatEmptyState" class="chat-empty-state">
+            <div class="chat-empty-icon">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            </div>
+            <h3>How can I help you plan your trip?</h3>
+            <p>Share your ideas, preferences, or questions and I'll help you create a perfect itinerary.</p>
+          </div>
+          <template v-for="message in displayMessages" :key="message.id">
             <div v-if="message.role === 'assistant'" class="ai-message">
               <div class="ai-avatar">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg>
@@ -67,7 +136,31 @@
       </aside>
 
       <main class="content-area">
-        <div class="hero-header">
+        <div v-if="!hasPlan" class="planner-empty">
+          <div class="planner-empty-inner">
+            <div class="planner-empty-spark">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>
+            </div>
+            <h1>Let's plan your perfect trip</h1>
+            <p class="planner-empty-sub">Tell me about your travel preferences and I'll create a personalized itinerary for you.</p>
+            <div class="suggestion-grid">
+              <button v-for="s in tripSuggestions" :key="s.title" class="suggestion-card" :disabled="isGenerating" @click="applySuggestion(s)">
+                <span class="suggestion-icon" :class="s.tone">{{ s.emoji }}</span>
+                <span class="suggestion-text">
+                  <strong>{{ s.title }}</strong>
+                  <small>{{ s.subtitle }}</small>
+                </span>
+              </button>
+            </div>
+            <div class="planner-empty-foot">
+              <div class="foot-spark">✈️</div>
+              <strong>Not sure where to start?</strong>
+              <p>Share any idea, even a vague one. I'll help you figure it out!</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="hasPlan" class="hero-header">
           <div class="hero-bg"></div>
           <div class="hero-content">
             <div class="hero-top">
@@ -96,7 +189,7 @@
           </div>
         </div>
 
-        <div class="main-tabs-container">
+        <div v-if="hasPlan" class="main-tabs-container">
           <div class="main-tabs">
             <button class="tab-btn" :class="{ active: activeTab === 'itinerary' }" @click="handleTabClick('itinerary')">Itinerary</button>
             <button class="tab-btn" :class="{ active: activeTab === 'hotels' }" @click="handleTabClick('hotels')">Hotels</button>
@@ -243,55 +336,71 @@ const INR_RATE = 83.5;
 const activeTab = ref("itinerary");
 const chatInput = ref("");
 const chatContainerRef = ref(null);
+const hasPlan = ref(false);
 
-const planner = ref({
-  destination: "Bali, Indonesia",
-  subtitle: "A perfect blend of adventure, culture, and tropical relaxation",
-  summary: "Ubud temples -> Rice terraces -> Water sports -> Beach sunset -> Spa day",
-  travelers: 2,
-  updatedAt: "2 min ago",
-  weather: "28°C",
-  score: "9.2"
-});
+const STORAGE_KEY = "planner.page.state.v2";
 
-const STORAGE_KEY = "planner.page.state.v1";
+function genId(prefix = "id") {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
-const dayPlans = ref([
-  {
-    id: "d1",
-    day: 1,
-    date: "Mar 15",
-    dateLabel: "Saturday, March 15, 2025",
-    area: "Ubud Area",
-    theme: "Arrival & Ubud Exploration",
-    cost: 28500,
-    items: [
-      { id: "d1-1", icon: "sun", iconTone: "orange", timeTone: "orange", slot: "Morning", time: "6:00 AM", title: "Arrive at Ngurah Rai Airport", description: "Private transfer to Ubud hotel. Enjoy the scenic drive through rice paddies and traditional villages.", duration: "1.5 hrs", cost: 2500, tags: [{ text: "45 min drive" }] },
-      { id: "d1-2", icon: "food", iconTone: "pink", timeTone: "pink", slot: "Breakfast", time: "8:30 AM", title: "Breakfast at Sari Organik", description: "Farm-to-table organic breakfast with panoramic rice terrace views. Try the Nasi Goreng.", duration: "1 hr", cost: 800, aiPick: true, tags: [{ text: "4.7", highlight: true }, { text: "7AM-3PM" }] },
-      { id: "d1-3", icon: "camera", iconTone: "cyan", timeTone: "cyan", slot: "Sightseeing", time: "10:00 AM", title: "Tegallalang Rice Terraces", description: "Explore the iconic UNESCO-listed rice terraces. Walk through the jungle swing and take stunning photos.", duration: "2.5 hrs", cost: 1200, tags: [{ text: "20 min" }, { text: "8AM-6PM" }] }
-    ]
-  },
-  { id: "d2", day: 2, date: "Mar 16", dateLabel: "Sunday, March 16, 2025", area: "Ubud + Kintamani", theme: "Temples & Scenic Drive", cost: 24700, items: [{ id: "d2-1", icon: "sun", iconTone: "orange", timeTone: "orange", slot: "Morning", time: "7:00 AM", title: "Tirta Empul Temple", description: "Traditional purification ritual and temple walk.", duration: "2 hrs", cost: 1500, tags: [{ text: "Culture" }] }] },
-  { id: "d3", day: 3, date: "Mar 17", dateLabel: "Monday, March 17, 2025", area: "North Bali", theme: "Adventure & Trekking", cost: 31200, items: [{ id: "d3-1", icon: "camera", iconTone: "cyan", timeTone: "cyan", slot: "Adventure", time: "8:00 AM", title: "Waterfall Trek", description: "Guided jungle route with waterfall viewpoints.", duration: "3 hrs", cost: 3600, tags: [{ text: "Guide" }] }] },
-  { id: "d4", day: 4, date: "Mar 18", dateLabel: "Tuesday, March 18, 2025", area: "South Bali", theme: "Beach & Sunset", cost: 26800, items: [] },
-  { id: "d5", day: 5, date: "Mar 19", dateLabel: "Wednesday, March 19, 2025", area: "Seminyak", theme: "Spa & Departure", cost: 17300, items: [] }
-]);
+function createEmptyPlanner() {
+  return {
+    destination: "",
+    subtitle: "",
+    summary: "",
+    travelers: 2,
+    updatedAt: "",
+    weather: "",
+    score: ""
+  };
+}
 
-const selectedDayId = ref("d1");
-const hotels = ref([{ name: "Maya Ubud Resort", area: "Ubud", summary: "River-view suite with breakfast", rating: "4.8", nightly: 14500 }, { name: "The Seminyak Beach", area: "Seminyak", summary: "Beachfront stay and sunset deck", rating: "4.7", nightly: 18200 }]);
-const restaurants = ref([{ name: "Sari Organik", type: "Organic Balinese", area: "Ubud", rating: "4.7", avgCost: 850 }, { name: "Merah Putih", type: "Fine Dining Indonesian", area: "Seminyak", rating: "4.6", avgCost: 2200 }]);
-const budgetBuckets = ref({ flights: 54000, stay: 45000, food: 17000, transport: 9000, activities: 17500 });
-const mapSummary = ref({ route: "Airport -> Ubud -> Kintamani -> North Bali -> South Bali -> Seminyak", distance: "~178 km total route coverage", transfer: "Approx 9h 20m intercity travel" });
-const aiTips = ref(["Day 3 sunrise trek ke liye 4:30 AM pickup lock karo.", "Temple visits me shoulders covered outfits carry karo.", "Cash + card split rakho for local shops and cabs."]);
+function createGreetingMessage() {
+  return {
+    id: "a-greeting",
+    role: "assistant",
+    text: "Hello! I'm your AI travel planner. Tell me about your dream trip and I'll create a complete itinerary for you. ✨",
+    chips: ["Beach getaway", "Adventure trip", "Honeymoon", "Family vacation"]
+  };
+}
 
-const chatMessages = ref([
-  { id: "a-1", role: "assistant", text: "Hello! I'm your AI travel planner. Tell me about your dream trip and I'll create a complete itinerary for you. ✨", chips: ["Beach getaway", "Adventure trip", "Honeymoon", "Family vacation"] },
-  { id: "u-1", role: "user", text: "Plan a 5-day trip to Bali for 2 people under ₹1,50,000. Mix of adventure and relaxation." },
-  { id: "a-2", role: "assistant", text: "I've crafted a perfect 5-day Bali itinerary! Here's what I've planned:", preview: true, chips: ["Make it cheaper", "Add more adventure", "Upgrade hotels"], cyanChips: true },
-  { id: "u-2", role: "user", text: "Can you add a sunrise trek on Day 3" }
-]);
+const tripSuggestions = [
+  { emoji: "🏖️", tone: "blue", title: "I want a relaxing beach vacation", subtitle: "Sun, sand, and relaxation", prompt: "Plan a relaxing beach vacation for 2 people with sun, sand and relaxation." },
+  { emoji: "⛰️", tone: "green", title: "Looking for an adventure trip", subtitle: "Thrilling activities and nature", prompt: "Plan an adventure trip with thrilling activities and nature for 2 people." },
+  { emoji: "💜", tone: "purple", title: "Planning a romantic getaway", subtitle: "Perfect for couples", prompt: "Plan a romantic getaway perfect for a couple." },
+  { emoji: "👨‍👩‍👧", tone: "orange", title: "Family vacation with kids", subtitle: "Kid-friendly activities", prompt: "Plan a family vacation with kid-friendly activities." },
+  { emoji: "📅", tone: "yellow", title: "I have specific dates in mind", subtitle: "Plan around my schedule", prompt: "Help me plan a trip around specific dates in my schedule." },
+  { emoji: "₹", tone: "teal", title: "I have a budget in mind", subtitle: "Plan within my budget", prompt: "Help me plan a trip within a specific budget." }
+];
 
-const selectedDay = computed(() => dayPlans.value.find((day) => day.id === selectedDayId.value) || dayPlans.value[0]);
+const planner = ref(createEmptyPlanner());
+
+const dayPlans = ref([]);
+const selectedDayId = ref("");
+const hotels = ref([]);
+const restaurants = ref([]);
+const budgetBuckets = ref({ flights: 0, stay: 0, food: 0, transport: 0, activities: 0 });
+const mapSummary = ref({ route: "", distance: "", transfer: "" });
+const aiTips = ref([]);
+const chatMessages = ref([createGreetingMessage()]);
+
+const chatSessions = ref([]);
+const activeSessionId = ref(genId("session"));
+
+const sidebarOpen = ref(true);
+const openMenuId = ref(null);
+const renamingId = ref(null);
+const renameText = ref("");
+const renameInputs = new Map();
+
+const showChatEmptyState = computed(() => !chatMessages.value.some((message) => message.role === "user"));
+const displayMessages = computed(() => (showChatEmptyState.value ? [] : chatMessages.value));
+const sortedSessions = computed(() => [...chatSessions.value].filter((session) => !session.archived).sort((a, b) => b.updatedAt - a.updatedAt));
+
+const selectedDay = computed(
+  () => dayPlans.value.find((day) => day.id === selectedDayId.value) || dayPlans.value[0] || { day: 1, theme: "", dateLabel: "", area: "", cost: 0, items: [] }
+);
 const totalBudget = computed(() => {
   const { flights, stay, food, transport, activities } = budgetBuckets.value;
   return flights + stay + food + transport + activities;
@@ -326,10 +435,6 @@ function formatInr(value) {
 function applyChipPrompt(chip) {
   chatInput.value = chip;
   sendChatMessage();
-}
-
-function pushAssistantMessage(text, chips = null, cyanChips = false) {
-  chatMessages.value.push({ id: `a-${Date.now()}-${Math.random().toString(16).slice(2)}`, role: "assistant", text, chips, cyanChips });
 }
 
 function applyBudgetDelta(field, delta) {
@@ -572,6 +677,7 @@ async function generateRealPlan(query) {
     }
 
     activeTab.value = "itinerary";
+    hasPlan.value = true;
   } catch (_error) {
     const errorMessage = {
       id: thinkingId,
@@ -601,9 +707,13 @@ function sendChatMessage() {
   generateRealPlan(text);
 }
 
+function applySuggestion(suggestion) {
+  chatInput.value = suggestion.prompt;
+  sendChatMessage();
+}
+
 function handleEditPlan() {
   activeTab.value = "itinerary";
-  pushAssistantMessage("Edit mode ready. Select karo kya modify karna hai.", ["Change budget", "Add activity", "Upgrade hotels", "Reduce travel time"], true);
 }
 
 function handleRegeneratePlan() {
@@ -612,31 +722,10 @@ function handleRegeneratePlan() {
 
 function handleTabClick(tab) {
   activeTab.value = tab;
-  const labels = {
-    itinerary: "Itinerary",
-    hotels: "Hotels",
-    restaurants: "Restaurants",
-    budget: "Budget",
-    map: "Map",
-    tips: "AI Tips"
-  };
-  pushAssistantMessage(`${labels[tab] || "Section"} tab open ho gaya.`);
 }
 
 function handleDaySelect(dayId) {
   selectedDayId.value = dayId;
-  const day = dayPlans.value.find((entry) => entry.id === dayId);
-  if (day) {
-    pushAssistantMessage(`Day ${day.day} selected: ${day.theme}`);
-  }
-}
-
-function handleTimelineItemClick(item) {
-  pushAssistantMessage(`${item.title} • ${item.slot} ${item.time} • ${item.duration} • ₹${formatInr(item.cost)}. ${item.description}`);
-}
-
-function handleTimelineTagClick(item, field, value) {
-  pushAssistantMessage(`${item.title} ${field}: ${value}`);
 }
 
 function handleHotelCardClick(hotel) {
@@ -645,14 +734,12 @@ function handleHotelCardClick(hotel) {
   budgetBuckets.value.stay = newStay;
   hotels.value = hotels.value.map((entry) => ({ ...entry, selected: entry.name === hotel.name }));
   planner.value.updatedAt = "just now";
-  pushAssistantMessage(`${hotel.name} selected for ${nights} nights. Stay budget ₹${formatInr(newStay)} set.`);
 }
 
 function handleRestaurantCardClick(restaurant) {
   const day = selectedDay.value;
   const alreadyAdded = day.items.some((item) => item.title === `Dinner at ${restaurant.name}`);
   if (alreadyAdded) {
-    pushAssistantMessage(`${restaurant.name} already added to Day ${day.day}.`);
     return;
   }
   day.items.push({
@@ -672,81 +759,275 @@ function handleRestaurantCardClick(restaurant) {
   applyBudgetDelta("food", restaurant.avgCost);
   activeTab.value = "itinerary";
   planner.value.updatedAt = "just now";
-  pushAssistantMessage(`${restaurant.name} added as dinner on Day ${day.day}.`);
 }
 
-function handleBudgetRowClick(row) {
-  if (row.label === "Total") {
-    pushAssistantMessage(`Total planned spend: ₹${formatInr(row.amount)} across all categories.`);
-    return;
-  }
-  pushAssistantMessage(`${row.label} budget: ₹${formatInr(row.amount)}. Chat me "reduce ${row.label.toLowerCase()}" likho to optimize kar dunga.`);
-}
+function handleTimelineItemClick() {}
 
-function handleMapCardClick(kind) {
-  if (kind === "distance") {
-    pushAssistantMessage(`Route distance detail: ${mapSummary.value.distance}`);
-  } else {
-    pushAssistantMessage(`Transfer detail: ${mapSummary.value.transfer}`);
-  }
-}
+function handleTimelineTagClick() {}
+
+function handleBudgetRowClick() {}
+
+function handleMapCardClick() {}
 
 function handleTipClick(tip) {
   chatInput.value = tip;
 }
 
-function handleMoreOptions() {
-  pushAssistantMessage("Quick actions open. Aap direct command de sakte ho.", ["Export itinerary", "Share plan", "Duplicate trip"], true);
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value;
+  if (!sidebarOpen.value) {
+    closeSessionMenu();
+  }
 }
 
-function handleAttach() {
-  pushAssistantMessage("Attachment support queued hai. Filhaal aap text me flight/hotel details share karo.");
+function toggleSessionMenu(sessionId) {
+  openMenuId.value = openMenuId.value === sessionId ? null : sessionId;
 }
 
-function handleMic() {
-  pushAssistantMessage("Voice input beta mode me hai. Abhi text command se best response milega.");
+function closeSessionMenu() {
+  openMenuId.value = null;
+}
+
+function registerRenameInput(sessionId, el) {
+  if (el) {
+    renameInputs.set(sessionId, el);
+  } else {
+    renameInputs.delete(sessionId);
+  }
+}
+
+function startRename(session) {
+  renamingId.value = session.id;
+  renameText.value = session.title;
+  nextTick(() => {
+    const input = renameInputs.get(session.id);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+function commitRename(session) {
+  if (renamingId.value !== session.id) {
+    return;
+  }
+  const nextTitle = renameText.value.trim();
+  const target = chatSessions.value.find((entry) => entry.id === session.id);
+  if (target && nextTitle) {
+    target.title = nextTitle;
+  }
+  renamingId.value = null;
+  renameText.value = "";
+  saveToStorage();
+}
+
+function cancelRename() {
+  renamingId.value = null;
+  renameText.value = "";
+}
+
+function archiveSession(session) {
+  const target = chatSessions.value.find((entry) => entry.id === session.id);
+  if (target) {
+    target.archived = true;
+  }
+  if (session.id === activeSessionId.value) {
+    startNewChat();
+  }
+  saveToStorage();
+}
+
+function deleteSession(session) {
+  chatSessions.value = chatSessions.value.filter((entry) => entry.id !== session.id);
+  if (session.id === activeSessionId.value) {
+    startNewChat();
+  }
+  saveToStorage();
+}
+
+async function shareSession(session) {
+  const shareText = `Wander AI trip plan: ${session.title}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Wander AI", text: shareText });
+    } else if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(shareText);
+    }
+  } catch {
+    // User dismissed the share sheet or clipboard is unavailable; no action needed.
+  }
+}
+
+function handleSessionAction(action, session) {
+  closeSessionMenu();
+  switch (action) {
+    case "share":
+      shareSession(session);
+      break;
+    case "rename":
+      startRename(session);
+      break;
+    case "archive":
+      archiveSession(session);
+      break;
+    case "delete":
+      deleteSession(session);
+      break;
+    case "settings":
+      router.push("/security");
+      break;
+    default:
+      break;
+  }
+}
+
+function handleAttach() {}
+
+function handleMic() {}
+
+function snapshotState() {
+  return {
+    planner: planner.value,
+    dayPlans: dayPlans.value,
+    hotels: hotels.value,
+    restaurants: restaurants.value,
+    budgetBuckets: budgetBuckets.value,
+    mapSummary: mapSummary.value,
+    aiTips: aiTips.value,
+    chatMessages: chatMessages.value,
+    activeTab: activeTab.value,
+    selectedDayId: selectedDayId.value,
+    hasPlan: hasPlan.value
+  };
+}
+
+function restoreState(state) {
+  if (!state || typeof state !== "object") {
+    return;
+  }
+  planner.value = state.planner || createEmptyPlanner();
+  dayPlans.value = Array.isArray(state.dayPlans) ? state.dayPlans : [];
+  hotels.value = Array.isArray(state.hotels) ? state.hotels : [];
+  restaurants.value = Array.isArray(state.restaurants) ? state.restaurants : [];
+  budgetBuckets.value = state.budgetBuckets || { flights: 0, stay: 0, food: 0, transport: 0, activities: 0 };
+  mapSummary.value = state.mapSummary || { route: "", distance: "", transfer: "" };
+  aiTips.value = Array.isArray(state.aiTips) ? state.aiTips : [];
+  chatMessages.value = Array.isArray(state.chatMessages) && state.chatMessages.length ? state.chatMessages : [createGreetingMessage()];
+  activeTab.value = typeof state.activeTab === "string" ? state.activeTab : "itinerary";
+  selectedDayId.value = typeof state.selectedDayId === "string" ? state.selectedDayId : "";
+  hasPlan.value = Boolean(state.hasPlan);
+}
+
+function deriveSessionTitle() {
+  if (planner.value.destination) {
+    return planner.value.destination;
+  }
+  const firstUser = chatMessages.value.find((message) => message.role === "user");
+  if (firstUser) {
+    return firstUser.text.split(/\s+/).slice(0, 6).join(" ");
+  }
+  return "New chat";
+}
+
+function persistActiveSession() {
+  if (!activeSessionId.value) {
+    return;
+  }
+  const hasUserMessage = chatMessages.value.some((message) => message.role === "user");
+  if (!hasUserMessage && !hasPlan.value) {
+    return;
+  }
+  const snapshot = snapshotState();
+  const title = deriveSessionTitle();
+  const existing = chatSessions.value.find((session) => session.id === activeSessionId.value);
+  if (existing) {
+    existing.state = snapshot;
+    existing.title = title;
+    existing.updatedAt = Date.now();
+  } else {
+    chatSessions.value.push({ id: activeSessionId.value, title, updatedAt: Date.now(), state: snapshot });
+  }
+}
+
+function saveToStorage() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        chatSessions: chatSessions.value,
+        activeSessionId: activeSessionId.value,
+        active: snapshotState()
+      })
+    );
+  } catch {
+    // Ignore quota or serialization errors and keep the in-memory state.
+  }
+}
+
+function resetWorkingState() {
+  planner.value = createEmptyPlanner();
+  dayPlans.value = [];
+  hotels.value = [];
+  restaurants.value = [];
+  budgetBuckets.value = { flights: 0, stay: 0, food: 0, transport: 0, activities: 0 };
+  mapSummary.value = { route: "", distance: "", transfer: "" };
+  aiTips.value = [];
+  chatMessages.value = [createGreetingMessage()];
+  selectedDayId.value = "";
+  activeTab.value = "itinerary";
+  hasPlan.value = false;
+}
+
+function startNewChat() {
+  persistActiveSession();
+  activeSessionId.value = genId("session");
+  resetWorkingState();
+  scrollChatToBottom();
+}
+
+function openChat(sessionId) {
+  if (sessionId === activeSessionId.value) {
+    return;
+  }
+  persistActiveSession();
+  const session = chatSessions.value.find((entry) => entry.id === sessionId);
+  if (!session) {
+    return;
+  }
+  activeSessionId.value = sessionId;
+  restoreState(session.state);
+  scrollChatToBottom();
 }
 
 onMounted(() => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) {
+      return;
+    }
     const saved = JSON.parse(raw);
-    if (saved && typeof saved === "object") {
-      if (saved.planner) planner.value = saved.planner;
-      if (Array.isArray(saved.dayPlans)) dayPlans.value = saved.dayPlans;
-      if (Array.isArray(saved.hotels)) hotels.value = saved.hotels;
-      if (Array.isArray(saved.restaurants)) restaurants.value = saved.restaurants;
-      if (saved.budgetBuckets) budgetBuckets.value = saved.budgetBuckets;
-      if (saved.mapSummary) mapSummary.value = saved.mapSummary;
-      if (Array.isArray(saved.aiTips)) aiTips.value = saved.aiTips;
-      if (Array.isArray(saved.chatMessages)) chatMessages.value = saved.chatMessages;
-      if (typeof saved.activeTab === "string") activeTab.value = saved.activeTab;
-      if (typeof saved.selectedDayId === "string") selectedDayId.value = saved.selectedDayId;
+    if (!saved || typeof saved !== "object") {
+      return;
+    }
+    if (Array.isArray(saved.chatSessions)) {
+      chatSessions.value = saved.chatSessions;
+    }
+    const activeHasUser = Array.isArray(saved.active?.chatMessages) && saved.active.chatMessages.some((message) => message.role === "user");
+    if (saved.active && (activeHasUser || saved.active.hasPlan)) {
+      restoreState(saved.active);
+      activeSessionId.value = saved.activeSessionId || genId("session");
     }
   } catch {
-    // Ignore malformed local state and continue with defaults.
+    // Ignore malformed local state and continue with a fresh new-chat view.
   }
 });
 
 watch(
-  [planner, dayPlans, hotels, restaurants, budgetBuckets, mapSummary, aiTips, chatMessages, activeTab, selectedDayId],
+  [planner, dayPlans, hotels, restaurants, budgetBuckets, mapSummary, aiTips, chatMessages, activeTab, selectedDayId, hasPlan],
   () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        planner: planner.value,
-        dayPlans: dayPlans.value,
-        hotels: hotels.value,
-        restaurants: restaurants.value,
-        budgetBuckets: budgetBuckets.value,
-        mapSummary: mapSummary.value,
-        aiTips: aiTips.value,
-        chatMessages: chatMessages.value,
-        activeTab: activeTab.value,
-        selectedDayId: selectedDayId.value
-      })
-    );
+    persistActiveSession();
+    saveToStorage();
   },
   { deep: true }
 );
