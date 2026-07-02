@@ -438,6 +438,7 @@ import {
   getRealLocationData
 } from "../services/gemini";
 import { usePlannerSessionStore } from "../stores/plannerSession";
+import { userLocation } from "../services/location";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
 const TravelPlanPanel = defineAsyncComponent(() => import("../features/planner-hub/TravelPlanPanel.vue"));
@@ -485,7 +486,26 @@ const hubComponents = {
 };
 const hubTab = ref("plan");
 const activeHubComponent = computed(() => hubComponents[hubTab.value] || null);
-const hubProps = computed(() => (hubTab.value === "weather" ? { destination: planner.value.destination } : {}));
+const hubProps = computed(() => {
+  const currentLocation = userLocation.value?.city || "Delhi";
+  const destination = planner.value.destination || "";
+  
+  if (hubTab.value === "weather") {
+    return { destination };
+  }
+  
+  if (hubTab.value === "travel-plan") {
+    return { 
+      destination,
+      currentLocation,
+      travelers: planner.value.travelers || 2,
+      startDate: planner.value.startDate || "",
+      endDate: planner.value.endDate || ""
+    };
+  }
+  
+  return {};
+});
 
 function setHubTab(key) {
   hubTab.value = key;
