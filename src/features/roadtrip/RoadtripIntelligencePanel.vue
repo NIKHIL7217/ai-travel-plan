@@ -129,8 +129,7 @@ function getPriceInfo(fuelType) {
             <strong>{{ formatMoney(toll.estimated) }}</strong>
             <small>Range {{ formatMoney(toll.low) }} to {{ formatMoney(toll.high) }}</small>
           </div>
-          <p class="toll-note">{{ toll.note }}</pall>Range {{ formatMoney(toll.low) }} to {{ formatMoney(toll.high) }}</small>
-          </div>
+          <p class="toll-note">{{ toll.note }}</p>
         </article>
 
         <article class="section-card">
