@@ -3,11 +3,12 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding-bottom: 34px;
+  padding: 20px;
 }
 
 .page-head h1 {
   margin: 8px 0;
+  color: black;
   font-size: clamp(2.1rem, 5vw, 3rem);
   letter-spacing: -0.03em;
 }
@@ -15,6 +16,7 @@
 .page-head p {
   color: var(--color-text-secondary);
   max-width: 780px;
+  font-size: 0.88rem;
 }
 
 .docs-badge {
@@ -52,6 +54,7 @@
 
 .stat-card {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  padding: 12px 14px;
 }
 
 .stat-card span {
@@ -69,6 +72,7 @@
 .upload-card,
 .list-card {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  padding: 14px 16px;
 }
 
 .upload-head,

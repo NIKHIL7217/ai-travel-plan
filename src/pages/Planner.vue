@@ -58,7 +58,6 @@
               @blur="commitRename(session)"
             >
             <button v-else class="sidebar-item-main" @click="openChat(session.id)">
-              <svg class="sidebar-item-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
               <span class="sidebar-item-title">{{ session.title }}</span>
             </button>
 

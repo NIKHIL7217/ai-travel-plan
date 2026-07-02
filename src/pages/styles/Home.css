@@ -41,7 +41,7 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 0 0 34px;
+  padding: 0 34px;
   background-size: cover;
   background-position: center;
   transition: background-image 700ms ease;
@@ -62,7 +62,7 @@
   z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 50px;
+  gap: 230px;
   align-items: center;
 }
 
@@ -167,7 +167,7 @@
 
 .hero-float-stage {
   position: relative;
-  min-height: 420px; /* was 460px */
+  min-height: 460px; /* was 460px */
 }
 
 .location-badge {
@@ -214,7 +214,7 @@
 
 .floating-destination-card {
   position: absolute;
-  width: min(250px, 68vw); /* was 270px, 72vw */
+  width: min(230px, 68vw); /* was 270px, 72vw */
   border-radius: 18px;
   overflow: hidden;
   cursor: pointer;
@@ -241,7 +241,8 @@
 }
 
 .float-2 {
-  right: 3%;
+  right: 5%;
+  z-index: 1;
   top: 20%;
   animation-delay: 0.9s;
 }

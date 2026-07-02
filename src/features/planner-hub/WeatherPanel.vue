@@ -92,7 +92,7 @@ watch(() => props.destination, loadWeather, { immediate: true });
   padding: 20px;
 }
 .wx-head h2 {
-  font-size: 1.3rem;
+  font-size: 3rem;
   margin: 0;
   color: #0f172a;
 }

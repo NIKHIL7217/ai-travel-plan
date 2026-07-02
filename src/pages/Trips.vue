@@ -146,7 +146,6 @@ onMounted(loadTripsExperience);
   <div class="trips-page container animate-fade-in" style="padding-top: 100px;">
     <section class="trips-hero">
       <div>
-        <span class="trips-badge">TRIPS EXPERIENCE</span>
         <h1>Your Entire Travel Story In One Place</h1>
         <p>Upcoming plans, completed journeys, offline readiness, memory timeline, and achievements now live in one immersive flow.</p>
       </div>
@@ -178,7 +177,7 @@ onMounted(loadTripsExperience);
 
     <template v-else>
       <section v-if="selectedSection === 'upcoming'" class="content-panel mt-6">
-        <article class="glass-card stream-panel">
+        <article class="stream-panel">
           <h3>Upcoming Trips</h3>
           <p class="panel-copy">Everything you are likely to travel soon.</p>
 

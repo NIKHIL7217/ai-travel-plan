@@ -104,7 +104,6 @@ watch(
 <template>
   <div class="documents-page container animate-fade-in" style="padding-top: 100px;">
     <div class="page-head">
-      <span class="docs-badge">DOCUMENT VAULT</span>
       <h1>Secure Travel Vault</h1>
       <p>Organize passport, visa, tickets, insurance, and emergency records with encryption metadata and offline readiness.</p>
     </div>
