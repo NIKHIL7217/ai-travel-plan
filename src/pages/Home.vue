@@ -53,6 +53,15 @@ const floatingDestinationCards = [
   }
 ];
 
+const quickAccessCards = [
+  { tab: "roadtrip", icon: "🚗", title: "Roadtrip", subtitle: "Route, fuel & live cost" },
+  { tab: "weather", icon: "🌤️", title: "Weather", subtitle: "Forecast for your trip" },
+  { tab: "bookings", icon: "🎫", title: "Bookings", subtitle: "Flights & stays" },
+  { tab: "community", icon: "💬", title: "Community", subtitle: "Reviews & tips" },
+  { tab: "trips", icon: "🧳", title: "Saved Trips", subtitle: "Your past plans" },
+  { tab: "documents", icon: "📄", title: "Documents", subtitle: "Visa & travel docs" }
+];
+
 const howItWorksSteps = [
   {
     id: "step-1",
@@ -441,6 +450,27 @@ onUnmounted(() => {
             </div>
           </article>
         </div>
+      </div>
+    </section>
+
+    <section class="container quick-access-section">
+      <div class="section-intro">
+        <h2>Everything in one place</h2>
+        <p>Jump straight into any section — sab kuch Planner ke andar hi.</p>
+      </div>
+      <div class="quick-access-grid">
+        <router-link
+          v-for="card in quickAccessCards"
+          :key="card.tab"
+          class="quick-access-card glass-card"
+          :to="{ path: '/planner', query: { tab: card.tab } }"
+        >
+          <span class="qa-icon">{{ card.icon }}</span>
+          <span class="qa-text">
+            <strong>{{ card.title }}</strong>
+            <small>{{ card.subtitle }}</small>
+          </span>
+        </router-link>
       </div>
     </section>
 

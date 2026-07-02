@@ -5,12 +5,8 @@ const Home = () => import("../pages/Home.vue");
 const Destination = () => import("../pages/Destination.vue");
 const DestinationDetails = () => import("../pages/DestinationDetails.vue");
 const Planner = () => import("../pages/Planner.vue");
-const Trips = () => import("../pages/Trips.vue");
-const RoadtripPlanner = () => import("../pages/RoadtripPlanner.vue");
-const Bookings = () => import("../pages/Bookings.vue");
 const NotFound = () => import("../pages/NotFound.vue");
 const Login = () => import("../pages/Login.vue");
-const Community = () => import("../pages/Community.vue");
 const GroupTravel = () => import("../pages/GroupTravel.vue");
 const Help = () => import("../pages/Help.vue");
 const Profile = () => import("../pages/Profile.vue");
@@ -51,21 +47,15 @@ const routes = [
   },
   {
     path: "/trips",
-    name: "Trips",
-    component: Trips,
-    meta: {
-      requiresAuth: true
-    }
+    redirect: { path: "/planner", query: { tab: "trips" } }
   },
   {
     path: "/roadtrips",
-    name: "RoadtripPlanner",
-    component: RoadtripPlanner
+    redirect: { path: "/planner", query: { tab: "roadtrip" } }
   },
   {
     path: "/bookings",
-    name: "Bookings",
-    component: Bookings
+    redirect: { path: "/planner", query: { tab: "bookings" } }
   },
   {
     path: "/login",
@@ -77,11 +67,7 @@ const routes = [
   },
   {
     path: "/community",
-    name: "Community",
-    component: Community,
-    meta: {
-      requiresAuth: true
-    }
+    redirect: { path: "/planner", query: { tab: "community" } }
   },
   {
     path: "/group-trips",
@@ -118,15 +104,15 @@ const routes = [
   },
   {
     path: "/saved-trips",
-    redirect: { path: "/trips", query: { section: "past" } }
+    redirect: { path: "/planner", query: { tab: "trips" } }
   },
   {
     path: "/travel-os",
-    redirect: { path: "/trips", query: { section: "offline" } }
+    redirect: { path: "/planner", query: { tab: "trips" } }
   },
   {
     path: "/documents",
-    redirect: { path: "/profile", query: { section: "vault" } }
+    redirect: { path: "/planner", query: { tab: "documents" } }
   },
   {
     path: "/help",

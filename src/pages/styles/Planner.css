@@ -410,6 +410,74 @@ body {
   position: relative;
 }
 
+/* HUB TABS (embedded pages inside planner) */
+.hub-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #e2e8f0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hub-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.hub-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-tab:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.hub-tab.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.hub-ic {
+  font-size: 15px;
+}
+
+.hub-panel {
+  min-height: calc(100vh - 200px);
+}
+
+@media (max-width: 640px) {
+  .hub-lbl {
+    display: none;
+  }
+
+  .hub-tab {
+    padding: 8px 12px;
+  }
+
+  .hub-ic {
+    font-size: 17px;
+  }
+}
+
 /* CHAT SIDEBAR (previous chats) */
 .chat-sidebar {
   width: 240px;
@@ -690,6 +758,54 @@ body {
   color: #4f46e5;
 }
 
+/* Hub navigation inside the drawer (mobile only) */
+.sidebar-hub-nav {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hub-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hub-nav-item:hover {
+  background: #f1f5f9;
+}
+
+.hub-nav-item.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.hub-nav-ic {
+  font-size: 16px;
+}
+
+.mobile-drawer-btn {
+  display: none;
+}
+
+.sidebar-scrim {
+  display: none;
+}
+
 /* CHAT EMPTY STATE (left panel) */
 .chat-empty-state {
   margin: auto;
@@ -862,8 +978,96 @@ body {
 }
 
 @media (max-width: 1024px) {
-  .chat-sidebar {
+  /* Stack the workspace so the chat panel and the hub content each get the
+     full width instead of being squeezed side-by-side. */
+  .main-workspace {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .left_panel {
+    width: 100%;
+    height: auto;
+    min-height: calc(100vh - 70px);
+    border-right: none;
+  }
+
+  .content-area {
+    width: 100%;
+  }
+
+  /* When a hub section (Roadtrip, Weather, etc.) is open, show it full-screen
+     and hide the chat panel; "Plan" tab brings the chat back. */
+  .main-workspace.hub-active .left_panel {
     display: none;
+  }
+
+  /* On the Plan tab the chat already shows an empty state, so hide the
+     duplicate empty hero; the generated itinerary still shows below the chat. */
+  .main-workspace:not(.hub-active) .planner-empty {
+    display: none;
+  }
+
+  /* Chat sidebar becomes a slide-in drawer that holds the hub navigation
+     and previous chats, toggled by the header button. */
+  .chat-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 240px;
+    max-width: 82vw;
+    z-index: 1200;
+    transform: translateX(0);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
+    padding-top: 16px;
+  }
+
+  .chat-sidebar.collapsed {
+    width: 240px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-right: 1px solid #e2e8f0;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-100%);
+  }
+
+  .sidebar-hub-nav {
+    display: flex;
+  }
+
+  .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  /* Hub tabs live in the drawer on mobile, so hide the top bar. */
+  .hub-tabs {
+    display: none;
+  }
+
+  /* Floating button to reopen the drawer while a hub section is full-screen. */
+  .mobile-drawer-btn {
+    display: flex;
+    position: fixed;
+    top: 78px;
+    left: 12px;
+    z-index: 1050;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #4f46e5;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+    cursor: pointer;
   }
 
   .suggestion-grid {
