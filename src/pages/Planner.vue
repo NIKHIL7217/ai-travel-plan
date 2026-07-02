@@ -229,7 +229,6 @@
               </div>
               <div class="hero-actions">
                 <button class="btn btn-outline-light" @click="handleEditPlan">Edit</button>
-                <button class="btn btn-outline-light" :disabled="isGenerating" @click="handleRegeneratePlan">{{ isGenerating ? "Generating…" : "Regenerate" }}</button>
                 <button class="btn btn-outline-light" @click="router.push('/bookings')">Book</button>
               </div>
             </div>
@@ -238,13 +237,71 @@
               <div class="stat-card" v-for="stat in stats" :key="stat.label">
                 <div class="stat-label">{{ stat.label }}</div>
                 <div class="stat-value" :class="stat.valueClass">{{ stat.value }}</div>
-                <div class="stat-subtext" :class="stat.subtextClass">{{ stat.subtext }}</div>
+                <div v-if="stat.subtext" class="stat-subtext" :class="stat.subtextClass">{{ stat.subtext }}</div>
               </div>
             </div>
           </div>
         </div>
 
         <div v-if="hubTab === 'plan' && hasPlan" class="main-tabs-container">
+          <div v-if="editDialogOpen" class="modal-overlay" @click.self="cancelEditDialog">
+            <div class="modal-card">
+              <div class="modal-header">
+                <div>
+                  <h2>Edit trip details</h2>
+                  <p>Update your itinerary inputs and regenerate the plan.</p>
+                </div>
+                <button class="btn-close-modal" @click="cancelEditDialog">✕</button>
+              </div>
+              <div class="modal-body">
+                <div class="modal-field-group">
+                  <label>Trip duration</label>
+                  <input type="number" min="1" v-model.number="editForm.duration" />
+                  <p v-if="editFormErrors.duration" class="field-error">{{ editFormErrors.duration }}</p>
+                </div>
+                <div class="modal-field-group">
+                  <label>Travelers</label>
+                  <input type="number" min="1" v-model.number="editForm.travelers" />
+                  <p v-if="editFormErrors.travelers" class="field-error">{{ editFormErrors.travelers }}</p>
+                </div>
+                <div class="modal-field-group budget-field">
+                  <label>Budget</label>
+                  <div class="budget-toggle-row">
+                    <label class="budget-toggle">
+                      <input type="checkbox" v-model="editForm.budgetEnabled" />
+                      <span>Specify a budget</span>
+                    </label>
+                  </div>
+                  <input
+                    type="range"
+                    min="4000"
+                    max="500000"
+                    step="1000"
+                    v-model.number="editForm.budget"
+                    :disabled="!editForm.budgetEnabled"
+                  />
+                  <div class="range-value">{{ editForm.budgetEnabled ? `₹${formatInr(editForm.budget)}` : "Budget not specified" }}</div>
+                  <p v-if="editFormErrors.budget" class="field-error">{{ editFormErrors.budget }}</p>
+                </div>
+                <div class="split-row">
+                  <div class="modal-field-group">
+                    <label>Start date</label>
+                    <input type="date" v-model="editForm.startDate" />
+                    <p v-if="editFormErrors.startDate" class="field-error">{{ editFormErrors.startDate }}</p>
+                  </div>
+                  <div class="modal-field-group">
+                    <label>End date</label>
+                    <input type="date" v-model="editForm.endDate" />
+                    <p v-if="editFormErrors.endDate" class="field-error">{{ editFormErrors.endDate }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-actions">
+                <button class="btn btn-outline" @click="cancelEditDialog">Cancel</button>
+                <button class="btn btn-primary" @click="applyEditDialog">Apply</button>
+              </div>
+            </div>
+          </div>
           <div class="main-tabs">
             <button class="tab-btn" :class="{ active: activeTab === 'itinerary' }" @click="handleTabClick('itinerary')">Itinerary</button>
             <button class="tab-btn" :class="{ active: activeTab === 'hotels' }" @click="handleTabClick('hotels')">Hotels</button>
@@ -282,6 +339,7 @@
                     <div class="t-time" :class="item.timeTone">{{ item.slot }} • {{ item.time }} <span v-if="item.aiPick" class="ai-pick">AI Pick</span></div>
                     <h3>{{ item.title }}</h3>
                     <p>{{ item.description }}</p>
+                    <p v-if="item.details" class="t-detail">{{ item.details }}</p>
                     <div class="t-tags">
                       <span class="t-tag" @click.stop="handleTimelineTagClick(item, 'duration', item.duration)">{{ item.duration }}</span>
                       <span class="t-tag" @click.stop="handleTimelineTagClick(item, 'cost', `₹${formatInr(item.cost)}`)">₹{{ formatInr(item.cost) }}</span>
@@ -400,6 +458,16 @@ const activeTab = ref("itinerary");
 const chatInput = ref("");
 const chatContainerRef = ref(null);
 const hasPlan = ref(false);
+const editDialogOpen = ref(false);
+const editForm = ref({
+  duration: 5,
+  travelers: 2,
+  budget: null,
+  startDate: "",
+  endDate: ""
+});
+const editFormErrors = ref({});
+const editFormSnapshot = ref(null);
 
 const hubTabs = [
   { key: "plan", label: "Plan", icon: "🧭" },
@@ -457,7 +525,11 @@ function createEmptyPlanner() {
     travelers: 2,
     updatedAt: "",
     weather: "",
-    score: ""
+    score: "",
+    budget: null,
+    budgetEnabled: false,
+    startDate: "",
+    endDate: ""
   };
 }
 
@@ -531,15 +603,24 @@ const budgetRows = computed(() => {
   ];
 });
 
-const stats = computed(() => [
-  { label: "Duration", value: `${dayPlans.value.length} Days`, valueClass: "text-dark", subtext: "4 Nights", subtextClass: "text-muted" },
-  { label: "Travelers", value: String(planner.value.travelers), valueClass: "text-dark", subtext: "Couple", subtextClass: "text-muted" },
-  { label: "Budget", value: "₹1.5L", valueClass: "text-green", subtext: "Per person", subtextClass: "text-muted" },
-  { label: "Est. Cost", value: `₹${formatInr(totalBudget.value)}`, valueClass: "text-orange", subtext: "Under budget", subtextClass: "text-green" },
-  { label: "Weather", value: planner.value.weather, valueClass: "text-dark", subtext: "Sunny", subtextClass: "text-muted" },
-  { label: "Trip Score", value: planner.value.score, valueClass: "text-purple", subtext: "Excellent", subtextClass: "text-muted" },
-  { label: "Dates", value: dayPlans.value[0]?.date || "", valueClass: "text-dark", subtext: `→ ${dayPlans.value[dayPlans.value.length - 1]?.date || ""}`, subtextClass: "text-muted" }
-]);
+const stats = computed(() => {
+  const nights = Math.max(dayPlans.value.length - 1, 0);
+  const travelerSubtitle = planner.value.travelers === 1 ? "Solo traveller" : planner.value.travelers === 2 ? "Couple" : "Group trip";
+  const budgetValue = planner.value.budgetEnabled && planner.value.budget ? `₹${formatInr(planner.value.budget)}` : "Budget not specified";
+  const budgetSubtext = planner.value.budgetEnabled ? "Per person" : "";
+  const startLabel = planner.value.startDate ? formatDateLabel(planner.value.startDate) : dayPlans.value[0]?.date || "";
+  const endLabel = planner.value.endDate ? formatDateLabel(planner.value.endDate) : dayPlans.value[dayPlans.value.length - 1]?.date || "";
+
+  return [
+    { label: "Duration", value: `${dayPlans.value.length} Days`, valueClass: "text-dark", subtext: `${nights} Nights`, subtextClass: "text-muted" },
+    { label: "Travelers", value: String(planner.value.travelers), valueClass: "text-dark", subtext: travelerSubtitle, subtextClass: "text-muted" },
+    { label: "Budget", value: budgetValue, valueClass: planner.value.budgetEnabled ? "text-green" : "text-muted", subtext: budgetSubtext, subtextClass: "text-muted" },
+    { label: "Est. Cost", value: `₹${formatInr(totalBudget.value)}`, valueClass: "text-orange", subtext: "Under budget", subtextClass: "text-green" },
+    { label: "Weather", value: planner.value.weather, valueClass: "text-dark", subtext: "Sunny", subtextClass: "text-muted" },
+    { label: "Trip Score", value: planner.value.score, valueClass: "text-purple", subtext: "Excellent", subtextClass: "text-muted" },
+    { label: "Dates", value: startLabel, valueClass: "text-dark", subtext: endLabel ? `→ ${endLabel}` : "", subtextClass: "text-muted" }
+  ];
+});
 
 function formatInr(value) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -572,12 +653,22 @@ const ITINERARY_SLOTS = [
 ];
 
 function buildDateMeta(offset) {
-  const date = new Date();
+  const baseDate = planner.value.startDate ? new Date(planner.value.startDate) : new Date();
+  const date = new Date(baseDate);
   date.setDate(date.getDate() + offset);
   return {
     short: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     label: date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
   };
+}
+
+function formatDateLabel(value) {
+  try {
+    const date = new Date(value);
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return value || "";
+  }
 }
 
 function deriveTitle(text, fallback) {
@@ -598,10 +689,27 @@ function mapPlanToDays(plan, perDayCost) {
       if (!text) {
         return null;
       }
-      const tags = [];
+
+      const transport = slot.key === "morning" ? "Local taxi or rental car"
+        : slot.key === "afternoon" ? "Metro, tram, or rideshare"
+        : "Walk or rideshare";
+      const durationLabel = slot.key === "evening" ? "2 hrs" : "3 hrs";
+      const primaryTag = slot.key === "morning" ? "Sightseeing"
+        : slot.key === "afternoon" ? "Local experience"
+        : "Evening plans";
+
+      const tags = [
+        { text: primaryTag, highlight: true },
+        { text: durationLabel, highlight: false }
+      ];
       if (slotIndex === 2 && dayData.foodRecommendation) {
-        tags.push({ text: dayData.foodRecommendation.split(/[(,]/)[0].slice(0, 24), highlight: true });
+        tags.push({ text: `Dinner: ${dayData.foodRecommendation.split(/[(,]/)[0]}`, highlight: true });
       }
+
+      const description = slot.key === "evening" && dayData.foodRecommendation
+        ? `${text} Finish the day with a local dinner recommendation: ${dayData.foodRecommendation}.`
+        : text;
+
       return {
         id: `d${index + 1}-${slotIndex}`,
         icon: slot.icon,
@@ -609,9 +717,10 @@ function mapPlanToDays(plan, perDayCost) {
         timeTone: slot.iconTone,
         slot: slot.slot,
         time: slot.time,
-        title: deriveTitle(text, `${slot.slot} plan`),
-        description: text,
-        duration: "2 hrs",
+        title: deriveTitle(description, `${slot.slot} plan`),
+        description,
+        details: `Suggested transport: ${transport}. Estimated visit duration: ${durationLabel}.`,
+        duration: durationLabel,
         cost: Math.round(perDayCost / 3),
         aiPick: slotIndex === 0,
         tags
@@ -689,7 +798,7 @@ function applyBudgetEstimate(budget, fallbackTotal) {
   }
 }
 
-async function generateRealPlan(query) {
+async function generateRealPlan(query, options = {}) {
   if (isGenerating.value) {
     return;
   }
@@ -705,11 +814,11 @@ async function generateRealPlan(query) {
 
     const hasNewDestination = Boolean(patch.destination);
     const destination = patch.destination || planner.value.destination || query;
-    const days = patch.days || dayPlans.value.length || 5;
-    const travelers = patch.travelers || planner.value.travelers || 2;
+    const days = options.days || patch.days || dayPlans.value.length || 5;
+    const travelers = options.travelers || patch.travelers || planner.value.travelers || 2;
     const style = patch.style || "Balanced";
     const travelMode = patch.travelMode || "Flight";
-    const budgetLimit = patch.maxBudget || 0;
+    const budgetLimit = options.budgetLimit || patch.maxBudget || 0;
     const stayPreference = patch.stayPreference || "mid-range";
     const foodPreference = patch.foodPreference || "mixed";
     const effectiveQuery = hasNewDestination ? query : `${destination} trip — ${query}`;
@@ -826,7 +935,78 @@ function applySuggestion(suggestion) {
 }
 
 function handleEditPlan() {
-  activeTab.value = "itinerary";
+  editDialogOpen.value = true;
+  editFormSnapshot.value = JSON.stringify(editForm.value);
+  editForm.value = {
+    duration: Math.max(dayPlans.value.length, 1),
+    travelers: planner.value.travelers || 2,
+    budgetEnabled: Boolean(planner.value.budgetEnabled),
+    budget: planner.value.budgetEnabled && planner.value.budget ? Number(planner.value.budget) : 4000,
+    startDate: planner.value.startDate || "",
+    endDate: planner.value.endDate || ""
+  };
+  editFormErrors.value = {};
+}
+
+function cancelEditDialog() {
+  if (editFormSnapshot.value) {
+    try {
+      editForm.value = JSON.parse(editFormSnapshot.value);
+    } catch {
+      // ignore parse failure
+    }
+  }
+  editDialogOpen.value = false;
+  editFormErrors.value = {};
+}
+
+function validateEditForm() {
+  const errors = {};
+  if (!editForm.value.duration || editForm.value.duration < 1) {
+    errors.duration = "Enter a valid trip duration.";
+  }
+  if (!editForm.value.travelers || editForm.value.travelers < 1) {
+    errors.travelers = "Enter the number of travelers.";
+  }
+  if (editForm.value.budgetEnabled) {
+    if (!editForm.value.budget || editForm.value.budget < 4000) {
+      errors.budget = "Choose a budget of at least ₹4,000.";
+    }
+  }
+  if (editForm.value.startDate && editForm.value.endDate) {
+    const start = new Date(editForm.value.startDate);
+    const end = new Date(editForm.value.endDate);
+    if (end < start) {
+      errors.endDate = "End date must be after start date.";
+    }
+  }
+  editFormErrors.value = errors;
+  return Object.keys(errors).length === 0;
+}
+
+async function applyEditDialog() {
+  if (!validateEditForm()) {
+    return;
+  }
+
+  planner.value.travelers = editForm.value.travelers;
+  planner.value.budgetEnabled = Boolean(editForm.value.budgetEnabled);
+  planner.value.budget = editForm.value.budgetEnabled ? editForm.value.budget : null;
+  planner.value.startDate = editForm.value.startDate || "";
+  planner.value.endDate = editForm.value.endDate || "";
+
+  editDialogOpen.value = false;
+
+  const budgetPhrase = planner.value.budgetEnabled ? ` with a budget of ₹${planner.value.budget}` : "";
+  const datesPhrase = planner.value.startDate && planner.value.endDate ? ` from ${planner.value.startDate} to ${planner.value.endDate}` : "";
+  const query = `Regenerate a ${editForm.value.duration}-day trip to ${planner.value.destination} for ${planner.value.travelers} travelers${budgetPhrase}${datesPhrase}.`;
+  await generateRealPlan(query, {
+    days: editForm.value.duration,
+    travelers: editForm.value.travelers,
+    budgetLimit: planner.value.budgetEnabled ? planner.value.budget : 0,
+    startDate: planner.value.startDate,
+    endDate: planner.value.endDate
+  });
 }
 
 function handleRegeneratePlan() {
