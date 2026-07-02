@@ -440,9 +440,8 @@ import {
 import { usePlannerSessionStore } from "../stores/plannerSession";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
-const RoadtripHubPanel = defineAsyncComponent(() => import("./RoadtripPlanner.vue"));
+const TravelPlanPanel = defineAsyncComponent(() => import("../features/planner-hub/TravelPlanPanel.vue"));
 const WeatherHubPanel = defineAsyncComponent(() => import("../features/planner-hub/WeatherPanel.vue"));
-const BookingsHubPanel = defineAsyncComponent(() => import("./Bookings.vue"));
 const CommunityHubPanel = defineAsyncComponent(() => import("./Community.vue"));
 const TripsHubPanel = defineAsyncComponent(() => import("./Trips.vue"));
 const DocumentsHubPanel = defineAsyncComponent(() => import("./Documents.vue"));
@@ -471,17 +470,15 @@ const editFormSnapshot = ref(null);
 
 const hubTabs = [
   { key: "plan", label: "Plan", icon: "🧭" },
-  { key: "roadtrip", label: "Roadtrip", icon: "🚗" },
+  { key: "travel-plan", label: "Travel Plan", icon: "🗺️" },
   { key: "weather", label: "Weather", icon: "🌤️" },
-  { key: "bookings", label: "Bookings", icon: "🎫" },
   { key: "community", label: "Community", icon: "💬" },
   { key: "trips", label: "Saved Trips", icon: "🧳" },
   { key: "documents", label: "Documents", icon: "📄" }
 ];
 const hubComponents = {
-  roadtrip: RoadtripHubPanel,
+  "travel-plan": TravelPlanPanel,
   weather: WeatherHubPanel,
-  bookings: BookingsHubPanel,
   community: CommunityHubPanel,
   trips: TripsHubPanel,
   documents: DocumentsHubPanel

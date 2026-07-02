@@ -26,6 +26,10 @@ const isAdminUser = computed(() => {
   const email = String(authStore.user?.email || "").toLowerCase();
   return email.includes("admin") || email.endsWith("@wanderai.local");
 });
+const profileEmoji = computed(() => {
+  if (!authStore.isAuthenticated) return "👤";
+  return isAdminUser.value ? "👨‍💼" : "👤";
+});
 const geoLabel = computed(() => {
   if (geoLoading.value) return "Detecting";
   if (!userLocation.value?.loaded) return "Unknown";
@@ -186,7 +190,6 @@ onBeforeUnmount(() => {
         <nav class="nav-links-desktop">
           <RouterLink to="/" class="nav-link" active-class="active">Explore</RouterLink>
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
-          <RouterLink v-if="!authStore.isAuthenticated" to="/login" class="nav-link" active-class="active">Profile</RouterLink>
         </nav>
 
         <div class="nav-right-cluster">
@@ -208,7 +211,7 @@ onBeforeUnmount(() => {
               :title="authStore.isAuthenticated ? `${profileName} (Profile)` : 'Login / Signup'"
               @click="toggleProfileMenu"
             >
-              <span class="avatar-txt">{{ authStore.userInitials }}</span>
+              <span class="avatar-txt">{{ profileEmoji }}</span>
             </button>
 
             <transition name="fade-route">
@@ -610,24 +613,54 @@ onBeforeUnmount(() => {
 }
 
 .profile-avatar-circle {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4), 0 2px 8px rgba(118, 75, 162, 0.25);
   cursor: pointer;
-  border: 2px solid white;
-  border-color: #ffffff;
+  border: 3px solid white;
+  border-color: rgba(255, 255, 255, 0.95);
   outline: none;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-avatar-circle::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--radius-full);
+  padding: 2px;
+  background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.profile-avatar-circle:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 28px rgba(102, 126, 234, 0.5), 0 4px 12px rgba(118, 75, 162, 0.35);
+}
+
+.profile-avatar-circle:hover::before {
+  opacity: 1;
+}
+
+.profile-avatar-circle:active {
+  transform: translateY(0) scale(1.02);
 }
 
 .avatar-txt {
-  color: white;
-  font-size: 0.82rem;
-  font-weight: 800;
+  font-size: 1.5rem;
+  line-height: 1;
+  user-select: none;
 }
 
 .nav-profile-wrap .profile-menu {

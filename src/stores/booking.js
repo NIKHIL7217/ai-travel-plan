@@ -49,6 +49,24 @@ export const useBookingStore = defineStore("booking", () => {
   const confirmedBookings = computed(() =>
     [...bookings.value].sort((a, b) => Number(b.bookedAt || 0) - Number(a.bookedAt || 0))
   );
+  const history = computed(() => {
+    // Flatten all booking items into a single history list
+    const allItems = [];
+    bookings.value.forEach(booking => {
+      if (booking.items && Array.isArray(booking.items)) {
+        booking.items.forEach(item => {
+          allItems.push({
+            ...item,
+            bookingId: booking.id,
+            reference: booking.reference,
+            bookedAt: booking.bookedAt,
+            status: booking.status
+          });
+        });
+      }
+    });
+    return allItems.sort((a, b) => Number(b.bookedAt || 0) - Number(a.bookedAt || 0));
+  });
 
   function persistCart() {
     safeWrite(CART_KEY, cart.value);
@@ -124,6 +142,20 @@ export const useBookingStore = defineStore("booking", () => {
     persistBookings();
   }
 
+  function removeFromHistory(itemId) {
+    // Remove specific item from booking history
+    bookings.value = bookings.value.map(booking => {
+      if (booking.items && Array.isArray(booking.items)) {
+        return {
+          ...booking,
+          items: booking.items.filter(item => item.id !== itemId)
+        };
+      }
+      return booking;
+    }).filter(booking => !booking.items || booking.items.length > 0);
+    persistBookings();
+  }
+
   return {
     cart,
     bookings,
@@ -131,11 +163,13 @@ export const useBookingStore = defineStore("booking", () => {
     cartCount,
     cartTotal,
     confirmedBookings,
+    history,
     isInCart,
     addToCart,
     removeFromCart,
     clearCart,
     checkout,
-    cancelBooking
+    cancelBooking,
+    removeFromHistory
   };
 });

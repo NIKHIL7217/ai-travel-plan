@@ -51,11 +51,15 @@ const routes = [
   },
   {
     path: "/roadtrips",
-    redirect: { path: "/planner", query: { tab: "roadtrip" } }
+    redirect: { path: "/planner", query: { tab: "travel-plan" } }
   },
   {
     path: "/bookings",
-    redirect: { path: "/planner", query: { tab: "bookings" } }
+    redirect: { path: "/planner", query: { tab: "travel-plan" } }
+  },
+  {
+    path: "/stay",
+    redirect: { path: "/planner", query: { tab: "travel-plan" } }
   },
   {
     path: "/login",

@@ -5,15 +5,14 @@ import { useRouter } from "vue-router";
 import { formatPrice, initUserCurrency } from "../services/currency";
 import { detectUserLocation, userLocation } from "../services/location";
 import { getFriendlyErrorMessage } from "../core/errors";
-import { getDynamicTrendingData } from "../modules/trending/engine";
+import { fetchUnifiedDiscoveryData } from "../services/ai/unified-discovery.service";
 
 const router = useRouter();
 
 const searchQuery = ref("");
 const loading = ref(true);
 const loadingError = ref("");
-const trendingCategories = ref([]);
-const liveDestinations = ref([]);
+const unifiedData = ref(null); // Single source of truth for all destination data
 const locationLabel = ref("your region");
 
 const quickPrompts = [
@@ -32,7 +31,8 @@ const heroStats = [
   { id: "stories", label: "Traveler Stories", value: "9.4K" }
 ];
 
-const floatingDestinationCards = [
+// Default fallback floating cards (shown during loading or if location data fails)
+const defaultFloatingCards = [
   {
     id: "float-bali",
     title: "Bali",
@@ -53,10 +53,12 @@ const floatingDestinationCards = [
   }
 ];
 
+// Dynamic floating cards based on user location
+const floatingDestinationCards = ref([...defaultFloatingCards]);
+
 const quickAccessCards = [
-  { tab: "roadtrip", icon: "🚗", title: "Roadtrip", subtitle: "Route, fuel & live cost" },
+  { tab: "travel-plan", icon: "🗺️", title: "Travel Plan", subtitle: "Bookings, roadtrips & stays" },
   { tab: "weather", icon: "🌤️", title: "Weather", subtitle: "Forecast for your trip" },
-  { tab: "bookings", icon: "🎫", title: "Bookings", subtitle: "Flights & stays" },
   { tab: "community", icon: "💬", title: "Community", subtitle: "Reviews & tips" },
   { tab: "trips", icon: "🧳", title: "Saved Trips", subtitle: "Your past plans" },
   { tab: "documents", icon: "📄", title: "Documents", subtitle: "Visa & travel docs" }
@@ -273,22 +275,15 @@ const heroBackgroundStyle = computed(() => {
   };
 });
 
+// NEW: All destination data comes from unified source
 const destinationPool = computed(() => {
-  const trendItems = (trendingCategories.value || []).flatMap((category) => category.items || []);
-  const merged = [...trendItems, ...liveDestinations.value];
-  const seen = new Set();
-
-  return merged
+  if (!unifiedData.value || !unifiedData.value.allDestinations) {
+    return fallbackPool.value;
+  }
+  
+  return unifiedData.value.allDestinations
     .map((item, index) => toCard(item, index))
-    .filter((item) => {
-      const key = `${item.id}-${item.name}`;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 56);
+    .slice(0, 60);
 });
 
 const fallbackPool = computed(() => {
@@ -305,36 +300,106 @@ const fallbackPool = computed(() => {
 
 const sourcePool = computed(() => (destinationPool.value.length ? destinationPool.value : fallbackPool.value));
 
+// NEW: Premium travel feed - location-based categorized collections
 const discoveryCollections = computed(() => {
-  const source = sourcePool.value;
-  const windows = [
-    source.slice(0, 10),
-    source.slice(5, 15),
-    source.slice(10, 20),
-    source.slice(15, 25),
-    source.slice(20, 30),
-    source.slice(25, 35)
-  ];
+  if (!unifiedData.value) {
+    // Fallback: use sourcePool with simple slicing
+    const source = sourcePool.value;
+    const windows = [
+      source.slice(0, 10),
+      source.slice(5, 15),
+      source.slice(10, 20),
+      source.slice(15, 25),
+      source.slice(20, 30),
+      source.slice(25, 35)
+    ];
+    return collectionConfig.map((config, index) => ({
+      ...config,
+      items: windows[index].length ? windows[index] : source.slice(0, 10)
+    }));
+  }
 
-  return collectionConfig.map((config, index) => ({
-    ...config,
-    items: windows[index].length ? windows[index] : source.slice(0, 10)
-  }));
+  // NEW: Use smart categorized data from unified service
+  return [
+    {
+      id: "trending",
+      title: "Trending Now",
+      subtitle: `Popular picks near ${locationLabel.value}`,
+      cta: "/destination",
+      items: (unifiedData.value.trending || []).map(toCard).slice(0, 10)
+    },
+    {
+      id: "weekend",
+      title: "Weekend Escapes",
+      subtitle: "Quick getaways from your location",
+      cta: "/destination",
+      items: (unifiedData.value.weekend || []).map(toCard).slice(0, 10)
+    },
+    {
+      id: "luxury",
+      title: "Luxury Experiences",
+      subtitle: "Premium curated moments",
+      cta: "/destination",
+      items: (unifiedData.value.luxury || []).map(toCard).slice(0, 10)
+    },
+    {
+      id: "nearby",
+      title: "Nearby Destinations",
+      subtitle: "Closest travel spots",
+      cta: "/destination",
+      items: (unifiedData.value.nearby || []).map(toCard).slice(0, 10)
+    },
+    {
+      id: "budget",
+      title: "Budget Friendly",
+      subtitle: "Value-smart travel picks",
+      cta: "/planner",
+      items: (unifiedData.value.budget || []).map(toCard).slice(0, 10)
+    },
+    {
+      id: "hidden",
+      title: "Hidden Gems",
+      subtitle: "Offbeat local discoveries",
+      cta: "/community",
+      items: (unifiedData.value.hidden || []).map(toCard).slice(0, 10)
+    }
+  ].filter(collection => collection.items.length > 0);
 });
 
+// NEW: Memory and destination feed - smart mix
 const galleryItems = computed(() => {
-  const source = sourcePool.value;
-  const selected = source.slice(0, 12);
-  if (selected.length >= 12) {
-    return selected;
+  if (!unifiedData.value) {
+    const source = sourcePool.value;
+    const selected = source.slice(0, 12);
+    if (selected.length >= 12) {
+      return selected;
+    }
+    const fill = [];
+    for (let i = 0; i < 12 - selected.length; i += 1) {
+      fill.push(source[i % source.length]);
+    }
+    return [...selected, ...fill].slice(0, 12);
   }
 
-  const fill = [];
-  for (let i = 0; i < 12 - selected.length; i += 1) {
-    fill.push(source[i % source.length]);
+  // NEW: Smart mix from different categories for visual variety
+  const nearby = (unifiedData.value.nearby || []).slice(0, 3);
+  const trending = (unifiedData.value.trending || []).slice(0, 3);
+  const seasonal = (unifiedData.value.seasonal || []).slice(0, 3);
+  const hidden = (unifiedData.value.hidden || []).slice(0, 3);
+  
+  const mixed = [...nearby, ...trending, ...seasonal, ...hidden]
+    .map(toCard)
+    .slice(0, 12);
+  
+  // Fill if needed
+  if (mixed.length < 12 && unifiedData.value.allDestinations) {
+    const remaining = unifiedData.value.allDestinations
+      .slice(0, 12 - mixed.length)
+      .map(toCard);
+    return [...mixed, ...remaining].slice(0, 12);
   }
-
-  return [...selected, ...fill].slice(0, 12);
+  
+  return mixed;
 });
 
 function handleSearch() {
@@ -377,8 +442,7 @@ onMounted(async () => {
   heroIntervalId = window.setInterval(rotateHeroVisual, 6800);
 
   try {
-    const { generateDestinationSuggestions, resolveDestinationPhoto } = await loadAiServices();
-
+    // Step 1: Detect user location
     await detectUserLocation();
     initUserCurrency(userLocation.value).catch(() => {
       // Currency inference is non-blocking for first paint.
@@ -386,31 +450,78 @@ onMounted(async () => {
 
     locationLabel.value = userLocation.value?.city || userLocation.value?.country || "your region";
 
-    const [trendingResult, destinationResult] = await Promise.allSettled([
-      getDynamicTrendingData(userLocation.value),
-      generateDestinationSuggestions(`top destinations for travelers from ${locationLabel.value}`)
-    ]);
+    // Step 2: Fetch ALL data in ONE unified API call (with automatic fallback)
+    console.log(`🚀 Fetching unified discovery data for ${locationLabel.value}...`);
+    const data = await fetchUnifiedDiscoveryData(userLocation.value);
+    unifiedData.value = data;
 
-    trendingCategories.value = trendingResult.status === "fulfilled" ? trendingResult.value : [];
-    liveDestinations.value = destinationResult.status === "fulfilled" ? destinationResult.value : [];
+    console.log(`✅ Unified data loaded: ${data.allDestinations.length} destinations`);
 
-    const photos = await Promise.allSettled(
-      liveDestinations.value.slice(0, 24).map((item) => resolveDestinationPhoto(item.name || "travel"))
-    );
-
-    liveDestinations.value = liveDestinations.value.map((item, index) => {
-      const image = photos[index]?.status === "fulfilled" ? photos[index].value : item.image;
-      return {
-        ...item,
-        image: image || item.image
-      };
-    });
+    // Step 3: Update floating cards with nearby destinations
+    updateFloatingCards();
   } catch (error) {
     loadingError.value = getFriendlyErrorMessage(error, "Unable to load travel inspiration right now.");
+    console.error("Home page data loading error:", error);
   } finally {
     loading.value = false;
   }
 });
+
+function updateFloatingCards() {
+  if (!unifiedData.value) {
+    return; // Keep default cards
+  }
+
+  // Priority 1: Use nearby destinations
+  let topDestinations = [...(unifiedData.value.nearby || [])];
+  
+  // Priority 2: Add weekend escapes if needed
+  if (topDestinations.length < 3) {
+    topDestinations.push(...(unifiedData.value.weekend || []));
+  }
+  
+  // Priority 3: Add trending if still needed
+  if (topDestinations.length < 3) {
+    topDestinations.push(...(unifiedData.value.trending || []));
+  }
+  
+  // If we have enough location-based destinations, use top 3
+  if (topDestinations.length >= 3) {
+    const topThree = topDestinations.slice(0, 3);
+    floatingDestinationCards.value = topThree.map((dest, index) => ({
+      id: `float-${dest.id || dest.name.toLowerCase().replace(/\s+/g, '-')}-${index}`,
+      title: dest.name || dest.title || `Destination ${index + 1}`,
+      meta: getDestinationMeta(dest, index),
+      image: dest.image || defaultFloatingCards[index]?.image || heroVisuals[index % heroVisuals.length]
+    }));
+    
+    console.log(`🎯 Floating cards updated with location-based destinations: ${floatingDestinationCards.value.map(c => c.title).join(', ')}`);
+  }
+}
+
+function getDestinationMeta(dest, index) {
+  // Generate contextual meta text based on destination data
+  if (dest.distanceKm && dest.distanceKm > 0) {
+    if (dest.distanceKm < 300) {
+      return "Nearby getaway";
+    } else if (dest.distanceKm < 800) {
+      return "Weekend escape";
+    } else {
+      return "Explore beyond";
+    }
+  }
+  
+  // Fallback to budget-based or generic meta
+  if (dest.startingBudget && dest.startingBudget < 20000) {
+    return "Budget friendly";
+  } else if (dest.startingBudget && dest.startingBudget > 100000) {
+    return "Luxury experience";
+  }
+  
+  // Generic fallback based on position
+  const metaOptions = ["Hidden gem", "Trending now", "Local favorite", "Must visit"];
+  return metaOptions[index % metaOptions.length];
+}
 
 onUnmounted(() => {
   if (heroIntervalId) {
@@ -436,9 +547,13 @@ onUnmounted(() => {
         </div>
 
         <div class="hero-float-stage">
+          <div v-if="locationLabel" class="location-badge">
+            <span class="location-icon">📍</span>
+            <span class="location-text">Top picks near {{ locationLabel }}</span>
+          </div>
           <article
             v-for="(card, index) in floatingDestinationCards"
-            :key="card.id"
+            :key="`${card.id}-${index}`"
             class="floating-destination-card glass-card"
             :class="`float-${index + 1 }`"
             @click="openPlanner(card.title)"
