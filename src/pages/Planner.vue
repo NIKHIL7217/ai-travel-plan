@@ -1,11 +1,28 @@
 <template>
   <div class="planner-layout">
-    <div class="main-workspace">
+    <div class="main-workspace" :class="{ 'hub-active': hubTab !== 'plan' }">
+      <button v-if="hubTab !== 'plan' && !sidebarOpen" class="mobile-drawer-btn" aria-label="Open menu" @click="toggleSidebar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+      </button>
       <aside class="chat-sidebar" :class="{ collapsed: !sidebarOpen }">
         <button class="new-chat-btn" @click="startNewChat">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           New chat
         </button>
+
+        <nav class="sidebar-hub-nav">
+          <button
+            v-for="tab in hubTabs"
+            :key="`hub-${tab.key}`"
+            class="hub-nav-item"
+            :class="{ active: hubTab === tab.key }"
+            @click="setHubTab(tab.key)"
+          >
+            <span class="hub-nav-ic">{{ tab.icon }}</span>
+            <span>{{ tab.label }}</span>
+          </button>
+        </nav>
+
         <div class="sidebar-label-row">
           <div class="sidebar-label">{{ showArchived ? "Archived chats" : "Previous chats" }}</div>
           <button
@@ -81,6 +98,7 @@
         </div>
         <div v-if="openMenuId" class="session-menu-backdrop" @click="closeSessionMenu"></div>
       </aside>
+      <div v-if="sidebarOpen" class="sidebar-scrim" @click="toggleSidebar"></div>
       <aside class="left_panel">
         <div class="left_panel-header">
           <div class="ai-icon">
@@ -156,7 +174,24 @@
       </aside>
 
       <main class="content-area">
-        <div v-if="!hasPlan" class="planner-empty">
+        <div class="hub-tabs">
+          <button
+            v-for="tab in hubTabs"
+            :key="tab.key"
+            class="hub-tab"
+            :class="{ active: hubTab === tab.key }"
+            @click="setHubTab(tab.key)"
+          >
+            <span class="hub-ic">{{ tab.icon }}</span>
+            <span class="hub-lbl">{{ tab.label }}</span>
+          </button>
+        </div>
+
+        <div v-if="hubTab !== 'plan'" class="hub-panel">
+          <component :is="activeHubComponent" v-bind="hubProps" />
+        </div>
+
+        <div v-if="hubTab === 'plan' && !hasPlan" class="planner-empty">
           <div class="planner-empty-inner">
             <div class="planner-empty-spark">
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>
@@ -180,7 +215,7 @@
           </div>
         </div>
 
-        <div v-if="hasPlan" class="hero-header">
+        <div v-if="hubTab === 'plan' && hasPlan" class="hero-header">
           <div class="hero-bg"></div>
           <div class="hero-content">
             <div class="hero-top">
@@ -209,7 +244,7 @@
           </div>
         </div>
 
-        <div v-if="hasPlan" class="main-tabs-container">
+        <div v-if="hubTab === 'plan' && hasPlan" class="main-tabs-container">
           <div class="main-tabs">
             <button class="tab-btn" :class="{ active: activeTab === 'itinerary' }" @click="handleTabClick('itinerary')">Itinerary</button>
             <button class="tab-btn" :class="{ active: activeTab === 'hotels' }" @click="handleTabClick('hotels')">Hotels</button>
@@ -336,8 +371,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   generateTravelPlan,
   generateBudgetEstimate,
@@ -347,7 +382,15 @@ import {
 import { usePlannerSessionStore } from "../stores/plannerSession";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
+const RoadtripHubPanel = defineAsyncComponent(() => import("./RoadtripPlanner.vue"));
+const WeatherHubPanel = defineAsyncComponent(() => import("../features/planner-hub/WeatherPanel.vue"));
+const BookingsHubPanel = defineAsyncComponent(() => import("./Bookings.vue"));
+const CommunityHubPanel = defineAsyncComponent(() => import("./Community.vue"));
+const TripsHubPanel = defineAsyncComponent(() => import("./Trips.vue"));
+const DocumentsHubPanel = defineAsyncComponent(() => import("./Documents.vue"));
+
 const router = useRouter();
+const route = useRoute();
 const plannerSession = usePlannerSessionStore();
 const isGenerating = ref(false);
 const mapPoints = ref([]);
@@ -357,6 +400,48 @@ const activeTab = ref("itinerary");
 const chatInput = ref("");
 const chatContainerRef = ref(null);
 const hasPlan = ref(false);
+
+const hubTabs = [
+  { key: "plan", label: "Plan", icon: "🧭" },
+  { key: "roadtrip", label: "Roadtrip", icon: "🚗" },
+  { key: "weather", label: "Weather", icon: "🌤️" },
+  { key: "bookings", label: "Bookings", icon: "🎫" },
+  { key: "community", label: "Community", icon: "💬" },
+  { key: "trips", label: "Saved Trips", icon: "🧳" },
+  { key: "documents", label: "Documents", icon: "📄" }
+];
+const hubComponents = {
+  roadtrip: RoadtripHubPanel,
+  weather: WeatherHubPanel,
+  bookings: BookingsHubPanel,
+  community: CommunityHubPanel,
+  trips: TripsHubPanel,
+  documents: DocumentsHubPanel
+};
+const hubTab = ref("plan");
+const activeHubComponent = computed(() => hubComponents[hubTab.value] || null);
+const hubProps = computed(() => (hubTab.value === "weather" ? { destination: planner.value.destination } : {}));
+
+function setHubTab(key) {
+  hubTab.value = key;
+  if (isMobileViewport()) {
+    sidebarOpen.value = false;
+  }
+}
+
+function isMobileViewport() {
+  return typeof window !== "undefined" && window.innerWidth <= 1024;
+}
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (typeof tab === "string" && (tab === "plan" || hubComponents[tab])) {
+      hubTab.value = tab;
+    }
+  },
+  { immediate: true }
+);
 
 const STORAGE_KEY = "planner.page.state.v2";
 
@@ -408,7 +493,7 @@ const chatMessages = ref([createGreetingMessage()]);
 const chatSessions = ref([]);
 const activeSessionId = ref(genId("session"));
 
-const sidebarOpen = ref(true);
+const sidebarOpen = ref(typeof window !== "undefined" ? window.innerWidth > 1024 : true);
 const openMenuId = ref(null);
 const renamingId = ref(null);
 const renameText = ref("");
@@ -1035,6 +1120,9 @@ function startNewChat() {
   activeSessionId.value = genId("session");
   resetWorkingState();
   scrollChatToBottom();
+  if (isMobileViewport()) {
+    sidebarOpen.value = false;
+  }
 }
 
 // Resets the working view to a blank chat WITHOUT persisting the current
@@ -1058,6 +1146,9 @@ function openChat(sessionId) {
   activeSessionId.value = sessionId;
   restoreState(session.state);
   scrollChatToBottom();
+  if (isMobileViewport()) {
+    sidebarOpen.value = false;
+  }
 }
 
 onMounted(() => {
@@ -1094,3 +1185,14 @@ watch(
 </script>
 
 <style scoped src="./styles/Planner.css"></style>
+
+<style>
+/* Neutralize embedded pages' full-page top padding when shown inside the
+   Planner hub panel so they fit the panel instead of the whole viewport. */
+.hub-panel .roadtrip-page,
+.hub-panel .container,
+.hub-panel [style*="padding-top: 100px"] {
+  padding-top: 20px !important;
+  min-height: auto;
+}
+</style>

@@ -186,11 +186,7 @@ onBeforeUnmount(() => {
         <nav class="nav-links-desktop">
           <RouterLink to="/" class="nav-link" active-class="active">Explore</RouterLink>
           <RouterLink to="/planner" class="nav-link" active-class="active">Planner</RouterLink>
-          <RouterLink to="/bookings" class="nav-link" active-class="active">Book</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="nav-link" active-class="active">Trips</RouterLink>
-          <RouterLink v-if="authStore.isAuthenticated" to="/community" class="nav-link" active-class="active">Community</RouterLink>
-          <!-- <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="nav-link" active-class="active">Profile</RouterLink> -->
-          <RouterLink v-else to="/login" class="nav-link" active-class="active">Profile</RouterLink>
+          <RouterLink v-if="!authStore.isAuthenticated" to="/login" class="nav-link" active-class="active">Profile</RouterLink>
         </nav>
 
         <div class="nav-right-cluster">
@@ -224,28 +220,8 @@ onBeforeUnmount(() => {
                   <RouterLink v-if="authStore.isAuthenticated" to="/profile" class="profile-action-link">
                     Open Profile
                   </RouterLink>
-                  <RouterLink v-if="authStore.isAuthenticated" to="/trips" class="profile-action-link">
-                    Trips Hub
-                  </RouterLink>
-                  <RouterLink
-                    v-if="authStore.isAuthenticated"
-                    to="/group-trips"
-                    class="profile-action-link"
-                  >
-                    Group Planning
-                  </RouterLink>
-                  <RouterLink v-if="authStore.isAuthenticated" to="/destination" class="profile-action-link">
-                    Destination Guides
-                  </RouterLink>
-                  <RouterLink
-                    v-if="authStore.isAuthenticated"
-                    to="/community"
-                    class="profile-action-link"
-                  >
-                    Community Feed
-                  </RouterLink>
-                  <RouterLink to="/roadtrips" class="profile-action-link">
-                    Roadtrip Mode
+                  <RouterLink to="/planner" class="profile-action-link">
+                    Trip Planner
                   </RouterLink>
                   <RouterLink to="/help" class="profile-action-link">
                     Help Center
@@ -348,18 +324,6 @@ onBeforeUnmount(() => {
       <RouterLink to="/planner" class="mobile-nav-link" active-class="active">
         <span class="mob-icon">🧠</span>
         <span class="mob-lbl">Planner</span>
-      </RouterLink>
-      <RouterLink to="/bookings" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🎟️</span>
-        <span class="mob-lbl">Book</span>
-      </RouterLink>
-      <RouterLink to="/trips" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🧳</span>
-        <span class="mob-lbl">Trips</span>
-      </RouterLink>
-      <RouterLink to="/community" class="mobile-nav-link" active-class="active">
-        <span class="mob-icon">🗣️</span>
-        <span class="mob-lbl">Community</span>
       </RouterLink>
       <RouterLink :to="mobileProfilePath" class="mobile-nav-link" active-class="active">
         <span class="mob-avatar">{{ authStore.userInitials }}</span>
@@ -830,7 +794,7 @@ onBeforeUnmount(() => {
   height: 74px;
   z-index: 1000;
   display: none;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   align-items: center;
   justify-items: center;
   border-top: 1px solid rgba(148, 163, 184, 0.3);
