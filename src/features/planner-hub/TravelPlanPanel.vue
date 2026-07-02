@@ -360,7 +360,7 @@ const currentFuelTypes = computed(() => {
 
       <!-- Flights -->
       <div v-if="bookingTab === 'flights'" class="booking-content">
-        <div class="search-card glass-card">
+        <div class="search-card">
           <h3>✈️ Search Flights</h3>
           <div class="form-grid">
             <div class="form-group">
@@ -883,6 +883,7 @@ const currentFuelTypes = computed(() => {
 /* Forms */
 .search-card {
   padding: 1.5rem;
+  color: black;
   margin-bottom: 2rem;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);

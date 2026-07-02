@@ -308,7 +308,6 @@ onMounted(async () => {
   <div class="community-page container animate-fade-in" style="padding-top: 100px;">
     <section class="community-hero glass-card">
       <div class="hero-main">
-        <span class="hero-badge">TRAVEL COMMUNITY</span>
         <h1>Community Intelligence Hub</h1>
         <p>Destination-first traveler insights: practical tips, trusted reviews, safety watch, and hidden local finds in one focused feed.</p>
         <div class="hero-stats-row">
@@ -356,7 +355,6 @@ onMounted(async () => {
         <article class="glass-card composer-card">
           <div class="composer-head">
             <div>
-              <span class="stream-label">Contribute</span>
               <h3>Share For {{ destinationInput || "This Destination" }}</h3>
               <p>Tip is for quick practical intel. Review is for full structured trip feedback.</p>
             </div>
@@ -440,7 +438,6 @@ onMounted(async () => {
 
         <article class="glass-card stream-head-card mt-4">
           <div>
-            <span class="stream-label">Live Stream</span>
             <h2>{{ destinationInput }} Feed</h2>
           </div>
           <div class="feed-switcher">
