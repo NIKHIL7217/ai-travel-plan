@@ -3,6 +3,8 @@ import { computed, reactive, ref, watch } from "vue";
 import { formatPrice } from "../../services/currency";
 import { useBookingStore } from "../../stores/booking";
 import { usePlannerSessionStore } from "../../stores/plannerSession";
+import { getFuelPriceInfo, getTollPricesForRoute } from "../../services/fuel-prices";
+import { userLocation } from "../../services/location";
 
 const props = defineProps({
   destination: { type: String, default: "" },
@@ -135,6 +137,16 @@ const roadtripForm = reactive({
   fuelType: "petrol",
   distance: 280
 });
+
+// Vehicle mileage settings
+const vehicleMileage = ref({
+  enabled: false,
+  mileage: 0
+});
+
+const showFuelPriceInfo = ref(false);
+const showTollBreakdown = ref(false);
+const detailedTollInfo = ref(null);
 
 const roadtripResults = ref(null);
 
@@ -282,20 +294,52 @@ function searchCabs() {
 }
 
 function calculateRoadtrip() {
-  const fuelEfficiency = roadtripForm.fuelType === "ev" ? 0 : roadtripForm.vehicle === "bike" ? 40 : 15;
-  const fuelPrice = roadtripForm.fuelType === "ev" ? 8 : roadtripForm.fuelType === "diesel" ? 95 : 105;
+  // Get real-time fuel price based on location
+  const fuelTypeMap = {
+    'petrol': 'Petrol',
+    'diesel': 'Diesel',
+    'cng': 'CNG',
+    'ev': 'Electric',
+    'hybrid': 'Petrol'  // Hybrid uses petrol price
+  };
   
-  const fuelNeeded = roadtripForm.fuelType === "ev" ? roadtripForm.distance * 0.15 : roadtripForm.distance / fuelEfficiency;
-  const fuelCost = fuelNeeded * fuelPrice;
+  const realFuelPrice = getFuelPriceInfo(fuelTypeMap[roadtripForm.fuelType] || 'Petrol').price;
+  
+  // Determine fuel efficiency (use custom mileage if enabled, else defaults)
+  let fuelEfficiency;
+  if (vehicleMileage.value.enabled && vehicleMileage.value.mileage > 0) {
+    fuelEfficiency = vehicleMileage.value.mileage;
+  } else {
+    // Default mileage values
+    if (roadtripForm.fuelType === "ev") {
+      fuelEfficiency = roadtripForm.vehicle === "bike" ? 8 : 6.5; // km per kWh
+    } else {
+      fuelEfficiency = roadtripForm.vehicle === "bike" ? 45 : roadtripForm.vehicle === "bus" ? 5 : 15; // km per L/kg
+    }
+  }
+  
+  const fuelNeeded = roadtripForm.fuelType === "ev" 
+    ? roadtripForm.distance / fuelEfficiency  // kWh needed
+    : roadtripForm.distance / fuelEfficiency; // L or kg needed
+    
+  const fuelCost = fuelNeeded * realFuelPrice;
+  
+  const tollEstimate = Math.round(roadtripForm.distance * (roadtripForm.vehicle === "bike" ? 0.35 : roadtripForm.vehicle === "bus" ? 1.55 : 1.2));
   
   roadtripResults.value = {
     distance: roadtripForm.distance,
     fuelNeeded: fuelNeeded.toFixed(2),
     fuelCost: Math.round(fuelCost),
-    fuelUnit: roadtripForm.fuelType === "ev" ? "kWh" : "L",
-    tollEstimate: Math.round(roadtripForm.distance * 0.5),
-    totalCost: Math.round(fuelCost + roadtripForm.distance * 0.5)
+    fuelPrice: realFuelPrice,
+    fuelUnit: roadtripForm.fuelType === "ev" ? "kWh" : roadtripForm.fuelType === "cng" ? "kg" : "L",
+    tollEstimate: tollEstimate,
+    totalCost: Math.round(fuelCost + tollEstimate),
+    isCustomMileage: vehicleMileage.value.enabled && vehicleMileage.value.mileage > 0,
+    location: userLocation.value.city + ", " + userLocation.value.state
   };
+  
+  // Fetch detailed toll info
+  fetchTollBreakdown();
 }
 
 function searchHotels() {
@@ -359,6 +403,31 @@ function removeFromHistory(id) {
 function onVehicleChange() {
   roadtripForm.vehicle = roadtripVehicle.value;
   roadtripForm.fuelType = "petrol";
+}
+
+async function fetchTollBreakdown() {
+  if (!roadtripResults.value) return;
+  
+  try {
+    detailedTollInfo.value = await getTollPricesForRoute({
+      distanceKm: roadtripForm.distance,
+      travelMode: roadtripForm.vehicle === "car" ? "Car" : roadtripForm.vehicle === "bike" ? "Bike" : "Bus",
+      routeName: `${roadtripForm.from} to ${roadtripForm.to}`
+    });
+  } catch (e) {
+    console.warn("Could not fetch toll breakdown", e);
+  }
+}
+
+function getCurrentFuelPriceInfo() {
+  const fuelTypeMap = {
+    'petrol': 'Petrol',
+    'diesel': 'Diesel',
+    'cng': 'CNG',
+    'ev': 'Electric',
+    'hybrid': 'Petrol'
+  };
+  return getFuelPriceInfo(fuelTypeMap[roadtripForm.fuelType] || 'Petrol');
 }
 
 const currentFuelTypes = computed(() => {
@@ -646,31 +715,113 @@ const currentFuelTypes = computed(() => {
             <input v-model.number="roadtripForm.distance" type="number" min="1" class="form-input" />
           </div>
         </div>
+
+        <!-- ✅ Feature #2: Vehicle Mileage Section -->
+        <div class="vehicle-mileage-section">
+          <div class="mileage-header">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="vehicleMileage.enabled" />
+              <span>Use my vehicle's actual average</span>
+            </label>
+            <small>Apni gaadi ka real average dalo for accurate fuel calculation</small>
+          </div>
+          <div v-if="vehicleMileage.enabled" class="mileage-input-row">
+            <label>
+              <span>Your {{ roadtripForm.fuelType === 'ev' ? 'Electric' : roadtripForm.fuelType.charAt(0).toUpperCase() + roadtripForm.fuelType.slice(1) }} mileage</span>
+              <div class="input-with-unit">
+                <input 
+                  class="form-input" 
+                  type="number" 
+                  min="1" 
+                  step="0.1" 
+                  :placeholder="roadtripForm.fuelType === 'ev' ? 'km per kWh' : (roadtripForm.fuelType === 'cng' ? 'km per kg' : 'km per liter')" 
+                  v-model.number="vehicleMileage.mileage" 
+                />
+                <span class="input-unit">{{ roadtripForm.fuelType === 'ev' ? 'km/kWh' : (roadtripForm.fuelType === 'cng' ? 'km/kg' : 'km/L') }}</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <button class="btn btn-primary" @click="calculateRoadtrip">Calculate Trip</button>
       </div>
 
       <div v-if="roadtripResults" class="results-stats glass-card">
         <h3>Trip Summary</h3>
+        
+        <!-- ✅ Feature #3: Location Badge -->
+        <div class="location-info">
+          <span class="location-badge">📍 Prices based on {{ roadtripResults.location }}</span>
+        </div>
+
         <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-label">Distance</div>
-            <div class="stat-value">{{ roadtripResults.distance }} km</div>
+          <!-- ✅ Feature #1: Enhanced Distance Display -->
+          <div class="stat-card distance-highlight">
+            <div class="stat-label">Total Distance</div>
+            <div class="stat-value-large">{{ roadtripResults.distance }} km</div>
+            <small class="stat-sub">Real distance A to B</small>
           </div>
+          
           <div class="stat-card">
-            <div class="stat-label">Fuel Needed</div>
+            <div class="stat-label">
+              Fuel Needed
+              <span v-if="roadtripResults.isCustomMileage" class="custom-badge">Your avg</span>
+            </div>
             <div class="stat-value">{{ roadtripResults.fuelNeeded }} {{ roadtripResults.fuelUnit }}</div>
           </div>
+          
+          <!-- ✅ Feature #4: Fuel Cost with Info Button -->
           <div class="stat-card">
-            <div class="stat-label">Fuel Cost</div>
+            <div class="stat-label">
+              Fuel Cost
+              <button 
+                type="button" 
+                class="info-btn-small" 
+                @mouseenter="showFuelPriceInfo = true"
+                @mouseleave="showFuelPriceInfo = false"
+                :title="'Real-time ' + roadtripForm.fuelType + ' price'"
+              >ⓘ</button>
+            </div>
             <div class="stat-value">{{ priceInr(roadtripResults.fuelCost) }}</div>
+            <div v-if="showFuelPriceInfo" class="price-info-popup">
+              <p><strong>{{ getCurrentFuelPriceInfo().formattedPrice }}</strong> in {{ getCurrentFuelPriceInfo().location }}</p>
+              <p class="price-note">Current real-time rate</p>
+            </div>
           </div>
+          
+          <!-- ✅ Feature #5: Toll with Breakdown -->
           <div class="stat-card">
-            <div class="stat-label">Toll (Est.)</div>
+            <div class="stat-label">
+              Toll (Est.)
+              <button 
+                type="button" 
+                class="info-btn-small" 
+                v-if="detailedTollInfo"
+                @mouseenter="showTollBreakdown = true"
+                @mouseleave="showTollBreakdown = false"
+                title="View toll breakdown"
+              >ⓘ</button>
+            </div>
             <div class="stat-value">{{ priceInr(roadtripResults.tollEstimate) }}</div>
           </div>
+          
+          <!-- ✅ Feature #6: Total Cost -->
           <div class="stat-card highlighted">
             <div class="stat-label">Total Cost</div>
             <div class="stat-value">{{ priceInr(roadtripResults.totalCost) }}</div>
+          </div>
+        </div>
+
+        <!-- Toll Breakdown Detail -->
+        <div v-if="detailedTollInfo && showTollBreakdown" class="toll-breakdown-card">
+          <h4>Toll Breakdown</h4>
+          <p><strong>{{ detailedTollInfo.tollPlazas }}</strong> toll plazas expected on this route</p>
+          <div class="toll-items">
+            <div v-for="(plaza, idx) in detailedTollInfo.breakdown" :key="idx" class="toll-item-row">
+              <span>{{ plaza.name }}</span>
+              <span>{{ plaza.location }}</span>
+              <strong>{{ priceInr(plaza.amount) }}</strong>
+            </div>
           </div>
         </div>
       </div>
@@ -1289,6 +1440,297 @@ const currentFuelTypes = computed(() => {
 
   .cart-summary .btn {
     width: 100%;
+  }
+}
+
+/* ========== NEW ROADTRIP FEATURES STYLES ========== */
+
+/* Vehicle Mileage Section */
+.vehicle-mileage-section {
+  background: rgba(224, 242, 254, 0.3);
+  border: 1px solid rgba(3, 105, 161, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.mileage-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.checkbox-label span {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mileage-header small {
+  font-size: 0.8rem;
+  color: #64748b;
+  padding-left: 26px;
+}
+
+.mileage-input-row {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.mileage-input-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mileage-input-row label span {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.input-with-unit {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-unit input {
+  flex: 1;
+  padding-right: 70px;
+}
+
+.input-unit {
+  position: absolute;
+  right: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  pointer-events: none;
+}
+
+/* Location Badge */
+.location-info {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.location-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(224, 242, 254, 0.6);
+  color: #0369a1;
+  font-weight: 600;
+}
+
+/* Enhanced Distance Display */
+.distance-highlight {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06)) !important;
+  border: 2px solid rgba(99, 102, 241, 0.25) !important;
+}
+
+.stat-value-large {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #6366f1;
+  margin-top: 0.25rem;
+}
+
+.stat-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+  display: block;
+}
+
+/* Custom Badge */
+.custom-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  margin-left: 4px;
+}
+
+/* Info Button */
+.info-btn-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.info-btn-small:hover {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #6366f1;
+  transform: scale(1.1);
+}
+
+/* Price Info Popup */
+.price-info-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.5rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.price-info-popup p {
+  margin: 0 0 0.5rem;
+}
+
+.price-info-popup p:last-child {
+  margin-bottom: 0;
+}
+
+.price-note {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* Toll Breakdown Card */
+.toll-breakdown-card {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.toll-breakdown-card h4 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.toll-breakdown-card p {
+  margin: 0 0 1rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.toll-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toll-item-row {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.85rem;
+}
+
+.toll-item-row span:nth-child(2) {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.toll-item-row strong {
+  text-align: right;
+  color: #0369a1;
+}
+
+/* Vehicle Selector */
+.vehicle-selector {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.vehicle-btn {
+  flex: 1;
+  padding: 0.75rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 600;
+}
+
+.vehicle-btn:hover {
+  border-color: #0ea5e9;
+}
+
+.vehicle-btn.active {
+  border-color: #0ea5e9;
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+/* Stat Card Relative Position for Popup */
+.stat-card {
+  position: relative;
+}
+
+@media (max-width: 640px) {
+  .toll-item-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  
+  .toll-item-row span:nth-child(2) {
+    order: 2;
+  }
+  
+  .toll-item-row strong {
+    order: 3;
+    text-align: left;
+  }
+  
+  .distance-highlight {
+    grid-column: 1 / -1;
+  }
+  
+  .stat-value-large {
+    font-size: 1.5rem;
   }
 }
 </style>

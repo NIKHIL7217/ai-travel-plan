@@ -12,7 +12,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const communityStore = useCommunityStore();
 
-const destinationInput = ref("Goa");
+const destinationInput = ref("");
 const feedTab = ref("posts");
 const composerMode = ref("tip");
 const postText = ref("");
@@ -300,7 +300,8 @@ onMounted(async () => {
   }
 
   communityStore.initForUser(authStore.user);
-  await loadCommunityData();
+  // Data will load only when user clicks "Refresh Feed" or enters a destination
+  loading.value = false;
 });
 </script>
 
@@ -333,10 +334,10 @@ onMounted(async () => {
 
       <div class="hero-controls">
         <label class="control-label" for="community-destination">Destination Focus</label>
-        <input id="community-destination" v-model="destinationInput" class="form-input" placeholder="Destination, e.g. Goa" />
+        <input id="community-destination" v-model="destinationInput" class="form-input" placeholder="Enter destination name to search..." />
         <div class="hero-actions">
-          <button type="button" class="btn btn-outline" :disabled="loading" @click="loadCommunityData">Refresh Feed</button>
-          <button type="button" class="btn btn-primary" @click="openPlanner">Plan This Place</button>
+          <button type="button" class="btn btn-outline" :disabled="loading || !destinationInput.trim()" @click="loadCommunityData">Search Community</button>
+          <button type="button" class="btn btn-primary" :disabled="!destinationInput.trim()" @click="openPlanner">Plan This Place</button>
         </div>
       </div>
     </section>
@@ -455,6 +456,10 @@ onMounted(async () => {
 
         <article v-if="loading" class="glass-card feed-placeholder mt-4">
           <p>Loading live community stream...</p>
+        </article>
+
+        <article v-else-if="!destinationInput.trim() && posts.length === 0 && reviews.length === 0" class="glass-card feed-placeholder mt-4">
+          <p>👆 Enter a destination above and click "Search Community" to view tips and reviews</p>
         </article>
 
         <template v-else>

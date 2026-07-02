@@ -5,6 +5,7 @@ const Home = () => import("../pages/Home.vue");
 const Destination = () => import("../pages/Destination.vue");
 const DestinationDetails = () => import("../pages/DestinationDetails.vue");
 const Planner = () => import("../pages/Planner.vue");
+const RoadtripPlanner = () => import("../pages/RoadtripPlanner.vue");
 const NotFound = () => import("../pages/NotFound.vue");
 const Login = () => import("../pages/Login.vue");
 const GroupTravel = () => import("../pages/GroupTravel.vue");
@@ -46,12 +47,20 @@ const routes = [
     }
   },
   {
+    path: "/roadtrip-planner",
+    name: "RoadtripPlanner",
+    component: RoadtripPlanner,
+    meta: {
+      hideFooter: false,
+    }
+  },
+  {
     path: "/trips",
     redirect: { path: "/planner", query: { tab: "trips" } }
   },
   {
     path: "/roadtrips",
-    redirect: { path: "/planner", query: { tab: "travel-plan" } }
+    redirect: "/roadtrip-planner"
   },
   {
     path: "/bookings",

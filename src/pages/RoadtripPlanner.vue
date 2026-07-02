@@ -6,7 +6,9 @@ import { usePlannerSessionStore } from "../stores/plannerSession";
 import { getSavedTripsFromDb } from "../services/firebase";
 import { generateRoadtripEngine, isRoadtripMode, estimateFuel, estimateToll, buildRouteStops } from "../modules/roadtrip";
 import { extractTripIntent } from "../services/gemini";
-import RoadtripIntelligencePanel from "../features/roadtrip/RoadtripIntelligencePanel.vue";
+import { getFuelPriceInfo, getTollPricesForRoute } from "../services/fuel-prices";
+import { userLocation, detectUserLocation } from "../services/location";
+// import RoadtripIntelligencePanel from "../features/roadtrip/RoadtripIntelligencePanel.vue";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
 const authStore = useAuthStore();
@@ -22,6 +24,15 @@ const controls = ref({
   days: 5,
   travelers: 2
 });
+
+// Vehicle mileage settings
+const vehicleMileage = ref({
+  enabled: false,
+  mileage: 0
+});
+
+const showFuelPriceInfo = ref(false);
+const detailedTollInfo = ref(null);
 
 const FUEL_BY_MODE = {
   Car: ["Petrol", "Diesel", "CNG", "Electric"],
@@ -44,9 +55,20 @@ const conditionLevel = computed(() => roadtrip.value?.roadConditions?.level || "
 const distanceKm = computed(() => Number(roadtrip.value?.mapTelemetry?.distanceKm || 0));
 const driveHours = computed(() => Number(roadtrip.value?.scenicRoutePlan?.driveHours || 0));
 
+// Custom mileage object to pass to estimateFuel
+const customMileageConfig = computed(() => {
+  if (vehicleMileage.value.enabled && vehicleMileage.value.mileage > 0) {
+    return {
+      fuelType: controls.value.fuelType,
+      mileage: Number(vehicleMileage.value.mileage)
+    };
+  }
+  return null;
+});
+
 const fuelEstimation = computed(() =>
   distanceKm.value
-    ? estimateFuel(distanceKm.value, controls.value.travelMode, conditionLevel.value, controls.value.travelers)
+    ? estimateFuel(distanceKm.value, controls.value.travelMode, conditionLevel.value, controls.value.travelers, customMileageConfig.value)
     : null
 );
 
@@ -58,6 +80,11 @@ const selectedFuelOption = computed(() => {
 const tollEstimation = computed(() =>
   distanceKm.value ? estimateToll(distanceKm.value, controls.value.travelMode, conditionLevel.value) : null
 );
+
+// Get real-time fuel price info
+const currentFuelPriceInfo = computed(() => {
+  return getFuelPriceInfo(controls.value.fuelType);
+});
 
 const allStops = computed(() => [
   ...routeStops.value.energyStops,
@@ -340,7 +367,23 @@ onMounted(async () => {
   await authStore.initAuth();
   offlineStore.initForUser(authStore.user?.uid || "guest");
   await loadRecentTrips();
+  // Detect user location for real-time fuel prices
+  await detectUserLocation({ allowGeolocationPrompt: false });
 });
+
+// Show detailed toll info
+async function showTollBreakdown() {
+  if (!roadtrip.value) return;
+  
+  const routeInfo = {
+    distanceKm: distanceKm.value,
+    travelMode: controls.value.travelMode,
+    routeName: `${roadtrip.value.origin} to ${roadtrip.value.destination}`
+  };
+  
+  detailedTollInfo.value = await getTollPricesForRoute(routeInfo);
+}
+
 </script>
 
 <template>
@@ -421,6 +464,33 @@ onMounted(async () => {
         </label>
       </div>
 
+      <!-- Vehicle Mileage/Average Section -->
+      <div class="vehicle-mileage-section mt-4">
+        <div class="mileage-header">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="vehicleMileage.enabled" />
+            <span>Use my vehicle's actual average</span>
+          </label>
+          <small>Apni gaadi ka real average dalo for accurate fuel calculation</small>
+        </div>
+        <div v-if="vehicleMileage.enabled" class="mileage-input-row">
+          <label>
+            <span>Your {{ controls.fuelType }} mileage</span>
+            <div class="input-with-unit">
+              <input 
+                class="form-input" 
+                type="number" 
+                min="1" 
+                step="0.1" 
+                :placeholder="isElectric ? 'km per kWh' : 'km per liter'" 
+                v-model.number="vehicleMileage.mileage" 
+              />
+              <span class="input-unit">{{ isElectric ? 'km/kWh' : (controls.fuelType === 'CNG' ? 'km/kg' : 'km/L') }}</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <div class="action-row mt-4">
         <button type="button" class="btn btn-primary" :disabled="loading || parsing" @click="applyPrompt">
           {{ parsing ? "Reading prompt…" : loading ? "Planning route…" : "Plan my trip" }}
@@ -449,7 +519,11 @@ onMounted(async () => {
           <InteractiveTripMap v-if="mapPoints.length" :points="mapPoints" :show-route="true" height="340px" class="roadtrip-map" />
 
           <div class="route-stats">
-            <div class="stat"><span>Distance</span><strong>{{ Math.round(distanceKm) }} km</strong></div>
+            <div class="stat stat-distance">
+              <span>Total Distance</span>
+              <strong class="distance-value">{{ Math.round(distanceKm) }} km</strong>
+              <small class="distance-sub">Real distance via {{ roadtrip.mapTelemetry.trafficLevel || 'normal' }} traffic</small>
+            </div>
             <div class="stat"><span>Drive time</span><strong>{{ driveHours.toFixed(1) }} hrs</strong></div>
             <div class="stat"><span>Road</span><strong class="capitalize">{{ conditionLevel }}</strong></div>
             <div class="stat"><span>Traffic</span><strong>{{ roadtrip.mapTelemetry.congestionPercent }}%</strong></div>
@@ -544,6 +618,7 @@ onMounted(async () => {
           <h3>Live trip cost</h3>
           <div class="cost-total">₹{{ formatMoney(totalTripCost) }}</div>
           <small class="cost-sub">{{ controls.travelMode }} · {{ controls.fuelType }} · {{ controls.travelers }} traveler(s)</small>
+          <small class="location-tag">📍 Prices based on {{ userLocation.city }}, {{ userLocation.state }}</small>
 
           <div class="fuel-picker mt-3">
             <span class="picker-label">{{ isElectric ? "Charging energy" : "Fuel type" }}</span>
@@ -560,13 +635,53 @@ onMounted(async () => {
           </div>
 
           <ul class="cost-breakdown mt-3">
-            <li>
-              <span>{{ isElectric ? "Charging" : "Fuel" }}<template v-if="selectedFuelOption"> ({{ selectedFuelOption.usage }} {{ selectedFuelOption.unit }})</template></span>
+            <li class="fuel-cost-row">
+              <span>
+                {{ isElectric ? "Charging" : "Fuel" }}
+                <template v-if="selectedFuelOption">
+                  ({{ selectedFuelOption.usage }} {{ selectedFuelOption.unit }})
+                  <span v-if="selectedFuelOption.isCustomMileage" class="custom-badge">Your avg</span>
+                </template>
+                <button 
+                  type="button" 
+                  class="info-btn" 
+                  @click="showFuelPriceInfo = !showFuelPriceInfo"
+                  :title="'Real-time ' + controls.fuelType + ' price'"
+                >ⓘ</button>
+              </span>
               <strong>₹{{ formatMoney(energyCost) }}</strong>
             </li>
-            <li><span>Tolls (est.)</span><strong>₹{{ formatMoney(tollCost) }}</strong></li>
+            <li v-if="showFuelPriceInfo" class="fuel-price-detail">
+              <div class="price-info-box">
+                <p><strong>{{ currentFuelPriceInfo.formattedPrice }}</strong> in {{ currentFuelPriceInfo.location }}</p>
+                <p class="price-note">Real-time price for {{ controls.fuelType }}</p>
+              </div>
+            </li>
+            <li class="toll-cost-row">
+              <span>
+                Tolls (est.)
+                <button 
+                  type="button" 
+                  class="info-btn" 
+                  @click="showTollBreakdown"
+                  title="View toll breakdown"
+                >ⓘ</button>
+              </span>
+              <strong>₹{{ formatMoney(tollCost) }}</strong>
+            </li>
+            <li v-if="detailedTollInfo" class="toll-detail">
+              <div class="toll-info-box">
+                <p><strong>{{ detailedTollInfo.tollPlazas }}</strong> toll plazas expected</p>
+                <div class="toll-breakdown">
+                  <div v-for="(plaza, idx) in detailedTollInfo.breakdown" :key="idx" class="toll-item">
+                    <span>{{ plaza.name }}</span>
+                    <strong>₹{{ formatMoney(plaza.amount) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </li>
             <li><span>Selected stops ({{ selectedStops.filter((s) => addCostForStop(s) > 0).length }})</span><strong>₹{{ formatMoney(stopsCost) }}</strong></li>
-            <li class="total-row"><span>Total</span><strong>₹{{ formatMoney(totalTripCost) }}</strong></li>
+            <li class="total-row"><span>Total Road Trip Cost</span><strong>₹{{ formatMoney(totalTripCost) }}</strong></li>
           </ul>
 
           <div class="side-actions mt-3">
@@ -594,7 +709,7 @@ onMounted(async () => {
       </aside>
     </div>
 
-    <RoadtripIntelligencePanel v-if="roadtrip" class="mt-6" :roadtrip="roadtrip" :loading="loading" />
+    <!-- <RoadtripIntelligencePanel v-if="roadtrip" class="mt-6" :roadtrip="roadtrip" :loading="loading" /> -->
   </div>
 </template>
 

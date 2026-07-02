@@ -1,5 +1,7 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { getFuelPriceInfo } from "../../services/fuel-prices";
+import { userLocation } from "../../services/location";
 import GlassPanel from "../../shared/ui/GlassPanel.vue";
 import RoadtripMiniMap from "./RoadtripMiniMap.vue";
 
@@ -13,6 +15,8 @@ const props = defineProps({
     default: false
   }
 });
+
+const showPriceDetails = ref({});
 
 const telemetry = computed(() => props.roadtrip?.mapTelemetry || {});
 const routePlan = computed(() => props.roadtrip?.scenicRoutePlan || {});
@@ -41,6 +45,14 @@ function mapsSearchUrl(query) {
   const text = String(query || "").trim();
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(text)}`;
 }
+
+function togglePriceDetails(fuelType) {
+  showPriceDetails.value[fuelType] = !showPriceDetails.value[fuelType];
+}
+
+function getPriceInfo(fuelType) {
+  return getFuelPriceInfo(fuelType);
+}
 </script>
 
 <template>
@@ -62,9 +74,10 @@ function mapsSearchUrl(query) {
       <RoadtripMiniMap :roadtrip="roadtrip" class="mt-3" />
 
       <div class="telemetry-grid">
-        <article>
-          <span>Distance</span>
-          <strong>{{ telemetry.distanceKm || 0 }} km</strong>
+        <article class="distance-highlight">
+          <span>Total Distance</span>
+          <strong class="distance-big">{{ telemetry.distanceKm || 0 }} km</strong>
+          <small>Real distance A to B</small>
         </article>
         <article>
           <span>Drive Hours</span>
@@ -82,19 +95,41 @@ function mapsSearchUrl(query) {
 
       <div class="section-grid">
         <article class="section-card">
-          <h4>Fuel And Toll Estimation</h4>
-          <p class="section-meta">Recommended fuel: {{ fuelData.recommended?.type || "-" }} ({{ formatMoney(fuelData.recommended?.totalCost) }})</p>
+          <h4>Fuel And Toll Estimates</h4>
+          <p>
+            Recommended fuel: {{ fuelData.recommended?.type || "-" }} ({{ formatMoney(fuelData.recommended?.totalCost) }})
+            <span class="location-badge">📍 {{ userLocation.city }}, {{ userLocation.state }}</span>
+          </p>
           <div class="fuel-list">
             <div v-for="fuel in fuelData.options || []" :key="fuel.type" class="fuel-item">
-              <span>{{ fuel.type }}</span>
-              <strong>{{ fuel.usage }} {{ fuel.unit }}</strong>
-              <small>{{ formatMoney(fuel.totalCost) }}</small>
+              <div class="fuel-row">
+                <span class="fuel-type">
+                  {{ fuel.type }}
+                  <button 
+                    type="button" 
+                    class="price-info-btn" 
+                    @click="togglePriceDetails(fuel.type)"
+                    :title="'Real-time ' + fuel.type + ' price'"
+                  >ⓘ</button>
+                </span>
+                <strong>{{ fuel.usage }} {{ fuel.unit }}</strong>
+                <small class="fuel-cost">{{ formatMoney(fuel.totalCost) }}</small>
+              </div>
+              <div v-if="showPriceDetails[fuel.type]" class="price-detail-box">
+                <p>
+                  <strong>{{ getPriceInfo(fuel.type).formattedPrice }}</strong> 
+                  in {{ getPriceInfo(fuel.type).location }}
+                </p>
+                <p class="price-note">Current real-time rate</p>
+              </div>
             </div>
           </div>
           <div class="toll-line">
             <span>Toll Estimate</span>
             <strong>{{ formatMoney(toll.estimated) }}</strong>
             <small>Range {{ formatMoney(toll.low) }} to {{ formatMoney(toll.high) }}</small>
+          </div>
+          <p class="toll-note">{{ toll.note }}</pall>Range {{ formatMoney(toll.low) }} to {{ formatMoney(toll.high) }}</small>
           </div>
         </article>
 
@@ -419,6 +454,123 @@ function mapsSearchUrl(query) {
 
   .fuel-list {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Enhanced Distance Display */
+.distance-highlight {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06)) !important;
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+.distance-big {
+  font-size: 1.5rem !important;
+  color: #6366f1 !important;
+  font-weight: 800 !important;
+}
+
+.distance-highlight small {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* Location Badge */
+.location-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(224, 242, 254, 0.6);
+  color: #0369a1;
+}
+
+/* Enhanced Fuel Item */
+.fuel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fuel-row {
+  display: grid;
+  gap: 4px;
+}
+
+.fuel-type {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.fuel-cost {
+  color: #0369a1 !important;
+  font-weight: 600 !important;
+}
+
+/* Price Info Button */
+.price-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--color-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.price-info-btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #6366f1;
+  transform: scale(1.1);
+}
+
+/* Price Detail Box */
+.price-detail-box {
+  background: rgba(241, 245, 249, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  margin-top: 4px;
+}
+
+.price-detail-box p {
+  margin: 0 0 4px;
+}
+
+.price-detail-box p:last-child {
+  margin-bottom: 0;
+}
+
+.price-note {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+/* Toll Note */
+.toll-note {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .distance-big {
+    font-size: 1.3rem !important;
   }
 }
 </style>

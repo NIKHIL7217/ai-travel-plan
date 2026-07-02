@@ -1,4 +1,5 @@
 import { ROAD_CONDITION_FACTORS, ROAD_PROFILE_BY_MODE } from "./constants";
+import { getFuelPrice } from "../../services/fuel-prices";
 
 function round(value) {
   return Math.round(Number(value || 0));
@@ -8,24 +9,35 @@ function toModeKey(mode = "Car") {
   return String(mode || "Car").trim().toLowerCase();
 }
 
-export function estimateFuel(distanceKm, travelMode = "Car", conditionLevel = "moderate", travelers = 1) {
+export function estimateFuel(distanceKm, travelMode = "Car", conditionLevel = "moderate", travelers = 1, customMileage = null) {
   const modeKey = toModeKey(travelMode);
   const profile = ROAD_PROFILE_BY_MODE[modeKey] || ROAD_PROFILE_BY_MODE.car;
   const condition = ROAD_CONDITION_FACTORS[conditionLevel] || ROAD_CONDITION_FACTORS.moderate;
   const travelerFactor = modeKey === "bus" ? 1 : Math.max(1, Number(travelers || 1) / 2);
 
   const options = profile.fuelProfiles.map((fuel) => {
-    const usage = (distanceKm / Math.max(0.1, fuel.mileagePerUnit)) * condition.fuelFactor * travelerFactor;
-    const totalCost = usage * fuel.unitPrice;
+    // Use custom mileage if provided and matches the fuel type
+    let mileage = fuel.mileagePerUnit;
+    if (customMileage && customMileage.fuelType === fuel.type && customMileage.mileage > 0) {
+      mileage = customMileage.mileage;
+    }
+    
+    // Get real-time fuel price
+    const realTimePrice = getFuelPrice(fuel.type);
+    
+    const usage = (distanceKm / Math.max(0.1, mileage)) * condition.fuelFactor * travelerFactor;
+    const totalCost = usage * realTimePrice;
 
     return {
       type: fuel.type,
       unit: fuel.unit,
-      mileagePerUnit: fuel.mileagePerUnit,
-      unitPrice: fuel.unitPrice,
+      mileagePerUnit: mileage,
+      defaultMileage: fuel.mileagePerUnit,
+      unitPrice: realTimePrice,
       usage: Number(usage.toFixed(1)),
       totalCost: round(totalCost),
-      rangePerChargeKm: fuel.rangePerChargeKm || null
+      rangePerChargeKm: fuel.rangePerChargeKm || null,
+      isCustomMileage: customMileage && customMileage.fuelType === fuel.type && customMileage.mileage > 0
     };
   });
 

@@ -1,175 +1,133 @@
 /**
- * Optional backend client.
- *
- * When VITE_API_BASE_URL is set, the app routes AI calls through the WanderAI
- * API server (admin-api-server) so the Gemini key stays server-side. When it is
- * not set, callers fall back to direct browser calls.
+ * Backend API client for admin server integration
  */
 
-export const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const ADMIN_API_URL = import.meta.env.VITE_ADMIN_API_URL || "http://localhost:3001/api";
 
 export function isBackendEnabled() {
-  return Boolean(API_BASE_URL);
+  return Boolean(import.meta.env.VITE_ADMIN_API_URL);
 }
 
-/**
- * Streams a chat reply from the backend SSE endpoint. Returns the full text, or
- * null if the backend is not enabled / fails so the caller can fall back.
- */
-export async function backendChatStream({ messages, system, signal, onToken }) {
+export async function backendSaveTrip(userId, tripData) {
   if (!isBackendEnabled()) {
     return null;
   }
 
-  let response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/ai/chat`, {
+    const response = await fetch(`${ADMIN_API_URL}/trips`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, system }),
-      signal
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ userId, ...tripData })
     });
-  } catch (_error) {
+
+    if (!response.ok) {
+      throw new Error(`Backend save failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.warn("Backend trip save failed:", error);
     return null;
   }
+}
 
-  if (!response.ok || !response.body) {
+export async function backendListTrips(userId) {
+  if (!isBackendEnabled()) {
     return null;
   }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let fullText = "";
 
   try {
-    for (;;) {
+    const response = await fetch(`${ADMIN_API_URL}/trips?userId=${userId}`);
+
+    if (!response.ok) {
+      throw new Error(`Backend list failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.warn("Backend trip list failed:", error);
+    return null;
+  }
+}
+
+export async function backendDeleteTrip(userId, tripId) {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_URL}/trips/${tripId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ userId })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend delete failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.warn("Backend trip delete failed:", error);
+    return null;
+  }
+}
+
+export async function* backendChatStream(messages, context = {}) {
+  if (!isBackendEnabled()) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${ADMIN_API_URL}/chat/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ messages, context })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Chat stream failed: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      return;
+    }
+
+    while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n').filter(line => line.trim());
 
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith("data:")) {
-          continue;
-        }
-        const jsonText = line.slice(5).trim();
-        if (!jsonText) {
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(jsonText);
-          if (parsed?.text) {
-            fullText += parsed.text;
-            onToken?.(parsed.text, fullText);
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            return;
           }
-        } catch (_error) {
-          // Ignore malformed partial chunk.
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.text) {
+              yield parsed.text;
+            }
+          } catch {
+            // Skip invalid JSON
+          }
         }
       }
     }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return fullText.trim() || null;
-}
-
-/**
- * Requests JSON/text generation from the backend. Returns the text, or null.
- */
-export async function backendGenerate({ prompt, json = true, signal }) {
-  if (!isBackendEnabled()) {
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/ai/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, json }),
-      signal
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return typeof data?.text === "string" ? data.text : null;
-  } catch (_error) {
-    return null;
+  } catch (error) {
+    console.warn("Backend chat stream failed:", error);
   }
 }
 
-/**
- * Saves a trip to the backend. Returns the stored record or null.
- */
-export async function backendSaveTrip(trip, userId = "guest") {
-  if (!isBackendEnabled()) {
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/trips`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        title: trip?.title || trip?.destination || "Saved Trip",
-        destination: trip?.destination || "",
-        data: trip
-      })
-    });
-    if (!response.ok) {
-      return null;
-    }
-    const json = await response.json();
-    return json?.trip || null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-/**
- * Lists trips for a user from the backend. Returns an array or null.
- */
-export async function backendListTrips(userId = "guest") {
-  if (!isBackendEnabled()) {
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/trips?userId=${encodeURIComponent(userId)}`);
-    if (!response.ok) {
-      return null;
-    }
-    const json = await response.json();
-    return Array.isArray(json?.trips) ? json.trips : null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-/**
- * Deletes a trip from the backend. Returns true on success.
- */
-export async function backendDeleteTrip(id) {
-  if (!isBackendEnabled()) {
-    return false;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/trips/${encodeURIComponent(id)}`, {
-      method: "DELETE"
-    });
-    return response.ok;
-  } catch (_error) {
-    return false;
-  }
-}
