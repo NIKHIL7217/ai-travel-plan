@@ -1,8 +1,16 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { formatPrice } from "../../services/currency";
 import { useBookingStore } from "../../stores/booking";
 import { usePlannerSessionStore } from "../../stores/plannerSession";
+
+const props = defineProps({
+  destination: { type: String, default: "" },
+  currentLocation: { type: String, default: "Delhi" },
+  travelers: { type: Number, default: 2 },
+  startDate: { type: String, default: "" },
+  endDate: { type: String, default: "" }
+});
 
 const bookingStore = useBookingStore();
 const plannerSession = usePlannerSessionStore();
@@ -29,35 +37,70 @@ const bookingTabs = [
 
 // Forms
 const flightForm = reactive({
-  from: plannerContext.value.origin && plannerContext.value.origin !== "Current Location" ? plannerContext.value.origin : "Delhi",
-  to: plannerContext.value.destination || "Mumbai",
-  date: "",
-  travelers: plannerContext.value.travelers || 1,
+  from: props.currentLocation || "Delhi",
+  to: props.destination || "Mumbai",
+  date: props.startDate || "",
+  travelers: props.travelers || 1,
   class: "economy"
 });
 
 const trainForm = reactive({
-  from: "Delhi",
-  to: "Mumbai",
-  date: "",
-  travelers: 1,
+  from: props.currentLocation || "Delhi",
+  to: props.destination || "Mumbai",
+  date: props.startDate || "",
+  travelers: props.travelers || 1,
   class: "sleeper"
 });
 
 const busForm = reactive({
-  from: "Delhi",
-  to: "Agra",
-  date: "",
-  travelers: 1,
+  from: props.currentLocation || "Delhi",
+  to: props.destination || "Agra",
+  date: props.startDate || "",
+  travelers: props.travelers || 1,
   busType: "ac-seater"
 });
 
 const cabForm = reactive({
   from: "Airport",
-  to: "City Center",
-  date: "",
+  to: props.destination || "City Center",
+  date: props.startDate || "",
   cabType: "sedan"
 });
+
+// Watch for prop changes and update forms
+watch(
+  () => [props.destination, props.currentLocation, props.travelers, props.startDate],
+  ([newDest, newLoc, newTravelers, newDate]) => {
+    if (newDest) {
+      flightForm.to = newDest;
+      trainForm.to = newDest;
+      busForm.to = newDest;
+      cabForm.to = newDest;
+      roadtripForm.to = newDest;
+      hotelForm.city = newDest;
+      restaurantForm.city = newDest;
+    }
+    if (newLoc) {
+      flightForm.from = newLoc;
+      trainForm.from = newLoc;
+      busForm.from = newLoc;
+      roadtripForm.from = newLoc;
+    }
+    if (newTravelers) {
+      flightForm.travelers = newTravelers;
+      trainForm.travelers = newTravelers;
+      busForm.travelers = newTravelers;
+      hotelForm.guests = newTravelers;
+    }
+    if (newDate) {
+      flightForm.date = newDate;
+      trainForm.date = newDate;
+      busForm.date = newDate;
+      cabForm.date = newDate;
+      hotelForm.checkIn = newDate;
+    }
+  }
+);
 
 const flightResults = ref([]);
 const trainResults = ref([]);
@@ -86,8 +129,8 @@ const bikeFuelTypes = [
 ];
 
 const roadtripForm = reactive({
-  from: "Delhi",
-  to: "Jaipur",
+  from: props.currentLocation || "Delhi",
+  to: props.destination || "Jaipur",
   vehicle: "car",
   fuelType: "petrol",
   distance: 280
@@ -103,15 +146,15 @@ const stayTabs = [
 ];
 
 const hotelForm = reactive({
-  city: plannerContext.value.destination || "Jaipur",
-  checkIn: "",
+  city: props.destination || "Jaipur",
+  checkIn: props.startDate || "",
   nights: 2,
   rooms: 1,
-  guests: 2
+  guests: props.travelers || 2
 });
 
 const restaurantForm = reactive({
-  city: "Jaipur",
+  city: props.destination || "Jaipur",
   cuisine: "all",
   priceRange: "medium"
 });
