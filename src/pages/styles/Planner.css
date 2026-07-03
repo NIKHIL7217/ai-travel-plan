@@ -225,7 +225,7 @@ body {
 .ai-avatar {
   width: 28px;
   height: 28px;
-  background: #6366f1;
+  background: #000000;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -531,7 +531,7 @@ body {
   right: 8px;
   width: 32px;
   height: 32px;
-  background: #6366f1;
+  background: #000000;
   color: white;
   border: none;
   border-radius: 50%;
