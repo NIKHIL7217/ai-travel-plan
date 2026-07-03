@@ -15,6 +15,7 @@
 .admin-head p {
   color: var(--color-text-secondary);
   max-width: 760px;
+  /* padding: 14px 16px; */
 }
 
 .admin-badge {
@@ -73,10 +74,12 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+
 }
 
 .metric {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  padding: 14px 16px
 }
 
 .metric span {
@@ -94,6 +97,7 @@
 .loading-card,
 .restricted-card {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
+  padding: 14px 16px;
 }
 
 .table {

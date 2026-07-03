@@ -189,7 +189,6 @@ onMounted(loadAdminData);
 <template>
   <div class="admin-page container animate-fade-in" style="padding-top: 100px;">
     <div class="admin-head">
-      <span class="admin-badge">SAAS ADMIN</span>
       <h1>WanderAI Ops Console</h1>
       <p>Operate users, destinations, moderation, analytics, and AI health from one premium control surface.</p>
     </div>

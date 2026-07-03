@@ -87,6 +87,7 @@
 .kpi {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
   border: 1px solid rgba(148, 163, 184, 0.28);
+  padding: 14px 16px;
 }
 
 .kpi span {
@@ -116,6 +117,7 @@
 .error-panel {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.9));
   border: 1px solid rgba(148, 163, 184, 0.28);
+  padding: 14px 16px;
 }
 
 .card-head {

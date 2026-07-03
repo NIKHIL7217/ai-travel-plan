@@ -17,6 +17,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 100vh;
   padding-top: 70px;
   overflow: hidden;
   background-color: #f8fafc;
@@ -132,12 +133,14 @@ body {
 .main-workspace {
   display: flex;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 
 /* left_panel */
 .left_panel {
   width: 380px;
+  min-width: 0;
   background: #f8fafc;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -351,6 +354,7 @@ body {
   inset: 0;
   z-index: 2100;
   background-color: rgba(15, 23, 42, 0.6);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
@@ -544,6 +548,7 @@ body {
 /* MAIN CONTENT */
 .content-area {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   background: #f8fafc;
   position: relative;
@@ -562,7 +567,7 @@ body {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid #e2e8f0;
   overflow-x: auto;
-  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .hub-tabs::-webkit-scrollbar {
@@ -1118,22 +1123,32 @@ body {
 }
 
 @media (max-width: 1024px) {
+  .planner-layout {
+    height: auto;
+    min-height: 100dvh;
+    padding-top: 78px;
+    overflow: visible;
+  }
+
   /* Stack the workspace so the chat panel and the hub content each get the
      full width instead of being squeezed side-by-side. */
   .main-workspace {
     flex-direction: column;
-    overflow-y: auto;
+    min-height: calc(100dvh - 78px);
+    overflow-y: visible;
   }
 
   .left_panel {
     width: 100%;
-    height: auto;
-    min-height: calc(100vh - 70px);
+    height: calc(100dvh - 78px);
+    min-height: 0;
     border-right: none;
   }
 
   .content-area {
     width: 100%;
+    min-height: calc(100dvh - 78px);
+    overflow: visible;
   }
 
   /* When a hub section (Roadtrip, Weather, etc.) is open, show it full-screen
@@ -1154,7 +1169,7 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    height: 100vh;
+    height: 100dvh;
     width: 240px;
     max-width: 82vw;
     z-index: 1200;
@@ -1212,6 +1227,95 @@ body {
 
   .suggestion-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-workspace {
+    min-height: calc(100dvh - 78px - 96px);
+  }
+
+  .left_panel,
+  .content-area {
+    height: calc(100dvh - 78px - 96px);
+    min-height: 0;
+  }
+
+  .hub-panel {
+    padding-bottom: 104px;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-container {
+    padding: 18px;
+  }
+
+  .chat-input-area {
+    padding: 14px;
+  }
+
+  .input-wrapper input {
+    padding: 11px 78px 11px 38px;
+  }
+
+  .modal-overlay {
+    padding: 14px;
+  }
+
+  .modal-card {
+    max-height: calc(100dvh - 28px);
+    overflow-y: auto;
+    border-radius: 18px;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-actions {
+    padding-inline: 18px;
+  }
+
+  .split-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions,
+  .hero-actions {
+    flex-wrap: wrap;
+  }
+
+  .hero-header,
+  .main-tabs-container {
+    padding-inline: 18px;
+  }
+
+  .hero-top {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .badge-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .timeline-card {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .t-icon-box {
+    width: 40px;
+    height: 40px;
+  }
+
+  .timeline-line {
+    left: 36px;
+    top: 58px;
+  }
+
+  .t-tags {
+    gap: 10px;
   }
 }
 
@@ -1346,6 +1450,13 @@ body {
   gap: 24px;
   border-bottom: 1px solid #e2e8f0;
   padding: 16px 0;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.main-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-btn {
@@ -1380,6 +1491,13 @@ body {
   display: flex;
   gap: 12px;
   padding: 24px 0;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.day-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .day-tab {
@@ -1416,6 +1534,7 @@ body {
 }
 
 .timeline-section {
+  width: 100%;
   max-width: 800px;
   padding-bottom: 60px;
 }
@@ -1424,6 +1543,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 32px;
 }
 
@@ -1470,6 +1591,7 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.02);
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
 .t-icon-box {
@@ -1490,6 +1612,7 @@ body {
 
 .t-content {
   flex: 1;
+  min-width: 0;
 }
 
 .t-time {
@@ -1534,6 +1657,7 @@ body {
 .t-tags {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 20px;
 }
 

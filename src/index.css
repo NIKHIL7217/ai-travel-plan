@@ -71,6 +71,31 @@ body {
   overflow-x: hidden;
 }
 
+html {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  min-width: 0;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -101,13 +126,7 @@ a {
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  /* padding: 0 20px; */
-}
-
-@media (max-width: 640px) {
-  .container {
-    padding: 0 18px;
-  }
+  padding: 0 clamp(18px, 3vw, 28px);
 }
 
 /* Cross-page breathing rhythm */
@@ -228,6 +247,15 @@ main .container.animate-fade-in > .glass-card + .glass-card {
   transition: all var(--transition-fast);
   gap: 8px;
   white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+}
+
+@media (max-width: 420px) {
+  .btn {
+    white-space: normal;
+    padding-inline: 18px;
+  }
 }
 
 .btn-primary {

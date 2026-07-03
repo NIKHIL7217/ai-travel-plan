@@ -95,7 +95,7 @@ watch(
 </script>
 
 <template>
-  <div class="copilot-root">
+  <div class="copilot-root" :class="{ 'planner-route': route.name === 'Planner' }">
     <button
       v-if="!copilotStore.isPanelOpen"
       type="button"
@@ -440,7 +440,11 @@ watch(
 @media (max-width: 768px) {
   .copilot-root {
     right: 12px;
-    bottom: 74px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+
+  .copilot-root.planner-route {
+    bottom: calc(162px + env(safe-area-inset-bottom));
   }
 
   .copilot-panel {

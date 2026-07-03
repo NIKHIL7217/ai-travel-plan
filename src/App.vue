@@ -342,13 +342,14 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0;
   background-color: var(--color-bg);
   padding-bottom: 0;
 }
 
 @media (max-width: 768px) {
   .app-shell {
-    padding-bottom: 96px;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }
 
@@ -481,12 +482,14 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
 }
 
 .brand-logo {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   font-family: var(--font-heading);
   font-size: 1.35rem;
   font-weight: 800;
@@ -512,6 +515,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
 }
 
 .geo-indicator {
@@ -772,6 +776,7 @@ onBeforeUnmount(() => {
 
 .footer-links-grid {
   display: flex;
+  flex-wrap: wrap;
   gap: 44px;
 }
 
@@ -831,7 +836,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-items: center;
   border-top: 1px solid rgba(148, 163, 184, 0.3);
-  padding-bottom: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
 
 @media (max-width: 768px) {

@@ -404,7 +404,6 @@ watch(
       <img :src="wrappedHeroImage" alt="Travel wrapped hero" class="profile-hero-image" loading="lazy" />
       <div class="profile-hero-shade"></div>
       <div>
-        <span class="hero-badge">TRAVEL WRAPPED</span>
         <h1>Your Year In Travel</h1>
         <p>From personality to milestones, your full journey identity is now one cinematic profile.</p>
       </div>
