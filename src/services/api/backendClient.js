@@ -1,133 +1,338 @@
 /**
- * Backend API client for admin server integration
+ * Backend API client for admin-api-server integration.
+ * Supports trip storage, secure AI chat proxy, and admin telemetry.
  */
 
-const ADMIN_API_URL = import.meta.env.VITE_ADMIN_API_URL || "http://localhost:3001/api";
+const API_BASE_URL =
+  import.meta.env.VITE_ADMIN_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "";
+
+const RESOLVED_API_BASE_URL = API_BASE_URL || "http://localhost:8787/api";
 
 export function isBackendEnabled() {
-  return Boolean(import.meta.env.VITE_ADMIN_API_URL);
+  return Boolean(API_BASE_URL);
 }
 
-export async function backendSaveTrip(userId, tripData) {
+function getStoredSession() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem("roam_auth_session");
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function buildRequesterHeaders() {
+  const session = getStoredSession();
+  const headers = {};
+
+  if (session?.uid) {
+    headers["x-user-id"] = String(session.uid);
+  }
+  if (session?.email) {
+    headers["x-user-email"] = String(session.email).toLowerCase();
+  }
+  if (session?.role) {
+    headers["x-user-role"] = String(session.role).toLowerCase();
+  }
+
+  const adminSecret = String(import.meta.env.VITE_ADMIN_API_SECRET || "").trim();
+  if (adminSecret) {
+    headers["x-admin-secret"] = adminSecret;
+  }
+
+  return headers;
+}
+
+function withQuery(path, params = {}) {
+  const url = new URL(`${RESOLVED_API_BASE_URL}${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url.toString();
+}
+
+async function request(path, options = {}) {
+  const requesterHeaders = buildRequesterHeaders();
+  const inputHeaders = options.headers && typeof options.headers === "object" ? options.headers : {};
+  const response = await fetch(`${RESOLVED_API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...requesterHeaders,
+      ...inputHeaders
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data?.error || `Backend request failed: ${response.status}`);
+  }
+
+  return data;
+}
+
+export async function backendSaveTrip(tripData, userId) {
   if (!isBackendEnabled()) {
     return null;
   }
 
   try {
-    const response = await fetch(`${ADMIN_API_URL}/trips`, {
+    const data = await request("/trips", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, ...tripData })
     });
 
-    if (!response.ok) {
-      throw new Error(`Backend save failed: ${response.status}`);
-    }
-
-    return await response.json();
+    return data?.trip || null;
   } catch (error) {
     console.warn("Backend trip save failed:", error);
     return null;
   }
 }
 
-export async function backendListTrips(userId) {
+export async function backendListTrips(userId = "") {
   if (!isBackendEnabled()) {
     return null;
   }
 
   try {
-    const response = await fetch(`${ADMIN_API_URL}/trips?userId=${userId}`);
-
+    const response = await fetch(withQuery("/trips", { userId }), {
+      headers: {
+        ...buildRequesterHeaders()
+      }
+    });
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`Backend list failed: ${response.status}`);
+      throw new Error(data?.error || `Backend list failed: ${response.status}`);
     }
 
-    return await response.json();
+    return Array.isArray(data?.trips) ? data.trips : [];
   } catch (error) {
     console.warn("Backend trip list failed:", error);
     return null;
   }
 }
 
-export async function backendDeleteTrip(userId, tripId) {
+export async function backendDeleteTrip(tripId) {
   if (!isBackendEnabled()) {
     return null;
   }
 
   try {
-    const response = await fetch(`${ADMIN_API_URL}/trips/${tripId}`, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ userId })
+    const data = await request(`/trips/${tripId}`, {
+      method: "DELETE"
     });
-
-    if (!response.ok) {
-      throw new Error(`Backend delete failed: ${response.status}`);
-    }
-
-    return await response.json();
+    return Boolean(data?.removed);
   } catch (error) {
     console.warn("Backend trip delete failed:", error);
     return null;
   }
 }
 
-export async function* backendChatStream(messages, context = {}) {
-  if (!isBackendEnabled()) {
-    return;
+export async function backendUpsertUserProfile(user, extras = {}) {
+  if (!isBackendEnabled() || !user) {
+    return null;
   }
 
   try {
-    const response = await fetch(`${ADMIN_API_URL}/chat/stream`, {
+    const payload = {
+      id: user.uid || user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: extras.role,
+      status: extras.status,
+      isVerified: extras.isVerified,
+      signupSource: extras.signupSource || "app"
+    };
+
+    const data = await request("/admin/users/upsert", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ messages, context })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      throw new Error(`Chat stream failed: ${response.status}`);
-    }
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-
-    if (!reader) {
-      return;
-    }
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n').filter(line => line.trim());
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            return;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.text) {
-              yield parsed.text;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
-    }
+    return data?.user || null;
   } catch (error) {
-    console.warn("Backend chat stream failed:", error);
+    console.warn("Backend user upsert failed:", error);
+    return null;
   }
 }
 
+export async function backendTrackAuthEvent(eventPayload) {
+  if (!isBackendEnabled() || !eventPayload) {
+    return null;
+  }
+
+  try {
+    const data = await request("/admin/events/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(eventPayload)
+    });
+
+    return data?.user || null;
+  } catch (error) {
+    console.warn("Backend auth event tracking failed:", error);
+    return null;
+  }
+}
+
+export async function backendTrackTripRevenue(eventPayload) {
+  if (!isBackendEnabled() || !eventPayload) {
+    return null;
+  }
+
+  try {
+    const data = await request("/admin/events/trip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(eventPayload)
+    });
+
+    return data?.user || null;
+  } catch (error) {
+    console.warn("Backend trip revenue tracking failed:", error);
+    return null;
+  }
+}
+
+export async function backendAdminGetOverview() {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    return await request("/admin/overview");
+  } catch (error) {
+    console.warn("Backend admin overview failed:", error);
+    return null;
+  }
+}
+
+export async function backendAdminListUsers() {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    const data = await request("/admin/users");
+    return Array.isArray(data?.users) ? data.users : [];
+  } catch (error) {
+    console.warn("Backend admin users failed:", error);
+    return null;
+  }
+}
+
+export async function backendAdminUpdateUser(userId, patch) {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    const data = await request(`/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch || {})
+    });
+
+    return data?.user || null;
+  } catch (error) {
+    console.warn("Backend admin update user failed:", error);
+    return null;
+  }
+}
+
+export async function backendAdminDeleteUser(userId) {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    const data = await request(`/admin/users/${userId}`, {
+      method: "DELETE"
+    });
+
+    return Boolean(data?.removed);
+  } catch (error) {
+    console.warn("Backend admin delete user failed:", error);
+    return null;
+  }
+}
+
+export async function backendChatStream({ messages, system, signal, onToken } = {}) {
+  if (!isBackendEnabled()) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${RESOLVED_API_BASE_URL}/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...buildRequesterHeaders()
+      },
+      body: JSON.stringify({ messages, system }),
+      signal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Chat stream failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+
+        if (line.startsWith("event: done")) {
+          return fullText.trim() || null;
+        }
+
+        if (!line.startsWith("data:")) {
+          continue;
+        }
+
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+
+        try {
+          const parsed = JSON.parse(data);
+          const chunk = String(parsed?.text || "");
+          if (chunk) {
+            fullText += chunk;
+            onToken?.(chunk, fullText);
+          }
+        } catch (_error) {
+          // Skip malformed line.
+        }
+      }
+    }
+
+    return fullText.trim() || null;
+  } catch (error) {
+    console.warn("Backend chat stream failed:", error);
+    return null;
+  }
+}

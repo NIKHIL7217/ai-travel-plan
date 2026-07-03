@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { isConfigured } from "./lib/gemini.js";
 import aiRoutes from "./routes/ai.js";
+import adminRoutes from "./routes/admin.js";
 import tripRoutes from "./routes/trips.js";
 
 dotenv.config();
@@ -40,6 +41,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/ai", aiRoutes);
 app.use("/api/trips", tripRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found." });

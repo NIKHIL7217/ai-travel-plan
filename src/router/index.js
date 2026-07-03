@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { isAdminUser } from "../utils/adminAccess";
 
 const Home = () => import("../pages/Home.vue");
 const Destination = () => import("../pages/Destination.vue");
@@ -12,11 +13,6 @@ const GroupTravel = () => import("../pages/GroupTravel.vue");
 const Help = () => import("../pages/Help.vue");
 const Profile = () => import("../pages/Profile.vue");
 const Admin = () => import("../pages/Admin.vue");
-
-function isAdminUser(user) {
-  const email = String(user?.email || "").toLowerCase();
-  return email.includes("admin") || email.endsWith("@wanderai.local");
-}
 
 const routes = [
   {

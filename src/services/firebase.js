@@ -9,11 +9,15 @@ import {
   updateProfile
 } from "firebase/auth";
 import {
+  backendTrackAuthEvent,
+  backendTrackTripRevenue,
   backendDeleteTrip,
   backendListTrips,
   backendSaveTrip,
+  backendUpsertUserProfile,
   isBackendEnabled
 } from "./api/backendClient";
+import { inferUserRole } from "../utils/adminAccess";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
@@ -47,6 +51,58 @@ if (firebaseConfig.projectId) {
 const LOCAL_AUTH_SESSION_KEY = "roam_auth_session";
 const LOCAL_AUTH_USERS_KEY = "roam_auth_users";
 
+function toHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function randomSalt() {
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hashPasswordWithSalt(password, salt) {
+  const normalizedSalt = String(salt || "").trim();
+  const source = `${normalizedSalt}:${String(password || "")}`;
+  const encoder = new TextEncoder();
+
+  if (typeof crypto !== "undefined" && crypto.subtle?.digest) {
+    const digest = await crypto.subtle.digest("SHA-256", encoder.encode(source));
+    return toHex(digest);
+  }
+
+  return source;
+}
+
+async function createPasswordRecord(password) {
+  const salt = randomSalt();
+  const hash = await hashPasswordWithSalt(password, salt);
+  return {
+    passwordSalt: salt,
+    passwordHash: hash
+  };
+}
+
+async function verifyPasswordRecord(user, password) {
+  if (user?.passwordHash && user?.passwordSalt) {
+    const hash = await hashPasswordWithSalt(password, user.passwordSalt);
+    return hash === user.passwordHash;
+  }
+
+  // Legacy fallback for old local accounts created before hashing.
+  return user?.password === password;
+}
+
 export function isAuthEnabled() {
   return useFirebaseAuth;
 }
@@ -54,7 +110,7 @@ export function isAuthEnabled() {
 export function getAuthSession() {
   const localUser = getLocalSessionUser();
   if (localUser) {
-    return localUser;
+    return normalizeAuthUser(localUser);
   }
 
   if (auth?.currentUser) {
@@ -78,25 +134,68 @@ export function observeAuthSession(callback) {
 export async function loginWithEmail(email, password) {
   if (useFirebaseAuth && auth) {
     const credential = await signInWithEmailAndPassword(auth, email, password);
-    return normalizeAuthUser(credential.user);
+    const sessionUser = normalizeAuthUser(credential.user);
+
+    if (sessionUser) {
+      const syncedUser = await backendUpsertUserProfile(sessionUser, {
+        isVerified: true,
+        status: "active",
+        role: sessionUser.role || "member"
+      });
+      sessionUser.role = inferUserRole(syncedUser || sessionUser);
+      saveLocalSessionUser(sessionUser);
+
+      await backendTrackAuthEvent({
+        type: "login",
+        userId: sessionUser.uid,
+        email: sessionUser.email,
+        displayName: sessionUser.displayName
+      });
+    }
+
+    return sessionUser;
   }
 
   const users = getLocalUsers();
-  const matchedUser = users.find(
-    (u) => u.email.toLowerCase() === String(email).toLowerCase() && u.password === password
-  );
+  const normalizedEmail = String(email).toLowerCase();
+  const matchedUser = users.find((u) => u.email.toLowerCase() === normalizedEmail);
 
-  if (!matchedUser) {
+  if (!matchedUser || !(await verifyPasswordRecord(matchedUser, password))) {
     throw new Error("Invalid email or password.");
+  }
+
+  if (!matchedUser.passwordHash || !matchedUser.passwordSalt) {
+    const migratedRecord = await createPasswordRecord(password);
+    matchedUser.passwordHash = migratedRecord.passwordHash;
+    matchedUser.passwordSalt = migratedRecord.passwordSalt;
+    delete matchedUser.password;
+    saveLocalUsers(users);
   }
 
   const sessionUser = {
     uid: matchedUser.uid,
     email: matchedUser.email,
-    displayName: matchedUser.displayName || "Traveler"
+    displayName: matchedUser.displayName || "Traveler",
+    role: inferUserRole({
+      role: matchedUser.role,
+      email: matchedUser.email
+    })
   };
 
   saveLocalSessionUser(sessionUser);
+
+  await backendUpsertUserProfile(sessionUser, {
+    isVerified: true,
+    status: "active",
+    role: sessionUser.role
+  });
+  await backendTrackAuthEvent({
+    type: "login",
+    userId: sessionUser.uid,
+    email: sessionUser.email,
+    displayName: sessionUser.displayName
+  });
+
   return sessionUser;
 }
 
@@ -108,7 +207,27 @@ export async function signupWithEmail({ name, email, password }) {
       await updateProfile(credential.user, { displayName: name.trim() });
     }
 
-    return normalizeAuthUser(auth.currentUser);
+    const sessionUser = normalizeAuthUser(auth.currentUser || credential.user);
+
+    if (sessionUser) {
+      const syncedUser = await backendUpsertUserProfile(sessionUser, {
+        isVerified: true,
+        status: "active",
+        role: sessionUser.role || "member",
+        signupSource: "signup"
+      });
+      sessionUser.role = inferUserRole(syncedUser || sessionUser);
+      saveLocalSessionUser(sessionUser);
+
+      await backendTrackAuthEvent({
+        type: "signup",
+        userId: sessionUser.uid,
+        email: sessionUser.email,
+        displayName: sessionUser.displayName
+      });
+    }
+
+    return sessionUser;
   }
 
   const users = getLocalUsers();
@@ -117,11 +236,15 @@ export async function signupWithEmail({ name, email, password }) {
     throw new Error("This email is already registered. Please login.");
   }
 
+  const passwordRecord = await createPasswordRecord(password);
+
   const newUser = {
     uid: `local_user_${Date.now()}`,
     email,
-    password,
+    passwordHash: passwordRecord.passwordHash,
+    passwordSalt: passwordRecord.passwordSalt,
     displayName: name?.trim() || "Traveler",
+    role: "member",
     createdAt: Date.now()
   };
 
@@ -131,20 +254,54 @@ export async function signupWithEmail({ name, email, password }) {
   const sessionUser = {
     uid: newUser.uid,
     email: newUser.email,
-    displayName: newUser.displayName
+    displayName: newUser.displayName,
+    role: newUser.role
   };
 
   saveLocalSessionUser(sessionUser);
+
+  await backendUpsertUserProfile(sessionUser, {
+    isVerified: true,
+    status: "active",
+    role: sessionUser.role,
+    signupSource: "signup"
+  });
+  await backendTrackAuthEvent({
+    type: "signup",
+    userId: sessionUser.uid,
+    email: sessionUser.email,
+    displayName: sessionUser.displayName
+  });
+
   return sessionUser;
 }
 
 export async function logoutCurrentUser() {
+  const activeSession = getAuthSession();
+
   if (useFirebaseAuth && auth) {
     await signOut(auth);
+    clearLocalSessionUser();
+    if (activeSession) {
+      await backendTrackAuthEvent({
+        type: "logout",
+        userId: activeSession.uid,
+        email: activeSession.email,
+        displayName: activeSession.displayName
+      });
+    }
     return;
   }
 
   clearLocalSessionUser();
+  if (activeSession) {
+    await backendTrackAuthEvent({
+      type: "logout",
+      userId: activeSession.uid,
+      email: activeSession.email,
+      displayName: activeSession.displayName
+    });
+  }
 }
 
 /**
@@ -157,6 +314,13 @@ export async function saveTripToDb(trip, userId = "guest") {
   if (isBackendEnabled()) {
     const saved = await backendSaveTrip(trip, normalizedUserId);
     if (saved) {
+      await backendTrackTripRevenue({
+        userId: normalizedUserId,
+        tripId: saved.id,
+        destination: String(trip?.destination || ""),
+        amount: Number(trip?.budget?.total || 0)
+      });
+
       return {
         id: saved.id,
         savedAt: new Date(saved.savedAt || Date.now()).toLocaleDateString(),
@@ -194,6 +358,14 @@ export async function saveTripToDb(trip, userId = "guest") {
   };
   trips.push(newTrip);
   saveLocalTrips(trips, normalizedUserId);
+
+  await backendTrackTripRevenue({
+    userId: normalizedUserId,
+    tripId: newTrip.id,
+    destination: String(trip?.destination || ""),
+    amount: Number(trip?.budget?.total || 0)
+  });
+
   return newTrip;
 }
 
@@ -288,7 +460,8 @@ function normalizeAuthUser(user) {
   return {
     uid: user.uid,
     email: user.email || "",
-    displayName: user.displayName || user.email?.split("@")[0] || "Traveler"
+    displayName: user.displayName || user.email?.split("@")[0] || "Traveler",
+    role: inferUserRole(user)
   };
 }
 
@@ -308,14 +481,14 @@ function saveLocalUsers(users) {
 function getLocalSessionUser() {
   try {
     const data = localStorage.getItem(LOCAL_AUTH_SESSION_KEY);
-    return data ? JSON.parse(data) : null;
+    return data ? normalizeAuthUser(JSON.parse(data)) : null;
   } catch (e) {
     return null;
   }
 }
 
 function saveLocalSessionUser(user) {
-  localStorage.setItem(LOCAL_AUTH_SESSION_KEY, JSON.stringify(user));
+  localStorage.setItem(LOCAL_AUTH_SESSION_KEY, JSON.stringify(normalizeAuthUser(user)));
 }
 
 function clearLocalSessionUser() {

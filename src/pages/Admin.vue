@@ -3,6 +3,14 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { formatPrice } from "../services/currency";
 import { getSavedTripsFromDb } from "../services/firebase";
+import {
+  backendAdminDeleteUser,
+  backendAdminGetOverview,
+  backendAdminListUsers,
+  backendAdminUpdateUser,
+  backendListTrips
+} from "../services/api/backendClient";
+import { isAdminUser as hasAdminAccess } from "../utils/adminAccess";
 import { useAuthStore } from "../stores/auth";
 import { useCommunityStore } from "../stores/community";
 
@@ -15,19 +23,26 @@ const activeTab = ref("dashboard");
 const adminMessage = ref("");
 const trips = ref([]);
 const users = ref([]);
+const overview = ref({
+  metrics: {
+    totalUsers: 0,
+    activeUsers: 0,
+    suspendedUsers: 0,
+    bannedUsers: 0,
+    verifiedUsers: 0,
+    totalRevenue: 0,
+    totalTrips: 0,
+    loginsToday: 0
+  },
+  recentUsers: [],
+  recentRevenueEvents: []
+});
 const destinations = ref([
   { id: "goa", name: "Goa", featured: true, seasonal: "winter" },
   { id: "bali", name: "Bali", featured: true, seasonal: "summer" },
   { id: "paris", name: "Paris", featured: false, seasonal: "autumn" },
   { id: "tokyo", name: "Tokyo", featured: false, seasonal: "spring" }
 ]);
-const aiHealth = ref({
-  requests: 1280,
-  failures: 24,
-  avgLatencyMs: 1280,
-  tokenUsage: 482000,
-  costUsd: 226
-});
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
@@ -40,32 +55,30 @@ const tabs = [
   { id: "settings", label: "Settings" }
 ];
 
-const isAdminUser = computed(() => {
-  const email = String(authStore.user?.email || "").toLowerCase();
-  return email.includes("admin") || email.endsWith("@wanderai.local");
-});
+const isAdminUser = computed(() => hasAdminAccess(authStore.user));
 
 const metrics = computed(() => {
-  const totalUsers = users.value.length;
-  const activeUsers = users.value.filter((user) => user.status === "active").length;
-  const generatedTrips = trips.value.length;
+  const base = overview.value?.metrics || {};
+  const generatedTrips = Number(base.totalTrips || 0);
   const savedTrips = trips.value.filter((trip) => Number(trip?.budget?.total || 0) > 0).length;
-  const revenue = trips.value.reduce((sum, trip) => sum + Number(trip?.budget?.total || 0) * 0.02, 0);
-  const errorRate = aiHealth.value.requests > 0
-    ? Number(((aiHealth.value.failures / aiHealth.value.requests) * 100).toFixed(1))
-    : 0;
+  const revenue = Number(base.totalRevenue || 0);
+  const verifiedUsers = Number(base.verifiedUsers || 0);
+  const totalUsers = Number(base.totalUsers || users.value.length);
+  const verificationRate = totalUsers > 0 ? Number(((verifiedUsers / totalUsers) * 100).toFixed(1)) : 0;
 
   return {
-    totalUsers,
-    activeUsers,
+    totalUsers: Number(base.totalUsers || users.value.length),
+    activeUsers: Number(base.activeUsers || users.value.filter((user) => user.status === "active").length),
+    suspendedUsers: Number(base.suspendedUsers || 0),
+    bannedUsers: Number(base.bannedUsers || 0),
+    verifiedUsers,
+    verificationRate,
     generatedTrips,
     savedTrips,
     destinationsViewed: destinations.value.length * 24,
     revenue,
-    aiRequests: aiHealth.value.requests,
-    errorRate,
-    apiUsage: aiHealth.value.tokenUsage,
-    growth: 14
+    loginsToday: Number(base.loginsToday || 0),
+    growth: Number(base.totalUsers || 0) > 0 ? 12 : 0
   };
 });
 
@@ -104,20 +117,34 @@ function setMessage(message) {
   }, 2200);
 }
 
-function updateUserStatus(userId, status) {
-  users.value = users.value.map((user) =>
-    user.id === userId
-      ? {
-          ...user,
-          status
-        }
-      : user
-  );
+async function refreshAdminOverview() {
+  const remoteOverview = await backendAdminGetOverview();
+  if (remoteOverview?.metrics) {
+    overview.value = remoteOverview;
+  }
+}
+
+async function updateUserStatus(userId, status) {
+  const updated = await backendAdminUpdateUser(userId, { status });
+  if (!updated) {
+    setMessage("User status update failed. Check backend server.");
+    return;
+  }
+
+  users.value = users.value.map((user) => (user.id === userId ? updated : user));
+  await refreshAdminOverview();
   setMessage(`User status updated to ${status}.`);
 }
 
-function deleteUser(userId) {
+async function deleteUser(userId) {
+  const removed = await backendAdminDeleteUser(userId);
+  if (!removed) {
+    setMessage("User delete failed. Check backend server.");
+    return;
+  }
+
   users.value = users.value.filter((user) => user.id !== userId);
+  await refreshAdminOverview();
   setMessage("User deleted.");
 }
 
@@ -148,36 +175,33 @@ async function loadAdminData() {
       return;
     }
 
-    trips.value = await getSavedTripsFromDb(authStore.user.uid);
+    const [remoteTrips, remoteUsers, remoteOverview] = await Promise.all([
+      backendListTrips(""),
+      backendAdminListUsers(),
+      backendAdminGetOverview()
+    ]);
+
+    trips.value = Array.isArray(remoteTrips) ? remoteTrips : await getSavedTripsFromDb(authStore.user.uid);
+    users.value = Array.isArray(remoteUsers) && remoteUsers.length > 0
+      ? remoteUsers
+      : [
+          {
+            id: String(authStore.user.uid || "guest"),
+            displayName: authStore.displayName,
+            email: authStore.user?.email || "",
+            role: isAdminUser.value ? "admin" : "member",
+            status: "active",
+            totalTrips: trips.value.length,
+            isVerified: true
+          }
+        ];
+
+    if (remoteOverview?.metrics) {
+      overview.value = remoteOverview;
+    }
+
     communityStore.initForUser(authStore.user);
     communityStore.loadForDestination("Global");
-
-    users.value = [
-      {
-        id: `u-${authStore.user.uid}`,
-        name: authStore.displayName,
-        email: authStore.user?.email || "",
-        role: isAdminUser.value ? "admin" : "member",
-        status: "active",
-        tripCount: trips.value.length
-      },
-      {
-        id: "u-demo-1",
-        name: "Aditi Sharma",
-        email: "aditi@example.com",
-        role: "member",
-        status: "active",
-        tripCount: 9
-      },
-      {
-        id: "u-demo-2",
-        name: "Rohan Verma",
-        email: "rohan@example.com",
-        role: "member",
-        status: "suspended",
-        tripCount: 3
-      }
-    ];
   } finally {
     loading.value = false;
   }
@@ -223,13 +247,15 @@ onMounted(loadAdminData);
         <div class="metrics-grid">
           <article class="glass-card metric"><span>Total Users</span><strong>{{ metrics.totalUsers }}</strong></article>
           <article class="glass-card metric"><span>Active Users</span><strong>{{ metrics.activeUsers }}</strong></article>
+          <article class="glass-card metric"><span>Verified Users</span><strong>{{ metrics.verifiedUsers }}</strong></article>
+          <article class="glass-card metric"><span>Verification Rate</span><strong>{{ metrics.verificationRate }}%</strong></article>
+          <article class="glass-card metric"><span>Suspended Users</span><strong>{{ metrics.suspendedUsers }}</strong></article>
+          <article class="glass-card metric"><span>Banned Users</span><strong>{{ metrics.bannedUsers }}</strong></article>
           <article class="glass-card metric"><span>Trips Generated</span><strong>{{ metrics.generatedTrips }}</strong></article>
           <article class="glass-card metric"><span>Trips Saved</span><strong>{{ metrics.savedTrips }}</strong></article>
           <article class="glass-card metric"><span>Destinations Viewed</span><strong>{{ metrics.destinationsViewed }}</strong></article>
           <article class="glass-card metric"><span>Revenue</span><strong>{{ formatPrice(metrics.revenue) }}</strong></article>
-          <article class="glass-card metric"><span>AI Requests</span><strong>{{ metrics.aiRequests }}</strong></article>
-          <article class="glass-card metric"><span>Error Rate</span><strong>{{ metrics.errorRate }}%</strong></article>
-          <article class="glass-card metric"><span>API Usage</span><strong>{{ metrics.apiUsage }}</strong></article>
+          <article class="glass-card metric"><span>Logins Today</span><strong>{{ metrics.loginsToday }}</strong></article>
           <article class="glass-card metric"><span>Growth</span><strong>{{ metrics.growth }}%</strong></article>
         </div>
       </section>
@@ -239,10 +265,10 @@ onMounted(loadAdminData);
         <div class="table mt-3">
           <article v-for="user in users" :key="user.id" class="row">
             <div>
-              <strong>{{ user.name }}</strong>
+              <strong>{{ user.displayName || user.name || 'Traveler' }}</strong>
               <p>{{ user.email }}</p>
             </div>
-            <div class="meta">{{ user.role }} · {{ user.tripCount }} trips · {{ user.status }}</div>
+            <div class="meta">{{ user.role }} · {{ user.totalTrips || user.tripCount || 0 }} trips · {{ user.status }}</div>
             <div class="actions">
               <button type="button" class="btn btn-outline btn-xs" @click="updateUserStatus(user.id, 'suspended')">Suspend</button>
               <button type="button" class="btn btn-outline btn-xs" @click="updateUserStatus(user.id, 'banned')">Ban</button>
@@ -321,14 +347,14 @@ onMounted(loadAdminData);
       </section>
 
       <section v-if="activeTab === 'ai'" class="glass-card block-card mt-6">
-        <h3>AI Admin Tools</h3>
+        <h3>Real Tracking Snapshot</h3>
         <ul class="metric-list mt-3">
-          <li><span>Prompt Analytics</span><strong>{{ aiHealth.requests }} requests</strong></li>
-          <li><span>Model Usage</span><strong>Gemini + local fallback</strong></li>
-          <li><span>Token Usage</span><strong>{{ aiHealth.tokenUsage }}</strong></li>
-          <li><span>Cost Tracking</span><strong>{{ formatPrice(aiHealth.costUsd) }}</strong></li>
-          <li><span>Failure Tracking</span><strong>{{ aiHealth.failures }} failures</strong></li>
-          <li><span>AI Health Dashboard</span><strong>{{ aiHealth.avgLatencyMs }} ms avg latency</strong></li>
+          <li><span>Unique Users</span><strong>{{ metrics.totalUsers }}</strong></li>
+          <li><span>Verified Accounts</span><strong>{{ metrics.verifiedUsers }} ({{ metrics.verificationRate }}%)</strong></li>
+          <li><span>Total Trips Tracked</span><strong>{{ metrics.generatedTrips }}</strong></li>
+          <li><span>Total Revenue Tracked</span><strong>{{ formatPrice(metrics.revenue) }}</strong></li>
+          <li><span>Recent Revenue Events</span><strong>{{ overview.recentRevenueEvents?.length || 0 }}</strong></li>
+          <li><span>Logins Today</span><strong>{{ metrics.loginsToday }}</strong></li>
         </ul>
       </section>
 

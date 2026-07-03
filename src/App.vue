@@ -5,6 +5,7 @@ import { initUserCurrency } from "./services/currency";
 import { useAuthStore } from "./stores/auth";
 import { useOfflineStore } from "./stores/offline";
 import { detectUserLocation, userLocation } from "./services/location";
+import { isAdminUser as hasAdminAccess } from "./utils/adminAccess";
 import TravelCopilotWidget from "./features/copilot/TravelCopilotWidget.vue";
 import '../public/favicon.png';
 
@@ -23,10 +24,7 @@ const currentYear = new Date().getFullYear();
 
 const profileName = computed(() => authStore.displayName);
 const mobileProfilePath = computed(() => (authStore.isAuthenticated ? "/profile" : "/login"));
-const isAdminUser = computed(() => {
-  const email = String(authStore.user?.email || "").toLowerCase();
-  return email.includes("admin") || email.endsWith("@wanderai.local");
-});
+const isAdminUser = computed(() => hasAdminAccess(authStore.user));
 const profileEmoji = computed(() => {
   if (!authStore.isAuthenticated) return "👤";
   return isAdminUser.value ? "👨‍💼" : "👤";
