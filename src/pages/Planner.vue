@@ -101,7 +101,7 @@
       <aside class="left_panel">
         <div class="left_panel-header">
           <div class="ai-icon">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>
+            <img src="../../public/favicon.png" width="20" height="20" alt="WanderAI Logo" />
           </div>
           <div class="ai-title">
             <strong>Wander AI</strong>
@@ -164,9 +164,12 @@
 
         <div class="chat-input-area">
           <div class="input-wrapper">
-            <svg class="icon-attach" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8" role="button" tabindex="0" @click="handleAttach" @keydown.enter.prevent="handleAttach"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-3.31-2.69-6-6-6S3 1.69 3 5v12.5c0 3.31 2.69 6 6 6s6-2.69 6-6V6h-1.5z" /></svg>
+            <label class="file-input-icon" for="chatFileInput" role="button" tabindex="0" @keydown.enter.prevent="$refs.fileInput?.click()">
+              <svg viewBox="0 0 24 24" width="20" height="20" style="color: black;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+            </label>
+            <input ref="fileInput" id="chatFileInput" type="file" style="display: none;" @change="handleFileInput">
             <input v-model="chatInput" type="text" :placeholder="isGenerating ? 'Generating your plan…' : 'Ask me to plan, modify, or optimize your trip...'" :disabled="isGenerating" @keydown.enter.prevent="sendChatMessage">
-            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="#94a3b8" role="button" tabindex="0" @click="handleMic" @keydown.enter.prevent="handleMic"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
+            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" style="color: black;" role="button" tabindex="0" @click="handleMic" @keydown.enter.prevent="handleMic"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
             <button class="btn-send" @click="sendChatMessage"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z" /></svg></button>
           </div>
         </div>
@@ -1217,6 +1220,13 @@ function handleSessionAction(action, session) {
 function handleAttach() {}
 
 function handleMic() {}
+
+function handleFileInput(event) {
+  const file = event.target.files?.[0];
+  if (file) {
+    chatInput.value = `Attached file: ${file.name}`;
+  }
+}
 
 function snapshotState() {
   return {
