@@ -571,20 +571,23 @@ onUnmounted(() => {
     <section class="container quick-access-section">
       <div class="section-intro">
         <h2>Everything in one place</h2>
-        <p>Jump straight into any section — sab kuch Planner ke andar hi.</p>
+        <p>All you travel tools and information organized here for you.</p>
       </div>
       <div class="quick-access-grid">
         <router-link
           v-for="card in quickAccessCards"
           :key="card.tab"
-          class="quick-access-card glass-card"
+          class="quick-access-card"
           :to="{ path: '/planner', query: { tab: card.tab } }"
         >
-          <span class="qa-icon">{{ card.icon }}</span>
-          <span class="qa-text">
+          <div class="quick-access-art">
+            <div class="qa-icon">{{ card.icon }}</div>
+          </div>
+          <div class="quick-access-copy">
             <strong>{{ card.title }}</strong>
             <small>{{ card.subtitle }}</small>
-          </span>
+            <span class="quick-access-cta">Try it Now</span>
+          </div>
         </router-link>
       </div>
     </section>
@@ -649,7 +652,7 @@ onUnmounted(() => {
 
     <section class="container discovery-section">
       <div class="section-intro">
-        <h2>Premium travel feed scrolling</h2>
+        <h2>Premium travel feed</h2>
       </div>
 
       <article v-if="loadingError" class="error-panel glass-card">
@@ -697,14 +700,14 @@ onUnmounted(() => {
       </div>
 
       <div class="proof-grid">
-        <article v-for="stat in heroStats" :key="`proof-${stat.id}`" class="proof-card glass-card">
+        <article v-for="stat in heroStats" :key="`proof-${stat.id}`" class="proof-card">
           <strong>{{ stat.value }}</strong>
           <span>{{ stat.label }}</span>
         </article>
       </div>
 
       <div class="testimonial-grid">
-        <article v-for="item in testimonials" :key="item.id" class="testimonial-card glass-card">
+        <article v-for="item in testimonials" :key="item.id" class="testimonial-card">
           <p class="quote">"{{ item.quote }}"</p>
           <div class="author">
             <strong>{{ item.name }}</strong>

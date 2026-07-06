@@ -508,14 +508,15 @@ body {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 999px;
-  padding: 12px 90px 12px 40px;
+  padding: 10px 70px 10px 15px;
   font-size: 14px;
+  color: #000000;
   outline: none;
   transition: border-color 0.2s;
 }
 
 .input-wrapper input:focus {
-  border-color: #6366f1;
+  border-color: #000000;
 }
 
 .icon-attach {
@@ -989,7 +990,6 @@ body {
 
 /* PLANNER EMPTY HERO (main area) */
 .planner-empty {
-  min-height: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: center;

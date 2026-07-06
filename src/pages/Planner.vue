@@ -168,8 +168,21 @@
               <svg viewBox="0 0 24 24" width="20" height="20" style="color: black;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
             </label>
             <input ref="fileInput" id="chatFileInput" type="file" style="display: none;" @change="handleFileInput">
-            <input v-model="chatInput" type="text" :placeholder="isGenerating ? 'Generating your plan…' : 'Ask me to plan, modify, or optimize your trip...'" :disabled="isGenerating" @keydown.enter.prevent="sendChatMessage">
-            <svg class="icon-mic" viewBox="0 0 24 24" width="20" height="20" style="color: black;" role="button" tabindex="0" @click="handleMic" @keydown.enter.prevent="handleMic"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
+            <input v-model="chatInput" type="text" :placeholder="isGenerating ? 'Generating your plan…' : 'Ask me to plan your trip...'" :disabled="isGenerating" @keydown.enter.prevent="sendChatMessage">
+            <svg
+              class="icon-mic"
+              :class="{ listening: isListening, 'mic-disabled': !speechSupported || isGenerating }"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              :style="{ color: isListening ? '#e53935' : 'black' }"
+              role="button"
+              :tabindex="speechSupported && !isGenerating ? 0 : -1"
+              :aria-label="!speechSupported ? 'Voice input not supported in this browser' : isListening ? 'Stop voice input' : 'Start voice input'"
+              @click="handleMic"
+              @keydown.enter.prevent="handleMic"
+            ><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6.3 6.92V22h1.4v-4.08A7 7 0 0 0 19 11h-2z" /></svg>
+            <span v-if="isListening" class="mic-listening-indicator" aria-hidden="true"></span>
             <button class="btn-send" @click="sendChatMessage"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z" /></svg></button>
           </div>
         </div>
@@ -315,7 +328,7 @@
 
           <div v-if="activeTab === 'itinerary'" class="day-tabs">
             <button v-for="day in dayPlans" :key="day.id" class="day-tab" :class="{ active: selectedDayId === day.id }" @click="handleDaySelect(day.id)">
-              <strong>Day {{ day.day }}</strong> <span>{{ day.date }}</span>
+              <strong>Day {{ day.day }}</strong>
             </button>
           </div>
 
@@ -431,7 +444,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   generateTravelPlan,
@@ -455,6 +468,11 @@ const plannerSession = usePlannerSessionStore();
 const isGenerating = ref(false);
 const mapPoints = ref([]);
 const INR_RATE = 83.5;
+
+const isListening = ref(false);
+const speechSupported = ref(true);
+let recognition = null;
+let dictationBase = "";
 
 const activeTab = ref("itinerary");
 const chatInput = ref("");
@@ -1219,7 +1237,65 @@ function handleSessionAction(action, session) {
 
 function handleAttach() {}
 
-function handleMic() {}
+function initSpeechRecognition() {
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
+    speechSupported.value = false;
+    return;
+  }
+
+  recognition = new SpeechRecognitionCtor();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = navigator.language || "en-IN";
+
+  recognition.onresult = (event) => {
+    let finalTranscript = "";
+    let interimTranscript = "";
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+    chatInput.value = `${dictationBase}${finalTranscript}${interimTranscript}`.trim();
+    if (finalTranscript) {
+      dictationBase = `${dictationBase}${finalTranscript} `;
+    }
+  };
+
+  recognition.onerror = () => {
+    // Ignore transient errors (e.g. "no-speech", "aborted"); onend still fires
+    // and resets the listening state.
+    isListening.value = false;
+  };
+
+  recognition.onend = () => {
+    isListening.value = false;
+  };
+}
+
+function handleMic() {
+  if (!speechSupported.value || isGenerating.value || !recognition) {
+    return;
+  }
+
+  if (isListening.value) {
+    recognition.stop();
+    return;
+  }
+
+  dictationBase = chatInput.value ? `${chatInput.value.trim()} ` : "";
+  try {
+    recognition.start();
+    isListening.value = true;
+  } catch {
+    // start() throws if recognition is already active; ignore and let the
+    // existing session continue.
+  }
+}
 
 function handleFileInput(event) {
   const file = event.target.files?.[0];
@@ -1358,6 +1434,20 @@ function openChat(sessionId) {
 }
 
 onMounted(() => {
+  initSpeechRecognition();
+});
+
+onUnmounted(() => {
+  if (recognition) {
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognition.stop();
+    recognition = null;
+  }
+});
+
+onMounted(() => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -1393,12 +1483,44 @@ watch(
 <style scoped src="./styles/Planner.css"></style>
 
 <style>
-/* Neutralize embedded pages' full-page top padding when shown inside the
-   Planner hub panel so they fit the panel instead of the whole viewport. */
 .hub-panel .roadtrip-page,
 .hub-panel .container,
 .hub-panel [style*="padding-top: 100px"] {
   padding-top: 20px !important;
   min-height: auto;
+}
+
+.icon-mic {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.icon-mic.listening {
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+.icon-mic.mic-disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.mic-listening-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #e53935;
+  animation: mic-dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+@keyframes mic-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
 }
 </style>

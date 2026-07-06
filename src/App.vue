@@ -315,7 +315,7 @@ onBeforeUnmount(() => {
       </div>
     </footer>
 
-    <TravelCopilotWidget />
+    <!-- <TravelCopilotWidget /> -->
 
     <!-- Section 10: Mobile Bottom Navigation -->
     <nav class="mobile-bottom-navbar glass-navbar">
@@ -410,7 +410,7 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   width: 100%;
-  height: 78px;
+  height: 60px;
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -509,7 +509,7 @@ onBeforeUnmount(() => {
 .nav-links-desktop {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 40px;
 }
 
 .nav-right-cluster {
@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
 }
 
 .nav-link {
-  font-size: 0.84rem;
+  font-size: 0.70rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
