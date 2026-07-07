@@ -1039,23 +1039,9 @@ function cityHash(str: string): number {
  * via Gemini AI, or falls back to mock data
  */
 export async function getRealLocationData(destinationName: string): Promise<LocationData> {
-  if (!NO_MOCK_DATA_POLICY) {
-    const testingLocation = getTestingLocationData(destinationName);
-    const hasTestingData =
-      Array.isArray(testingLocation?.hotels) ||
-      Array.isArray(testingLocation?.restaurants) ||
-      Array.isArray(testingLocation?.attractions) ||
-      Array.isArray(testingLocation?.hospitals) ||
-      Array.isArray(testingLocation?.fuelStations) ||
-      Array.isArray(testingLocation?.evChargingStations);
-
-    if (hasTestingData) {
-      const validatedTesting = validateLocationData(testingLocation, "testing location data");
-      if (validatedTesting) {
-        return validatedTesting;
-      }
-    }
-  }
+  // We intentionally skip getTestingLocationData here because it returns DestinationDetails
+  // (which lack lat/lng coordinates) instead of LocationData. We want it to fall through
+  // to the geocode + fetchNearbyPlaces flow which has proper coordinates for the map.
 
   try {
     const geo = await geocodePlace(destinationName);
