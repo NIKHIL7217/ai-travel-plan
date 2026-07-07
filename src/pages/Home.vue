@@ -6,6 +6,10 @@ import { formatPrice, initUserCurrency } from "../services/currency";
 import { detectUserLocation, userLocation } from "../services/location";
 import { getFriendlyErrorMessage } from "../core/errors";
 import { fetchUnifiedDiscoveryData } from "../services/ai/unified-discovery.service";
+import TravelPlan from '../assets/TravelPlan.png';
+import Weather from '../assets/Weather.png';
+import SavedTrips from '../assets/SavedTrips.png';
+import Documents from '../assets/Documents.png';
 
 const router = useRouter();
 
@@ -57,11 +61,36 @@ const defaultFloatingCards = [
 const floatingDestinationCards = ref([...defaultFloatingCards]);
 
 const quickAccessCards = [
-  { tab: "travel-plan", icon: "🗺️", title: "Travel Plan", subtitle: "Bookings, roadtrips & stays" },
-  { tab: "weather", icon: "🌤️", title: "Weather", subtitle: "Forecast for your trip" },
-  { tab: "community", icon: "💬", title: "Community", subtitle: "Reviews & tips" },
-  { tab: "trips", icon: "🧳", title: "Saved Trips", subtitle: "Your past plans" },
-  { tab: "documents", icon: "📄", title: "Documents", subtitle: "Visa & travel docs" }
+  {
+    tab: "travel-plan",
+    image: TravelPlan,
+    title: "Travel Plan",
+    subtitle: "Bookings, roadtrips & stays"
+  },
+  {
+    tab: "weather",
+    image: Weather,
+    title: "Weather",
+    subtitle: "Forecast for your trip"
+  },
+  {
+    tab: "community",
+    image: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=900&q=80",
+    title: "Community",
+    subtitle: "Reviews & tips"
+  },
+  {
+    tab: "trips",
+    image: SavedTrips,
+    title: "Saved Trips",
+    subtitle: "Your past plans"
+  },
+  {
+    tab: "documents",
+    image: Documents,
+    title: "Documents",
+    subtitle: "Visa & travel docs"
+  }
 ];
 
 const howItWorksSteps = [
@@ -109,7 +138,7 @@ const featureStories = [
     body: "Convert any destination idea into a road-ready journey with route analysis and practical distance planning.",
     points: ["Route comparisons", "Fuel and distance context", "Scenic stop suggestions"],
     image: "https://www.usnews.com/object/image/0000014a-4eba-d484-a55f-cffb10f80000/141215-coupleroadtrip-stock.jpg?update-time=1418660105034&size=responsive640",
-    route: "/roadtrips",
+    route: "/planner?tab=travel-plan&roadtrip=true",
     cta: "Open Roadtrip"
   },
   {
@@ -568,56 +597,9 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="container quick-access-section">
-      <div class="section-intro">
-        <h2>Everything in one place</h2>
-        <p>All you travel tools and information organized here for you.</p>
-      </div>
-      <div class="quick-access-grid">
-        <router-link
-          v-for="card in quickAccessCards"
-          :key="card.tab"
-          class="quick-access-card"
-          :to="{ path: '/planner', query: { tab: card.tab } }"
-        >
-          <div class="quick-access-art">
-            <div class="qa-icon">{{ card.icon }}</div>
-          </div>
-          <div class="quick-access-copy">
-            <strong>{{ card.title }}</strong>
-            <small>{{ card.subtitle }}</small>
-            <span class="quick-access-cta">Try it Now</span>
-          </div>
-        </router-link>
-      </div>
-    </section>
-
-    <section class="container how-section">
-      <div class="section-intro">
-        <h2>Prompt to trip in 4 steps</h2>
-      </div>
-
-      <div class="steps-grid">
-        <article
-          v-for="(step, index) in howItWorksSteps"
-          :key="step.id"
-          class="step-card glass-card"
-          :class="{ reverse: index % 2 === 1 }"
-        >
-          <div class="step-art" aria-hidden="true">
-            <div class="step-badge">{{ step.accent }}</div>
-          </div>
-          <div class="step-copy">
-            <h3>{{ step.title }}</h3>
-            <p>{{ step.description }}</p>
-          </div>
-        </article>
-      </div>
-    </section>
-
     <section class="container storytelling-section">
       <div class="section-intro">
-        <h2>Core WanderAI showcase</h2>
+        <h2>WanderAI Core</h2>
       </div>
 
       <article
@@ -648,6 +630,53 @@ onUnmounted(() => {
           <button type="button" class="btn btn-primary" @click="openRoute(story.route)">{{ story.cta }}</button>
         </Motion>
       </article>
+    </section>
+
+    <section class="container how-section">
+      <div class="section-intro">
+        <h2>Prompt to trip in 4 steps</h2>
+      </div>
+
+      <div class="steps-grid">
+        <article
+          v-for="(step, index) in howItWorksSteps"
+          :key="step.id"
+          class="step-card glass-card"
+          :class="{ reverse: index % 2 === 1 }"
+        >
+          <div class="step-art" aria-hidden="true">
+            <div class="step-badge">{{ step.accent }}</div>
+          </div>
+          <div class="step-copy">
+            <h3>{{ step.title }}</h3>
+            <p>{{ step.description }}</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="container quick-access-section">
+      <div class="section-intro">
+        <h2>Everything in one place</h2>
+        <!-- <p>All you travel tools and information organized here for you.</p> -->
+      </div>
+      <div class="quick-access-grid">
+        <router-link
+          v-for="card in quickAccessCards"
+          :key="card.tab"
+          class="quick-access-card"
+          :to="{ path: '/planner', query: { tab: card.tab } }"
+        >
+          <div class="quick-access-art">
+            <img v-if="card.image" :src="card.image" :alt="card.title" class="qa-image" loading="lazy" />
+          </div>
+          <div class="quick-access-copy">
+            <strong>{{ card.title }}</strong>
+            <small>{{ card.subtitle }}</small>
+            <span class="quick-access-cta">Try it Now</span>
+          </div>
+        </router-link>
+      </div>
     </section>
 
     <section class="container discovery-section">
@@ -692,29 +721,6 @@ onUnmounted(() => {
           </article>
         </div>
       </section>
-    </section>
-
-    <section class="container social-proof-section">
-      <div class="section-intro">
-        <h2>Community trust</h2>
-      </div>
-
-      <div class="proof-grid">
-        <article v-for="stat in heroStats" :key="`proof-${stat.id}`" class="proof-card">
-          <strong>{{ stat.value }}</strong>
-          <span>{{ stat.label }}</span>
-        </article>
-      </div>
-
-      <div class="testimonial-grid">
-        <article v-for="item in testimonials" :key="item.id" class="testimonial-card">
-          <p class="quote">"{{ item.quote }}"</p>
-          <div class="author">
-            <strong>{{ item.name }}</strong>
-            <span>{{ item.title }}</span>
-          </div>
-        </article>
-      </div>
     </section>
 
     <section class="container ecosystem-section">
@@ -777,6 +783,29 @@ onUnmounted(() => {
           <button type="button" class="btn btn-primary" @click="openRoute('/planner')">Open AI Planner</button>
         </div>
       </article>
+    </section>
+
+    <section class="container social-proof-section">
+      <div class="section-intro">
+        <h2>Community trust</h2>
+      </div>
+
+      <div class="proof-grid">
+        <article v-for="stat in heroStats" :key="`proof-${stat.id}`" class="proof-card">
+          <strong>{{ stat.value }}</strong>
+          <span>{{ stat.label }}</span>
+        </article>
+      </div>
+
+      <div class="testimonial-grid">
+        <article v-for="item in testimonials" :key="item.id" class="testimonial-card">
+          <p class="quote">"{{ item.quote }}"</p>
+          <div class="author">
+            <strong>{{ item.name }}</strong>
+            <span>{{ item.title }}</span>
+          </div>
+        </article>
+      </div>
     </section>
 
     <section class="container gallery-section">

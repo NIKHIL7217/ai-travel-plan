@@ -1038,7 +1038,7 @@
   gap: 20px;
   overflow-x: auto;
   margin-top: 18px;
-  height: 470px;
+  height: 500px;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
@@ -1052,12 +1052,11 @@
   grid-template-rows: 1fr auto;
   gap: 18px;
   width: 350px;
-  height: 450px;
+  height: 500px;
   border-radius: 28px;
   text-decoration: none;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   min-height: 250px;
 
@@ -1076,6 +1075,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* padding: 20px; */
   min-height: 132px;
   border-radius: 24px;
   overflow: hidden;
@@ -1088,21 +1088,29 @@
   background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 35%), radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.6), transparent 30%);
   pointer-events: none;
 }
-.quick-access-card:nth-child(1) .quick-access-art {
+.quick-access-card:nth-child(1)  {
   background: linear-gradient(180deg, #ffe7ed 0%, #fff4fb 100%);
 }
-.quick-access-card:nth-child(2) .quick-access-art {
+.quick-access-card:nth-child(2)  {
   background: linear-gradient(180deg, #cfddff 0%, #f8fbff 100%);
 }
-.quick-access-card:nth-child(3) .quick-access-art {
+.quick-access-card:nth-child(3)  {
   background: linear-gradient(180deg, #c7ffea 0%, #f5fffb 100%);
 }
-.quick-access-card:nth-child(4) .quick-access-art {
+.quick-access-card:nth-child(4)  {
   background: linear-gradient(180deg, #fff8e8 0%, #fffbf2 100%);
 }
-.quick-access-card:nth-child(5) .quick-access-art {
+.quick-access-card:nth-child(5)  {
   background: linear-gradient(180deg, #f7ebff 0%, #fbf6ff 100%);
 }
+.qa-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 20px;
+  display: block;
+}
+
 .qa-icon {
   font-size: 2.2rem;
 }
