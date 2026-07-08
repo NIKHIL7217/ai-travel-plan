@@ -153,7 +153,7 @@ onMounted(() => {
   window.addEventListener("scroll", handleWindowScroll, { passive: true });
   window.addEventListener("resize", handleWindowResize);
 
-  detectUserLocation()
+  detectUserLocation({ allowGeolocationPrompt: true })
     .then(() => initUserCurrency(userLocation.value))
     .finally(() => {
       geoLoading.value = false;

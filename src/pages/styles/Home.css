@@ -32,7 +32,7 @@
   line-height: 1.08;
   letter-spacing: -0.03em;
   color: black;
-  max-width: 860px;
+  /* max-width: 860px; */
   margin: 28px 0;;
 }
 
@@ -68,7 +68,7 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 1500px;
+  /* max-width: 1500px; */
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -399,9 +399,6 @@
 .story-card {
   display: grid;
   grid-template-columns: minmax(0, 0.56fr) minmax(0, 0.44fr);
-  /* overflow: hidden intentionally removed — the parallax translateY on both
-     Motion children must be able to bleed outside the card boundary. Clipping
-     is instead scoped to .story-image so the image stays contained. */
   margin: 100px 0;
 }
 
@@ -418,10 +415,8 @@
 }
 
 .story-image {
-  /* Clip the image's slower parallax travel so it never escapes the figure.
-     The figure itself is a grid child, so setting overflow here is safe. */
   overflow: hidden;
-  will-change: transform; /* promote to its own compositor layer */
+  will-change: transform; 
 }
 
 .story-image img {
@@ -1008,7 +1003,7 @@
   }
 
   .ecosystem-node span {
-    font-size: 0.66rem;
+    font-size: 1rem;
   }
 
   .masonry-grid {
@@ -1037,7 +1032,7 @@
   grid-template-columns: repeat( minmax(260px, 1fr));
   gap: 20px;
   overflow-x: auto;
-  margin-top: 18px;
+  /* margin-top: 18px; */
   height: 500px;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -1051,6 +1046,7 @@
   display: grid;
   grid-template-rows: 1fr auto;
   gap: 18px;
+  padding: 35px;
   width: 350px;
   height: 500px;
   border-radius: 28px;
@@ -1085,7 +1081,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 35%), radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.6), transparent 30%);
+  /* background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 35%), radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.6), transparent 30%); */
   pointer-events: none;
 }
 .quick-access-card:nth-child(1)  {
@@ -1104,8 +1100,8 @@
   background: linear-gradient(180deg, #f7ebff 0%, #fbf6ff 100%);
 }
 .qa-image {
-  width: 100%;
-  height: 100%;
+  /* width: 100%;
+  height: 100%; */
   object-fit: cover;
   border-radius: 20px;
   display: block;
@@ -1116,11 +1112,11 @@
 }
 .quick-access-copy {
   display: grid;
-  padding: 0 30px;
+  padding: 20px 20px;
   gap: 10px;
 }
 .quick-access-copy strong {
-  font-size: 1.08rem;
+  font-size: 2rem;
   line-height: 1;
   color: #0f172a;
 }
@@ -1128,7 +1124,7 @@
   display: block;
   font-size: 0.9rem;
   line-height: 1;
-  color: #475569;
+  color: #000000;
 }
 .quick-access-cta {
   display: inline-flex;
@@ -1137,10 +1133,10 @@
   width: fit-content;
   padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgb(242, 225, 240);
   color: #000000;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 800;
 }
 @media (max-width: 720px) {
   .quick-access-card {

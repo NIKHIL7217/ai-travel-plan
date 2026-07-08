@@ -433,6 +433,8 @@ function getCurrentFuelPriceInfo() {
 const currentFuelTypes = computed(() => {
   return roadtripVehicle.value === "car" ? carFuelTypes : bikeFuelTypes;
 });
+
+const showCartDetails = ref(false);
 </script>
 
 <template>
@@ -968,12 +970,38 @@ const currentFuelTypes = computed(() => {
     </section>
 
     <!-- Cart Summary (Fixed Footer) -->
-    <div v-if="bookingStore.cartCount" class="cart-summary">
-      <div class="cart-info">
-        <span>🛒 Cart: {{ bookingStore.cartCount }} items</span>
-        <span class="cart-total">{{ priceInr(bookingStore.cartTotal) }}</span>
+    <div v-if="bookingStore.cartCount" class="cart-summary-container">
+      <!-- Cart Details Popup -->
+      <div v-if="showCartDetails" class="cart-details glass-card">
+        <div class="cart-details-header">
+          <h3>Your Cart</h3>
+          <button class="btn-icon" @click="showCartDetails = false">✖</button>
+        </div>
+        <div class="cart-items">
+          <div v-for="item in bookingStore.cart" :key="item.id" class="cart-item">
+            <div class="item-info">
+              <strong>{{ item.name }}</strong>
+              <span class="item-type">{{ item.type }}</span>
+            </div>
+            <div class="item-price-action">
+              <span class="price">{{ priceInr(item.price) }}</span>
+              <button class="btn-icon text-danger" @click="bookingStore.removeFromCart(item.id)" title="Remove item">🗑️</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <button class="btn btn-primary">Proceed to Checkout</button>
+
+      <div class="cart-summary">
+        <div class="cart-info" @click="showCartDetails = !showCartDetails" style="cursor: pointer; user-select: none;" title="View Cart Details">
+          <span>🛒 Cart: {{ bookingStore.cartCount }} items</span>
+          <span class="cart-total">{{ priceInr(bookingStore.cartTotal) }}</span>
+          <span class="dropdown-icon" style="font-size: 0.8rem; margin-left: 0.5rem;">{{ showCartDetails ? '▼' : '▲' }}</span>
+        </div>
+        <div class="cart-actions" style="display: flex; gap: 10px;">
+          <button class="btn btn-outline" @click="bookingStore.clearCart()">Clear Cart</button>
+          <button class="btn btn-primary">Proceed to Checkout</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1341,11 +1369,85 @@ const currentFuelTypes = computed(() => {
 }
 
 /* Cart Summary */
-.cart-summary {
+.cart-summary-container {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.cart-details {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+  background: rgba(255, 255, 255, 0.98);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -10px 15px -3px rgba(0, 0, 0, 0.1);
+  border-radius: 16px 16px 0 0;
+  backdrop-filter: blur(10px);
+}
+
+.cart-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+}
+
+.cart-details-header h3 {
+  margin: 0;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.cart-item:last-child {
+  border-bottom: none;
+}
+
+.item-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.item-type {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.item-price-action {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.text-danger {
+  color: #ef4444;
+}
+
+.cart-summary {
   background: white;
   border-top: 2px solid #e2e8f0;
   padding: 1rem 2rem;
@@ -1353,7 +1455,7 @@ const currentFuelTypes = computed(() => {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
-  z-index: 100;
+  position: relative;
 }
 
 .cart-info {

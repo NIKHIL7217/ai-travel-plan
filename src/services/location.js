@@ -16,7 +16,7 @@ export const userLocation = ref({
 let pendingLocationLookup = null;
 
 export async function detectUserLocation(options = {}) {
-  const allowGeolocationPrompt = options?.allowGeolocationPrompt === true;
+  const allowGeolocationPrompt = options?.allowGeolocationPrompt !== false;
 
   if (userLocation.value.loaded) {
     return userLocation.value;

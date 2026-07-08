@@ -10,6 +10,7 @@ import TravelPlan from '../assets/TravelPlan.png';
 import Weather from '../assets/Weather.png';
 import SavedTrips from '../assets/SavedTrips.png';
 import Documents from '../assets/Documents.png';
+import Community from '../assets/Community.png';
 
 const router = useRouter();
 
@@ -75,7 +76,7 @@ const quickAccessCards = [
   },
   {
     tab: "community",
-    image: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=900&q=80",
+    image: Community,
     title: "Community",
     subtitle: "Reviews & tips"
   },
@@ -472,7 +473,7 @@ onMounted(async () => {
 
   try {
     // Step 1: Detect user location
-    await detectUserLocation();
+    await detectUserLocation({ allowGeolocationPrompt: true });
     initUserCurrency(userLocation.value).catch(() => {
       // Currency inference is non-blocking for first paint.
     });
@@ -570,7 +571,7 @@ onUnmounted(() => {
           <p>Plan, discover, budget, collaborate, and experience trips with one intelligent travel companion.</p>
 
           <div class="hero_newButtons" style="display: flex; gap: 12px; margin-top: 12px;">
-            <button type="submit" class="btn btn-primary">Start Planning</button>
+            <button type="submit" class="btn btn-primary" @click="openRoute('/planner')">Start Planning</button>
             <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
           </div>
         </div>
@@ -655,7 +656,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section class="container quick-access-section">
+    <section class="quick-access-section">
       <div class="section-intro">
         <h2>Everything in one place</h2>
         <!-- <p>All you travel tools and information organized here for you.</p> -->

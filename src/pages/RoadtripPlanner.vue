@@ -368,7 +368,7 @@ onMounted(async () => {
   offlineStore.initForUser(authStore.user?.uid || "guest");
   await loadRecentTrips();
   // Detect user location for real-time fuel prices
-  await detectUserLocation({ allowGeolocationPrompt: false });
+  await detectUserLocation({ allowGeolocationPrompt: true });
 });
 
 // Show detailed toll info
