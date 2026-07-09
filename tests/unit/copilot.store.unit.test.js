@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+
+vi.mock("../../src/services/ai/chat.service", () => ({
+  isChatConfigured: () => false,
+  streamTravelChat: vi.fn()
+}));
+
 import { useCopilotStore } from "../../src/stores/copilot";
 import { useOfflineStore } from "../../src/stores/offline";
 import { usePlannerSessionStore } from "../../src/stores/plannerSession";

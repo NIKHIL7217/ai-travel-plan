@@ -3,9 +3,9 @@ import { lookupIpLocation } from "./geo/ipLookup";
 
 export const userCurrency = ref({
   country: "Global",
-  currency: "USD",
-  symbol: "$",
-  rate: 1.0
+  currency: "INR",
+  symbol: "₹",
+  rate: 83.5
 });
 
 const exchangeRates = {
@@ -66,7 +66,7 @@ function resolveCurrencyFromCountry(country) {
 }
 
 function setCurrencyByCode(code, country = "Global") {
-  const normalized = code && exchangeRates[code] ? code : "USD";
+  const normalized = "INR";
   userCurrency.value = {
     country,
     currency: normalized,
@@ -77,26 +77,15 @@ function setCurrencyByCode(code, country = "Global") {
 
 export async function initUserCurrency(locationHint = null) {
   if (locationHint?.country) {
-    const fromCountry = resolveCurrencyFromCountry(locationHint.country);
-    if (fromCountry) {
-      setCurrencyByCode(fromCountry, locationHint.country);
-      return;
-    }
+    setCurrencyByCode("INR", locationHint.country);
+    return;
   }
 
   try {
     const data = await lookupIpLocation();
-    if (data?.currency) {
-      setCurrencyByCode(data.currency, data.country || "Global");
-      console.log("Detected User Currency:", userCurrency.value);
-      return;
-    }
     if (data?.country) {
-      const fromCountry = resolveCurrencyFromCountry(data.country);
-      if (fromCountry) {
-        setCurrencyByCode(fromCountry, data.country);
-        return;
-      }
+      setCurrencyByCode("INR", data.country);
+      return;
     }
   } catch (e) {
     // Ignore and fallback to timezone check
@@ -107,17 +96,31 @@ export async function initUserCurrency(locationHint = null) {
   if (tzLower.includes("calcutta") || tzLower.includes("kolkata") || tzLower.includes("delhi") || tzLower.includes("bombay") || tzLower.includes("india")) {
     setCurrencyByCode("INR", "India");
   } else if (tzLower.includes("london") || tzLower.includes("gb") || tzLower.includes("europe/london")) {
-    setCurrencyByCode("GBP", "United Kingdom");
+    setCurrencyByCode("INR", "United Kingdom");
   } else if (tzLower.includes("europe") || tzLower.includes("paris") || tzLower.includes("berlin") || tzLower.includes("rome") || tzLower.includes("madrid") || tzLower.includes("amsterdam")) {
-    setCurrencyByCode("EUR", "Europe");
+    setCurrencyByCode("INR", "Europe");
   } else if (tzLower.includes("tokyo") || tzLower.includes("japan")) {
-    setCurrencyByCode("JPY", "Japan");
+    setCurrencyByCode("INR", "Japan");
   } else if (tzLower.includes("dubai") || tzLower.includes("abu_dhabi") || tzLower.includes("uae") || tzLower.includes("asia/dubai")) {
-    setCurrencyByCode("AED", "United Arab Emirates");
+    setCurrencyByCode("INR", "United Arab Emirates");
   } else {
-    setCurrencyByCode("USD", "Global");
+    setCurrencyByCode("INR", "Global");
   }
-  console.log("Timezone Resolved User Currency:", userCurrency.value);
+}
+
+export function convertCurrency(amount, fromCurrency = "USD", toCurrency = "INR") {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
+    return 0;
+  }
+
+  const fromRate = exchangeRates[fromCurrency] || 1.0;
+  const toRate = exchangeRates[toCurrency] || exchangeRates.INR;
+  const amountInUsd = Number(amount) / fromRate;
+  return amountInUsd * toRate;
+}
+
+export function toInr(amount, baseCurrency = "USD") {
+  return Math.round(convertCurrency(amount, baseCurrency, "INR"));
 }
 
 /**
@@ -127,13 +130,7 @@ export async function initUserCurrency(locationHint = null) {
  */
 export function formatPrice(amount, baseCurrency = "USD") {
   if (amount === null || amount === undefined || isNaN(amount)) return "N/A";
-  
-  // 1. Convert input price to USD first
-  let priceInUsd = amount;
-  const baseRate = exchangeRates[baseCurrency] || 1.0;
-  priceInUsd = amount / baseRate;
 
-  // 2. Convert from USD to target user currency
-  const converted = Math.round(priceInUsd * userCurrency.value.rate);
-  return `${userCurrency.value.symbol}${converted.toLocaleString()}`;
+  const converted = toInr(amount, baseCurrency);
+  return `₹${converted.toLocaleString("en-IN")}`;
 }

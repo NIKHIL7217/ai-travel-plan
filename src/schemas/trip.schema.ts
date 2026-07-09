@@ -44,7 +44,13 @@ export const nearbyPlaceSchema: z.ZodType<NearbyPlace> = z
     tier: z.string().optional(),
     type: z.string().optional(),
     phone: z.string().optional(),
-    desc: z.string().optional()
+    desc: z.string().optional(),
+    website: z.string().optional(),
+    mapsUrl: z.string().optional(),
+    openingHours: z.array(z.string()).optional(),
+    openNow: z.boolean().optional(),
+    priceLevel: z.string().optional(),
+    photoUrl: z.string().optional()
   })
   .passthrough();
 

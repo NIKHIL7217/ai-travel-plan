@@ -244,7 +244,7 @@
               </div>
               <div class="hero-actions">
                 <button class="btn btn-outline-light" @click="handleEditPlan">Edit</button>
-                <button class="btn btn-outline-light" @click="router.push('/bookings')">Book</button>
+                <button class="btn btn-outline-light" @click="handleBookNow">Book</button>
               </div>
             </div>
 
@@ -338,6 +338,11 @@
                 <div>
                   <h2>Day {{ selectedDay.day }} — {{ selectedDay.theme }}</h2>
                   <p>{{ selectedDay.dateLabel }} • {{ selectedDay.area }}</p>
+                  <div v-if="canUseDynamicReplan" class="quick-replan-row">
+                    <button type="button" class="quick-replan-btn" :disabled="isGenerating" @click="handleQuickReplan('cheaper')">Make it cheaper</button>
+                    <button type="button" class="quick-replan-btn" :disabled="isGenerating" @click="handleQuickReplan('adventurous')">Add adventure</button>
+                    <button type="button" class="quick-replan-btn" :disabled="isGenerating" @click="handleQuickReplan('comfort')">Upgrade comfort</button>
+                  </div>
                 </div>
                 <div class="day-cost">Day cost: <strong>₹{{ formatInr(selectedDay.cost) }}</strong></div>
               </div>
@@ -352,6 +357,11 @@
                   </div>
                   <div class="t-content">
                     <div class="t-time" :class="item.timeTone">{{ item.slot }} • {{ item.time }} <span v-if="item.aiPick" class="ai-pick">AI Pick</span></div>
+                    <div class="timeline-item-actions">
+                      <button class="timeline-item-action" :disabled="isGenerating" @click.stop="handleReplaceTimelineItem(selectedDay.id, item.id)">Replace</button>
+                      <button class="timeline-item-action" :disabled="isGenerating" @click.stop="handleMoveTimelineItem(selectedDay.id, item.id)">Move</button>
+                      <button class="timeline-item-action danger" :disabled="isGenerating" @click.stop="handleRemoveTimelineItem(selectedDay.id, item.id)">Remove</button>
+                    </div>
                     <h3>{{ item.title }}</h3>
                     <p>{{ item.description }}</p>
                     <p v-if="item.details" class="t-detail">{{ item.details }}</p>
@@ -453,7 +463,11 @@ import {
   getRealLocationData,
   geocodePlace
 } from "../services/gemini";
+import { trackEvent } from "../core/monitoring";
+import { isFeatureEnabled } from "../config/featureFlags";
+import { useAuthStore } from "../stores/auth";
 import { usePlannerSessionStore } from "../stores/plannerSession";
+import { useProfileMemoryStore } from "../stores/profileMemory";
 import { userLocation } from "../services/location";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 import favicon from '../assets/favicon.png';
@@ -466,7 +480,9 @@ const DocumentsHubPanel = defineAsyncComponent(() => import("./Documents.vue"));
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 const plannerSession = usePlannerSessionStore();
+const profileMemoryStore = useProfileMemoryStore();
 const isGenerating = ref(false);
 const mapPoints = ref([]);
 const destinationCenter = ref(null);
@@ -672,6 +688,13 @@ const effectiveMapPoints = computed(() => {
   return [];
 });
 
+const canUseDynamicReplan = computed(() => isFeatureEnabled("FEATURE_DYNAMIC_REPLAN") && hasPlan.value);
+const selectedPricingCountry = computed(() => {
+  const active = profileMemoryStore.activePreferenceProfile?.preferences || {};
+  const rootPrefs = profileMemoryStore.memory?.preferences || {};
+  return String(active.selectedCountry || rootPrefs.selectedCountry || userLocation.value?.country || "India").trim() || "India";
+});
+
 function formatInr(value) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value || 0));
 }
@@ -701,6 +724,21 @@ const ITINERARY_SLOTS = [
   { key: "afternoon", slot: "Afternoon", time: "1:00 PM", icon: "camera", iconTone: "cyan" },
   { key: "evening", slot: "Evening", time: "7:00 PM", icon: "food", iconTone: "pink" }
 ];
+
+const DAY_SLOT_SEQUENCE = [
+  { slot: "Morning", time: "8:00 AM" },
+  { slot: "Late Morning", time: "10:30 AM" },
+  { slot: "Afternoon", time: "1:00 PM" },
+  { slot: "Evening", time: "6:30 PM" },
+  { slot: "Dinner", time: "8:00 PM" },
+  { slot: "Night", time: "9:30 PM" }
+];
+
+const REPLACEMENT_ACTIVITY_POOL = {
+  sun: ["Sunrise viewpoint walk", "Guided heritage walk", "Riverside morning circuit"],
+  camera: ["Local culture trail", "Street market exploration", "Museum and crafts stop"],
+  food: ["Chef special dinner", "Local tasting session", "Rooftop dinner with city views"]
+};
 
 function buildDateMeta(offset) {
   const baseDate = planner.value.startDate ? new Date(planner.value.startDate) : new Date();
@@ -909,7 +947,9 @@ async function generateRealPlan(query, options = {}) {
   scrollChatToBottom();
 
   try {
-    const intent = await extractTripIntent(query).catch(() => ({ patch: {} }));
+    const intent = isFeatureEnabled("FEATURE_AI_INTENT")
+      ? await extractTripIntent(query).catch(() => ({ patch: {} }))
+      : { patch: {} };
     const patch = intent.patch || {};
 
     const hasNewDestination = Boolean(patch.destination);
@@ -926,9 +966,12 @@ async function generateRealPlan(query, options = {}) {
     const planOptions = {
       userQuery: effectiveQuery,
       sourceQuery: query,
+      selectedCountry: selectedPricingCountry.value,
       allowFallbackWithoutLive: true,
       stayPreference,
-      foodPreference
+      foodPreference,
+      startDate: options.startDate || planner.value.startDate || "",
+      endDate: options.endDate || planner.value.endDate || ""
     };
 
     const [plan, budget, location] = await Promise.all([
@@ -990,6 +1033,14 @@ async function generateRealPlan(query, options = {}) {
       itineraryPreview: dayPlans.value.slice(0, 3).map((day) => `Day ${day.day}: ${day.theme}`)
     });
 
+    trackEvent("planner.generate.success", {
+      destination: planner.value.destination,
+      days: resolvedDays,
+      travelers,
+      travelMode,
+      source: options.source || "chat"
+    });
+
     const previewMessage = {
       id: thinkingId,
       role: "assistant",
@@ -1008,6 +1059,11 @@ async function generateRealPlan(query, options = {}) {
     activeTab.value = "itinerary";
     hasPlan.value = true;
   } catch (_error) {
+    trackEvent("planner.generate.failure", {
+      query: String(query || "").slice(0, 160),
+      source: options.source || "chat"
+    }, "warn");
+
     const errorMessage = {
       id: thinkingId,
       role: "assistant",
@@ -1025,6 +1081,19 @@ async function generateRealPlan(query, options = {}) {
   }
 }
 
+function handleBookNow() {
+  if (isFeatureEnabled("FEATURE_BOOKING_ANALYTICS")) {
+    trackEvent("booking.funnel.entry", {
+      source: "planner.hero",
+      destination: planner.value.destination,
+      estimatedTotalInr: totalBudget.value,
+      travelers: planner.value.travelers,
+      hasDates: Boolean(planner.value.startDate && planner.value.endDate)
+    });
+  }
+  router.push('/bookings');
+}
+
 function sendChatMessage() {
   const text = String(chatInput.value || "").trim();
   if (!text || isGenerating.value) {
@@ -1039,6 +1108,60 @@ function sendChatMessage() {
 function applySuggestion(suggestion) {
   chatInput.value = suggestion.prompt;
   sendChatMessage();
+}
+
+async function handleQuickReplan(mode) {
+  if (!canUseDynamicReplan.value || isGenerating.value) {
+    return;
+  }
+
+  const destination = planner.value.destination;
+  if (!destination) {
+    return;
+  }
+
+  const days = Math.max(1, dayPlans.value.length || 5);
+  const travelers = Math.max(1, Number(planner.value.travelers || 2));
+  const currentBudget = Number(planner.value.budget || totalBudget.value || 0);
+
+  const modeConfig = {
+    cheaper: {
+      label: "cheaper",
+      budgetLimit: currentBudget > 0 ? Math.max(4000, Math.round(currentBudget * 0.8)) : 0,
+      query: `Regenerate a cheaper ${days}-day trip to ${destination} with efficient transport and value stays.`
+    },
+    adventurous: {
+      label: "adventurous",
+      budgetLimit: currentBudget,
+      query: `Regenerate an adventurous ${days}-day trip to ${destination} with high-energy experiences and local activities.`
+    },
+    comfort: {
+      label: "comfort",
+      budgetLimit: currentBudget > 0 ? Math.round(currentBudget * 1.2) : 0,
+      query: `Regenerate a comfort-first ${days}-day trip to ${destination} with premium stays and smoother transfers.`
+    }
+  };
+
+  const selected = modeConfig[mode];
+  if (!selected) {
+    return;
+  }
+
+  trackEvent("planner.replan.quick_action", {
+    mode: selected.label,
+    destination,
+    days,
+    travelers
+  });
+
+  await generateRealPlan(selected.query, {
+    source: "quick_replan",
+    days,
+    travelers,
+    budgetLimit: selected.budgetLimit,
+    startDate: planner.value.startDate,
+    endDate: planner.value.endDate
+  });
 }
 
 function handleEditPlan() {
@@ -1171,6 +1294,165 @@ function handleMapCardClick() {}
 
 function handleTipClick(tip) {
   chatInput.value = tip;
+}
+
+function findDayById(dayId) {
+  return dayPlans.value.find((day) => day.id === dayId) || null;
+}
+
+function findTimelineItem(day, itemId) {
+  if (!day || !Array.isArray(day.items)) {
+    return { item: null, index: -1 };
+  }
+  const index = day.items.findIndex((entry) => entry.id === itemId);
+  return {
+    item: index >= 0 ? day.items[index] : null,
+    index
+  };
+}
+
+function inferBudgetBucketFromItem(item) {
+  if (item?.icon === "food" || String(item?.slot || "").toLowerCase().includes("dinner")) {
+    return "food";
+  }
+  return "activities";
+}
+
+function resolveSlotConflict(targetDay, incomingItem) {
+  const usedSlots = new Set(targetDay.items.map((entry) => String(entry.slot || "").toLowerCase()));
+  const preferred = String(incomingItem.slot || "").toLowerCase();
+
+  if (!usedSlots.has(preferred)) {
+    return incomingItem;
+  }
+
+  const preferredIndex = Math.max(0, DAY_SLOT_SEQUENCE.findIndex((slot) => slot.slot.toLowerCase() === preferred));
+  for (let offset = 1; offset <= DAY_SLOT_SEQUENCE.length; offset += 1) {
+    const candidate = DAY_SLOT_SEQUENCE[(preferredIndex + offset) % DAY_SLOT_SEQUENCE.length];
+    if (!usedSlots.has(candidate.slot.toLowerCase())) {
+      return {
+        ...incomingItem,
+        slot: candidate.slot,
+        time: candidate.time,
+        details: `${incomingItem.details || "Rescheduled activity"} Auto-adjusted to avoid same-slot conflict.`,
+        tags: [...(incomingItem.tags || []), { text: "Auto-rescheduled", highlight: false }]
+      };
+    }
+  }
+
+  return {
+    ...incomingItem,
+    slot: "Flexible",
+    time: "Anytime",
+    details: `${incomingItem.details || "Flexible activity"} Placed in flexible slot due to a full schedule.`
+  };
+}
+
+function ensureNextDay(sourceDay) {
+  const sourceIndex = dayPlans.value.findIndex((day) => day.id === sourceDay.id);
+  if (sourceIndex >= 0 && sourceIndex < dayPlans.value.length - 1) {
+    return dayPlans.value[sourceIndex + 1];
+  }
+
+  const newDayNumber = dayPlans.value.length + 1;
+  const meta = buildDateMeta(newDayNumber - 1);
+  const newDay = {
+    id: `d${newDayNumber}`,
+    day: newDayNumber,
+    date: meta.short,
+    dateLabel: meta.label,
+    area: `${planner.value.destination || "Trip"} extra plan`,
+    theme: `Flexible Day ${newDayNumber}`,
+    cost: 0,
+    items: []
+  };
+  dayPlans.value.push(newDay);
+  return newDay;
+}
+
+function handleRemoveTimelineItem(dayId, itemId) {
+  const day = findDayById(dayId);
+  const { item, index } = findTimelineItem(day, itemId);
+  if (!day || !item || index < 0) {
+    return;
+  }
+
+  day.items.splice(index, 1);
+  day.cost = Math.max(0, Number(day.cost || 0) - Number(item.cost || 0));
+  applyBudgetDelta(inferBudgetBucketFromItem(item), -Number(item.cost || 0));
+  planner.value.updatedAt = "just now";
+
+  trackEvent("planner.replan.item_removed", {
+    day: day.day,
+    slot: item.slot,
+    title: item.title,
+    destination: planner.value.destination
+  });
+}
+
+function handleMoveTimelineItem(dayId, itemId) {
+  const sourceDay = findDayById(dayId);
+  const { item, index } = findTimelineItem(sourceDay, itemId);
+  if (!sourceDay || !item || index < 0) {
+    return;
+  }
+
+  const targetDay = ensureNextDay(sourceDay);
+  const movedItem = resolveSlotConflict(targetDay, {
+    ...item,
+    id: `${item.id}-m${Date.now()}`
+  });
+
+  sourceDay.items.splice(index, 1);
+  sourceDay.cost = Math.max(0, Number(sourceDay.cost || 0) - Number(item.cost || 0));
+
+  targetDay.items.push(movedItem);
+  targetDay.cost = Number(targetDay.cost || 0) + Number(movedItem.cost || 0);
+  selectedDayId.value = targetDay.id;
+  planner.value.updatedAt = "just now";
+
+  trackEvent("planner.replan.item_moved", {
+    fromDay: sourceDay.day,
+    toDay: targetDay.day,
+    title: item.title,
+    destination: planner.value.destination
+  });
+}
+
+function handleReplaceTimelineItem(dayId, itemId) {
+  const day = findDayById(dayId);
+  const { item, index } = findTimelineItem(day, itemId);
+  if (!day || !item || index < 0) {
+    return;
+  }
+
+  const pool = REPLACEMENT_ACTIVITY_POOL[item.icon] || REPLACEMENT_ACTIVITY_POOL.camera;
+  const nextTitle = pool.find((title) => title !== item.title) || `${item.slot} curated experience`;
+  const baseCost = Number(item.cost || 0);
+  const nextCost = Math.max(200, Math.round(baseCost * 1.1));
+  const budgetBucket = inferBudgetBucketFromItem(item);
+
+  const replaced = {
+    ...item,
+    title: nextTitle,
+    description: `Updated ${item.slot.toLowerCase()} plan: ${nextTitle}. Crafted to keep pacing smooth and avoid itinerary conflicts.`,
+    details: `${item.details || "Replanned"} Replaced via dynamic re-plan action.`,
+    cost: nextCost,
+    aiPick: true,
+    tags: [{ text: "Replanned", highlight: true }, ...(item.tags || []).slice(0, 2)]
+  };
+
+  day.items[index] = replaced;
+  day.cost = Math.max(0, Number(day.cost || 0) - baseCost + nextCost);
+  applyBudgetDelta(budgetBucket, nextCost - baseCost);
+  planner.value.updatedAt = "just now";
+
+  trackEvent("planner.replan.item_replaced", {
+    day: day.day,
+    oldTitle: item.title,
+    newTitle: replaced.title,
+    destination: planner.value.destination
+  });
 }
 
 function toggleSidebar() {
@@ -1550,6 +1832,14 @@ async function handlePlannerRouteIntent() {
 onMounted(() => {
   initSpeechRecognition();
 });
+
+watch(
+  () => authStore.user?.uid,
+  (nextUserId) => {
+    profileMemoryStore.initForUser(nextUserId || "guest");
+  },
+  { immediate: true }
+);
 
 onUnmounted(() => {
   if (recognition) {

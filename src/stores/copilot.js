@@ -67,7 +67,7 @@ function buildReply(promptText, scope, plannerContext, offlineStore) {
 
   if (query.includes("budget") || query.includes("cost") || query.includes("money")) {
     if (budgetTotal > 0) {
-      return `Current projected budget for ${destination} is ${budgetTotal} USD across ${Math.max(days, 1)} days. I can also suggest cost-cut and premium swap options.`;
+      return `Current projected budget for ${destination} is INR ${budgetTotal} across ${Math.max(days, 1)} days. I can also suggest cost-cut and premium swap options.`;
     }
     return "Budget context अभी empty hai. Generate ya open a trip first, then I will break down spend by category.";
   }

@@ -10,6 +10,11 @@ import {
   backendAdminUpdateUser,
   backendListTrips
 } from "../services/api/backendClient";
+import {
+  clearFeatureFlagOverride,
+  getFeatureFlagsSnapshot,
+  setFeatureFlagOverride
+} from "../config/featureFlags";
 import { isAdminUser as hasAdminAccess } from "../utils/adminAccess";
 import { useAuthStore } from "../stores/auth";
 import { useCommunityStore } from "../stores/community";
@@ -43,6 +48,7 @@ const destinations = ref([
   { id: "paris", name: "Paris", featured: false, seasonal: "autumn" },
   { id: "tokyo", name: "Tokyo", featured: false, seasonal: "spring" }
 ]);
+const featureFlags = ref(getFeatureFlagsSnapshot());
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
@@ -110,11 +116,37 @@ const chartRows = computed(() => {
   ];
 });
 
+const featureFlagRows = computed(() => Object.values(featureFlags.value || {}));
+
 function setMessage(message) {
   adminMessage.value = message;
   setTimeout(() => {
     adminMessage.value = "";
   }, 2200);
+}
+
+function refreshFeatureFlags() {
+  featureFlags.value = getFeatureFlagsSnapshot();
+}
+
+function toggleFeatureFlag(name, enabled) {
+  const ok = setFeatureFlagOverride(name, enabled);
+  if (!ok) {
+    setMessage("Feature flag update failed.");
+    return;
+  }
+  refreshFeatureFlags();
+  setMessage(`Feature ${name} set to ${enabled ? "ON" : "OFF"}.`);
+}
+
+function resetFeatureFlag(name) {
+  const ok = clearFeatureFlagOverride(name);
+  if (!ok) {
+    setMessage("Could not reset feature flag.");
+    return;
+  }
+  refreshFeatureFlags();
+  setMessage(`Feature ${name} reset to env default.`);
 }
 
 async function refreshAdminOverview() {
@@ -360,7 +392,24 @@ onMounted(loadAdminData);
 
       <section v-if="activeTab === 'settings'" class="glass-card block-card mt-6">
         <h3>Admin Settings</h3>
-        <p class="empty mt-3">Role policies, moderation thresholds, and automation rules can be configured here.</p>
+        <p class="empty mt-3">Runtime kill switches for high-risk features. Changes are persisted in browser override storage.</p>
+
+        <div class="table mt-3">
+          <article v-for="flag in featureFlagRows" :key="flag.name" class="row">
+            <div>
+              <strong>{{ flag.label }}</strong>
+              <p>{{ flag.name }} · Source: {{ flag.source }}</p>
+            </div>
+            <div class="meta">Current: {{ flag.enabled ? 'ON' : 'OFF' }} · ENV default: {{ flag.envEnabled ? 'ON' : 'OFF' }}</div>
+            <div class="actions">
+              <button type="button" class="btn btn-outline btn-xs" @click="toggleFeatureFlag(flag.name, true)">Enable</button>
+              <button type="button" class="btn btn-outline btn-xs" @click="toggleFeatureFlag(flag.name, false)">Disable</button>
+              <button type="button" class="btn btn-danger btn-xs" @click="resetFeatureFlag(flag.name)">Reset</button>
+            </div>
+          </article>
+        </div>
+
+        <p class="empty mt-3">Tip: Open a new tab or navigate again to quickly validate switched behavior in Planner/Roadtrip modules.</p>
       </section>
     </template>
   </div>

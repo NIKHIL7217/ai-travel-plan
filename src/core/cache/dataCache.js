@@ -7,7 +7,8 @@ export const CacheBuckets = {
   search: "search_cache",
   weather: "weather_cache",
   photo: "photo_cache",
-  route: "route_cache"
+  route: "route_cache",
+  events: "events_cache"
 };
 
 function now() {

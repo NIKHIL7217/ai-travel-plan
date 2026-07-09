@@ -109,6 +109,7 @@ function getStorageKey(userId = "guest") {
 function getDefaultPreferences() {
   return {
     travelStyle: "Comfort",
+    selectedCountry: "India",
     budgetPreference: {
       target: 1500,
       min: 400,
@@ -127,6 +128,7 @@ function normalizePreferenceSet(preferences = {}, fallback = getDefaultPreferenc
 
   return {
     travelStyle: normalizeString(source.travelStyle || source.style, fallback.travelStyle),
+    selectedCountry: normalizeString(source.selectedCountry || source.country, fallback.selectedCountry || "India"),
     budgetPreference: normalizeBudgetPreference({
       ...fallbackBudget,
       ...(source.budgetPreference || {}),
@@ -321,6 +323,7 @@ export function saveEditablePreferences(userId = "guest", patch = {}) {
   memory.preferences = {
     ...memory.preferences,
     travelStyle: normalizeString(patch.travelStyle, memory.preferences.travelStyle),
+    selectedCountry: normalizeString(patch.selectedCountry, memory.preferences.selectedCountry || "India"),
     budgetPreference: normalizeBudgetPreference({
       ...memory.preferences.budgetPreference,
       ...(patch.budgetPreference || {})

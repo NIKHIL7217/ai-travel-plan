@@ -5,6 +5,12 @@ import { useBookingStore } from "../../stores/booking";
 import { usePlannerSessionStore } from "../../stores/plannerSession";
 import { getFuelPriceInfo, getTollPricesForRoute } from "../../services/fuel-prices";
 import { userLocation } from "../../services/location";
+import { trackEvent } from "../../core/monitoring";
+import { isFeatureEnabled } from "../../config/featureFlags";
+import { backendTrackBookingFunnelEvent } from "../../services/api/backendClient";
+import { searchFlights as estimateFlights, searchHotels as estimateHotels, searchCabs as estimateCabs, BOOKING_DISCLAIMER } from "../../modules/booking/service";
+import { geocodePlace, getRouteDistance } from "../../services/gemini";
+import { fetchNearbyPlaces } from "../../services/travel/places.service";
 
 const props = defineProps({
   destination: { type: String, default: "" },
@@ -27,6 +33,30 @@ const sections = [
 ];
 
 const plannerContext = computed(() => plannerSession.activeContext || {});
+const bookingDisclaimer = BOOKING_DISCLAIMER;
+
+function trackBookingEvent(type, payload = {}) {
+  if (!isFeatureEnabled("FEATURE_BOOKING_ANALYTICS")) {
+    return;
+  }
+
+  const basePayload = {
+    destination: props.destination || plannerContext.value?.destination || "",
+    origin: props.currentLocation || plannerContext.value?.origin || "",
+    ...payload
+  };
+
+  trackEvent(type, basePayload);
+
+  backendTrackBookingFunnelEvent({
+    eventType: type,
+    stage: String(type || "").split(".").slice(1).join(".") || "unknown",
+    destination: basePayload.destination,
+    amount: Number(basePayload.cartTotalInr || basePayload.amountInr || 0),
+    revenueImpact: type === "booking.checkout.success",
+    meta: basePayload
+  });
+}
 
 // ========== BOOKING SECTION ==========
 const bookingTab = ref("flights");
@@ -101,6 +131,20 @@ watch(
       cabForm.date = newDate;
       hotelForm.checkIn = newDate;
     }
+
+    flightResults.value = [];
+    trainResults.value = [];
+    busResults.value = [];
+    cabResults.value = [];
+    hotelResults.value = [];
+    restaurantResults.value = [];
+
+    hasSearchedBooking.flights = false;
+    hasSearchedBooking.trains = false;
+    hasSearchedBooking.bus = false;
+    hasSearchedBooking.cabs = false;
+    hasSearchedStay.hotels = false;
+    hasSearchedStay.restaurants = false;
   }
 );
 
@@ -108,6 +152,12 @@ const flightResults = ref([]);
 const trainResults = ref([]);
 const busResults = ref([]);
 const cabResults = ref([]);
+const hasSearchedBooking = reactive({
+  flights: false,
+  trains: false,
+  bus: false,
+  cabs: false
+});
 
 // ========== ROADTRIP SECTION ==========
 const roadtripVehicle = ref("car");
@@ -173,40 +223,90 @@ const restaurantForm = reactive({
 
 const hotelResults = ref([]);
 const restaurantResults = ref([]);
+const hasSearchedStay = reactive({
+  hotels: false,
+  restaurants: false
+});
 
 // ========== Helper Functions ==========
 function priceInr(amount) {
   return formatPrice(Number(amount || 0), "INR");
 }
 
-function searchFlights() {
-  flightResults.value = [
-    {
-      id: `flight_${Date.now()}_1`,
-      type: "flight",
-      airline: "IndiGo",
-      from: flightForm.from,
-      to: flightForm.to,
-      departure: "10:30 AM",
-      arrival: "12:45 PM",
-      duration: "2h 15m",
-      price: 4500
-    },
-    {
-      id: `flight_${Date.now()}_2`,
-      type: "flight",
-      airline: "Air India",
-      from: flightForm.from,
-      to: flightForm.to,
-      departure: "2:00 PM",
-      arrival: "4:20 PM",
-      duration: "2h 20m",
-      price: 5200
+async function resolveDistanceKm(from, to) {
+  const origin = String(from || "").trim();
+  const destination = String(to || "").trim();
+  if (!origin || !destination) {
+    return null;
+  }
+
+  try {
+    const [originGeo, destinationGeo] = await Promise.all([
+      geocodePlace(origin),
+      geocodePlace(destination)
+    ]);
+    if (!originGeo || !destinationGeo) {
+      return null;
     }
-  ];
+
+    const route = await getRouteDistance(
+      { lat: Number(originGeo.lat), lng: Number(originGeo.lng) },
+      { lat: Number(destinationGeo.lat), lng: Number(destinationGeo.lng) }
+    );
+    return route && Number(route.distance) > 0 ? Number(route.distance) : null;
+  } catch {
+    return null;
+  }
 }
 
-function searchTrains() {
+function estimateTrainFare(distanceKm, classCode) {
+  const distance = Math.max(80, Number(distanceKm || 300));
+  const classMultiplier = classCode === "1ac" ? 2.7 : classCode === "2ac" ? 1.9 : classCode === "3ac" ? 1.35 : 1;
+  return Math.round((distance * 1.55 * classMultiplier) / 10) * 10;
+}
+
+function estimateBusFare(distanceKm, busType) {
+  const distance = Math.max(60, Number(distanceKm || 260));
+  const typeMultiplier = busType === "volvo" ? 1.8 : busType === "ac-sleeper" ? 1.5 : busType === "ac-seater" ? 1.25 : 1;
+  return Math.round((distance * 1.12 * typeMultiplier) / 10) * 10;
+}
+
+async function searchFlights() {
+  hasSearchedBooking.flights = true;
+  const estimated = estimateFlights({
+    from: flightForm.from,
+    to: flightForm.to,
+    date: flightForm.date,
+    travelers: flightForm.travelers
+  });
+
+  flightResults.value = estimated.map((item) => ({
+    id: item.id,
+    type: item.type,
+    airline: item.airline,
+    from: item.from,
+    to: item.to,
+    departure: item.departTime,
+    arrival: item.arriveTime,
+    duration: item.durationLabel,
+    price: item.price,
+    source: item.isEstimate ? "estimated" : "live"
+  }));
+
+  trackBookingEvent("booking.search.flights", {
+    from: flightForm.from,
+    to: flightForm.to,
+    travelers: flightForm.travelers,
+    resultCount: flightResults.value.length
+  });
+}
+
+async function searchTrains() {
+  hasSearchedBooking.trains = true;
+  const distanceKm = await resolveDistanceKm(trainForm.from, trainForm.to);
+  const distance = Math.max(90, Number(distanceKm || 300));
+  const baseDurationHours = Math.max(3, Math.round((distance / 58) * 10) / 10);
+
   trainResults.value = [
     {
       id: `train_${Date.now()}_1`,
@@ -216,10 +316,11 @@ function searchTrains() {
       from: trainForm.from,
       to: trainForm.to,
       departTime: "16:00",
-      arriveTime: "08:35",
-      duration: "16h 35m",
+      arriveTime: "06:30",
+      duration: `${baseDurationHours.toFixed(1)}h`,
       class: trainForm.class,
-      price: trainForm.class === "1ac" ? 4200 : trainForm.class === "2ac" ? 2800 : trainForm.class === "3ac" ? 1800 : 1200
+      price: estimateTrainFare(distance, trainForm.class),
+      source: distanceKm ? "live-distance" : "estimated"
     },
     {
       id: `train_${Date.now()}_2`,
@@ -228,16 +329,29 @@ function searchTrains() {
       trainNumber: "12001",
       from: trainForm.from,
       to: trainForm.to,
-      departTime: "06:00",
-      arriveTime: "14:25",
-      duration: "8h 25m",
+      departTime: "06:20",
+      arriveTime: "15:10",
+      duration: `${Math.max(2.5, baseDurationHours * 0.86).toFixed(1)}h`,
       class: trainForm.class,
-      price: trainForm.class === "1ac" ? 3500 : trainForm.class === "2ac" ? 2200 : trainForm.class === "3ac" ? 1400 : 950
+      price: Math.round(estimateTrainFare(distance, trainForm.class) * 1.08),
+      source: distanceKm ? "live-distance" : "estimated"
     }
   ];
+
+  trackBookingEvent("booking.search.trains", {
+    from: trainForm.from,
+    to: trainForm.to,
+    travelers: trainForm.travelers,
+    resultCount: trainResults.value.length
+  });
 }
 
-function searchBuses() {
+async function searchBuses() {
+  hasSearchedBooking.bus = true;
+  const distanceKm = await resolveDistanceKm(busForm.from, busForm.to);
+  const distance = Math.max(70, Number(distanceKm || 240));
+  const baseDurationHours = Math.max(2.5, Math.round((distance / 48) * 10) / 10);
+
   busResults.value = [
     {
       id: `bus_${Date.now()}_1`,
@@ -248,9 +362,10 @@ function searchBuses() {
       to: busForm.to,
       departTime: "22:00",
       arriveTime: "06:00",
-      duration: "8h",
+      duration: `${baseDurationHours.toFixed(1)}h`,
       busType: busForm.busType,
-      price: busForm.busType === "volvo" ? 1200 : busForm.busType === "ac-sleeper" ? 950 : busForm.busType === "ac-seater" ? 800 : 650
+      price: estimateBusFare(distance, busForm.busType),
+      source: distanceKm ? "live-distance" : "estimated"
     },
     {
       id: `bus_${Date.now()}_2`,
@@ -259,38 +374,50 @@ function searchBuses() {
       operator: "VRL Travels",
       from: busForm.from,
       to: busForm.to,
-      departTime: "23:30",
-      arriveTime: "07:30",
-      duration: "8h",
+      departTime: "23:10",
+      arriveTime: "07:45",
+      duration: `${Math.max(2, baseDurationHours * 1.05).toFixed(1)}h`,
       busType: busForm.busType,
-      price: busForm.busType === "volvo" ? 1350 : busForm.busType === "ac-sleeper" ? 1050 : busForm.busType === "ac-seater" ? 850 : 700
+      price: Math.round(estimateBusFare(distance, busForm.busType) * 1.06),
+      source: distanceKm ? "live-distance" : "estimated"
     }
   ];
+
+  trackBookingEvent("booking.search.bus", {
+    from: busForm.from,
+    to: busForm.to,
+    travelers: busForm.travelers,
+    resultCount: busResults.value.length
+  });
 }
 
-function searchCabs() {
-  cabResults.value = [
-    {
-      id: `cab_${Date.now()}_1`,
-      type: "cab",
-      service: "Uber",
-      from: cabForm.from,
-      to: cabForm.to,
-      cabType: cabForm.cabType,
-      estimatedTime: "25 mins",
-      price: 350
-    },
-    {
-      id: `cab_${Date.now()}_2`,
-      type: "cab",
-      service: "Ola",
-      from: cabForm.from,
-      to: cabForm.to,
-      cabType: cabForm.cabType,
-      estimatedTime: "20 mins",
-      price: 320
-    }
-  ];
+async function searchCabs() {
+  hasSearchedBooking.cabs = true;
+  const distanceKm = await resolveDistanceKm(cabForm.from, cabForm.to);
+  const estimated = estimateCabs({
+    from: cabForm.from,
+    to: cabForm.to,
+    date: cabForm.date,
+    distanceKm: distanceKm || undefined
+  });
+
+  cabResults.value = estimated.slice(0, 3).map((item, index) => ({
+    id: item.id,
+    type: item.type,
+    service: index % 2 === 0 ? "Uber" : "Ola",
+    from: item.from,
+    to: item.to,
+    cabType: item.name,
+    estimatedTime: item.etaLabel,
+    price: item.price,
+    source: distanceKm ? "live-distance" : "estimated"
+  }));
+
+  trackBookingEvent("booking.search.cabs", {
+    from: cabForm.from,
+    to: cabForm.to,
+    resultCount: cabResults.value.length
+  });
 }
 
 function calculateRoadtrip() {
@@ -342,50 +469,89 @@ function calculateRoadtrip() {
   fetchTollBreakdown();
 }
 
-function searchHotels() {
-  hotelResults.value = [
-    {
-      id: `hotel_${Date.now()}_1`,
-      type: "hotel",
-      name: "Taj Palace",
-      location: hotelForm.city,
-      rating: 4.8,
-      price: 5500 * hotelForm.nights,
-      pricePerNight: 5500
-    },
-    {
-      id: `hotel_${Date.now()}_2`,
-      type: "hotel",
-      name: "Budget Inn",
-      location: hotelForm.city,
-      rating: 3.8,
-      price: 1800 * hotelForm.nights,
-      pricePerNight: 1800
-    }
-  ];
+async function searchHotels() {
+  hasSearchedStay.hotels = true;
+  const estimated = estimateHotels({
+    city: hotelForm.city,
+    checkIn: hotelForm.checkIn,
+    nights: hotelForm.nights,
+    travelers: hotelForm.guests
+  });
+
+  hotelResults.value = estimated.slice(0, 6).map((item) => ({
+    id: item.id,
+    type: item.type,
+    name: item.name,
+    location: item.city,
+    rating: item.rating,
+    price: item.price,
+    pricePerNight: item.pricePerNight,
+    source: item.isEstimate ? "estimated" : "live"
+  }));
+
+  trackBookingEvent("booking.search.hotels", {
+    city: hotelForm.city,
+    nights: hotelForm.nights,
+    guests: hotelForm.guests,
+    resultCount: hotelResults.value.length
+  });
 }
 
-function searchRestaurants() {
-  restaurantResults.value = [
-    {
-      id: `rest_${Date.now()}_1`,
-      type: "restaurant",
-      name: "Chokhi Dhani",
-      cuisine: "Rajasthani",
-      rating: 4.5,
-      priceForTwo: 1200,
-      location: restaurantForm.city
-    },
-    {
-      id: `rest_${Date.now()}_2`,
-      type: "restaurant",
-      name: "Spice Court",
-      cuisine: "Multi-cuisine",
-      rating: 4.1,
-      priceForTwo: 900,
-      location: restaurantForm.city
+async function searchRestaurants() {
+  hasSearchedStay.restaurants = true;
+  const city = String(restaurantForm.city || "").trim();
+  let list = [];
+
+  try {
+    const geo = await geocodePlace(city);
+    if (geo) {
+      list = await fetchNearbyPlaces(Number(geo.lat), Number(geo.lng), "restaurant", city);
     }
-  ];
+  } catch {
+    list = [];
+  }
+
+  if (Array.isArray(list) && list.length) {
+    restaurantResults.value = list.slice(0, 8).map((item) => ({
+      id: `rest_${item.name}_${item.lat || "na"}`,
+      type: "restaurant",
+      name: item.name,
+      cuisine: item.type || "Local",
+      rating: Number(item.rating || 4.1),
+      priceForTwo: Math.round(Number(item.averagePrice || 700) * 2),
+      location: item.address || city,
+      source: "live"
+    }));
+  } else {
+    restaurantResults.value = [
+      {
+        id: `rest_${Date.now()}_1`,
+        type: "restaurant",
+        name: `${city || "City"} Local Kitchen`,
+        cuisine: "Local",
+        rating: 4.2,
+        priceForTwo: 1000,
+        location: city || "City Center",
+        source: "estimated"
+      },
+      {
+        id: `rest_${Date.now()}_2`,
+        type: "restaurant",
+        name: `${city || "City"} Bistro`,
+        cuisine: "Multi-cuisine",
+        rating: 4.0,
+        priceForTwo: 850,
+        location: city || "Downtown",
+        source: "estimated"
+      }
+    ];
+  }
+
+  trackBookingEvent("booking.search.restaurants", {
+    city: restaurantForm.city,
+    cuisine: restaurantForm.cuisine,
+    resultCount: restaurantResults.value.length
+  });
 }
 
 function addToCart(item) {
@@ -393,6 +559,12 @@ function addToCart(item) {
     ...item,
     name: item.name || item.airline || item.operator || item.service,
     bookedAt: new Date().toISOString()
+  });
+
+  trackBookingEvent("booking.cart.add", {
+    itemType: item.type || "unknown",
+    itemName: item.name || item.airline || item.operator || item.service || "",
+    amountInr: Number(item.price || item.priceForNight || item.priceForTwo || 0)
   });
 }
 
@@ -440,8 +612,14 @@ const checkoutStatus = ref({ type: "", text: "" });
 async function proceedToCheckout() {
   if (!bookingStore.cartCount) {
     checkoutStatus.value = { type: "error", text: "Cart is empty. Please add items before proceeding to checkout." };
+    trackBookingEvent("booking.checkout.blocked", { reason: "empty_cart" });
     return;
   }
+
+  trackBookingEvent("booking.checkout.started", {
+    cartCount: bookingStore.cartCount,
+    cartTotalInr: Number(bookingStore.cartTotal || 0)
+  });
 
   const result = await bookingStore.checkout({
     method: "card",
@@ -450,6 +628,10 @@ async function proceedToCheckout() {
 
   if (!result) {
     checkoutStatus.value = { type: "error", text: "Checkout process could not be completed. Please retry." };
+    trackBookingEvent("booking.checkout.failed", {
+      cartCount: bookingStore.cartCount,
+      cartTotalInr: Number(bookingStore.cartTotal || 0)
+    });
     return;
   }
 
@@ -457,6 +639,11 @@ async function proceedToCheckout() {
     type: "success",
     text: `Booking confirmed: ${result.reference}`
   };
+  trackBookingEvent("booking.checkout.success", {
+    reference: result.reference,
+    cartCount: bookingStore.cartCount,
+    cartTotalInr: Number(bookingStore.cartTotal || 0)
+  });
   showCartDetails.value = false;
   activeSection.value = "my-bookings";
 }
@@ -485,6 +672,7 @@ async function proceedToCheckout() {
 
     <!-- ========== BOOKING SECTION ========== -->
     <section v-if="activeSection === 'booking'" class="booking-section">
+      <p class="booking-disclaimer">{{ bookingDisclaimer }}</p>
       <div class="booking-tabs">
         <button
           v-for="tab in bookingTabs"
@@ -531,7 +719,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchFlights">Search Flights</button>
         </div>
 
-        <div v-if="flightResults.length" class="results-grid">
+        <div v-if="hasSearchedBooking.flights && flightResults.length" class="results-grid">
           <div v-for="flight in flightResults" :key="flight.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ flight.airline }}</strong>
@@ -581,7 +769,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchTrains">Search Trains</button>
         </div>
 
-        <div v-if="trainResults.length" class="results-grid">
+        <div v-if="hasSearchedBooking.trains && trainResults.length" class="results-grid">
           <div v-for="train in trainResults" :key="train.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ train.name }}</strong>
@@ -634,7 +822,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchBuses">Search Buses</button>
         </div>
 
-        <div v-if="busResults.length" class="results-grid">
+        <div v-if="hasSearchedBooking.bus && busResults.length" class="results-grid">
           <div v-for="bus in busResults" :key="bus.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ bus.name }}</strong>
@@ -683,7 +871,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchCabs">Find Cabs</button>
         </div>
 
-        <div v-if="cabResults.length" class="results-grid">
+        <div v-if="hasSearchedBooking.cabs && cabResults.length" class="results-grid">
           <div v-for="cab in cabResults" :key="cab.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ cab.service }}</strong>
@@ -895,7 +1083,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchHotels">Search Hotels</button>
         </div>
 
-        <div v-if="hotelResults.length" class="results-grid">
+        <div v-if="hasSearchedStay.hotels && hotelResults.length" class="results-grid">
           <div v-for="hotel in hotelResults" :key="hotel.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ hotel.name }}</strong>
@@ -944,7 +1132,7 @@ async function proceedToCheckout() {
           <button class="btn btn-primary" @click="searchRestaurants">Find Restaurants</button>
         </div>
 
-        <div v-if="restaurantResults.length" class="results-grid">
+        <div v-if="hasSearchedStay.restaurants && restaurantResults.length" class="results-grid">
           <div v-for="restaurant in restaurantResults" :key="restaurant.id" class="result-card glass-card">
             <div class="result-header">
               <strong>{{ restaurant.name }}</strong>
@@ -1058,6 +1246,16 @@ async function proceedToCheckout() {
 
 .travel-plan-header p {
   color: var(--color-text-secondary, #64748b);
+}
+
+.booking-disclaimer {
+  margin: 0 0 0.8rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted, #64748b);
+  background: rgba(226, 232, 240, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  padding: 0.65rem 0.8rem;
 }
 
 /* Section Navigation */

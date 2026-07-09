@@ -7,6 +7,7 @@ import { searchHotels } from "../../modules/booking/service";
 
 const bookingStore = useBookingStore();
 const plannerSession = usePlannerSessionStore();
+defineEmits(["openCheckout"]);
 
 const activeTab = ref("hotels");
 const tabs = [

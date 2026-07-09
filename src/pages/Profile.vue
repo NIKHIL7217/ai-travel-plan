@@ -35,6 +35,7 @@ const profileActionError = ref("");
 const editingProfileId = ref("");
 const profileDraft = ref({
   name: "",
+  selectedCountry: "India",
   style: "Balanced",
   travelMode: "Car",
   foodPreference: "mixed",
@@ -202,6 +203,7 @@ function openSection(sectionId) {
 function defaultProfileDraft() {
   return {
     name: "",
+    selectedCountry: "India",
     style: "Balanced",
     travelMode: "Car",
     foodPreference: "mixed",
@@ -228,6 +230,7 @@ function openPreferenceEditor(mode = "create", profile = null) {
     editingProfileId.value = profile.id;
     profileDraft.value = {
       name: profile.name || "",
+      selectedCountry: prefs.selectedCountry || "India",
       style: prefs.travelStyle || "Balanced",
       travelMode: prefs.transportPreference || "Car",
       foodPreference: prefs.foodPreference || "mixed",
@@ -246,6 +249,7 @@ function openPreferenceEditor(mode = "create", profile = null) {
     editingProfileId.value = "";
     profileDraft.value = {
       ...defaultProfileDraft(),
+      selectedCountry: activePrefs.selectedCountry || "India",
       style: activePrefs.travelStyle || "Balanced",
       travelMode: activePrefs.transportPreference || "Car",
       foodPreference: activePrefs.foodPreference || "mixed",
@@ -311,6 +315,7 @@ function savePreferenceProfile() {
     name,
     preferences: {
       travelStyle: profileDraft.value.style,
+      selectedCountry: profileDraft.value.selectedCountry,
       transportPreference: profileDraft.value.travelMode,
       foodPreference: profileDraft.value.foodPreference,
       stayPreference: profileDraft.value.stayPreference,
@@ -457,6 +462,7 @@ watch(
         <article class="glass-card identity-card">
           <h3>Favorite Style</h3>
           <h4>{{ favoriteStyle }}</h4>
+          <p class="card-copy">Pricing country: {{ preferences.selectedCountry || 'India' }}</p>
           <p class="card-copy">Preferred transport: {{ preferences.transportPreference || 'Car' }}</p>
           <p class="card-copy">Food pattern: {{ preferences.foodPreference || 'Mixed' }}</p>
           <p class="card-copy">Stay preference: {{ preferences.stayPreference || 'Mid-range' }}</p>
@@ -553,6 +559,16 @@ watch(
             </label>
 
             <label>
+              <span>Selected Country</span>
+              <input
+                class="form-input"
+                :value="profileDraft.selectedCountry"
+                @input="profileDraft.selectedCountry = $event.target.value"
+                placeholder="e.g. India, UAE, Japan"
+              />
+            </label>
+
+            <label>
               <span>Style</span>
               <select class="form-select" :value="profileDraft.style" @change="profileDraft.style = $event.target.value">
                 <option value="Balanced">Balanced</option>
@@ -596,7 +612,7 @@ watch(
             </label>
 
             <label>
-              <span>Budget Target (USD)</span>
+              <span>Budget Target (INR)</span>
               <input
                 class="form-input"
                 type="number"

@@ -184,6 +184,7 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
         .filter(Boolean),
     preferredSettings: (state) => ({
       style: state?.memory?.preferences?.travelStyle || "Balanced",
+      selectedCountry: state?.memory?.preferences?.selectedCountry || "India",
       transport: state?.memory?.preferences?.transportPreference || "Car",
       food: state?.memory?.preferences?.foodPreference || "mixed",
       stay: state?.memory?.preferences?.stayPreference || "mid-range"
@@ -201,10 +202,11 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
           preferences: prefs,
           summary: [
             prefs.travelStyle || "Balanced",
+            prefs.selectedCountry || "India",
             prefs.transportPreference || "Car",
             prefs.foodPreference || "mixed",
             prefs.stayPreference || "mid-range",
-            budgetTarget > 0 ? `${budgetTarget} USD` : "No budget"
+            budgetTarget > 0 ? `INR ${budgetTarget}` : "No budget"
           ].join(" | ")
         };
       });
@@ -242,7 +244,8 @@ export const useProfileMemoryStore = defineStore("profileMemory", {
         return "Generate and save trips to unlock adaptive profile memory nudges.";
       }
 
-      return `We noticed you usually prefer ${favorites.join(" and ") || "diverse destinations"}, ${style} style, and around ${budget || 1500} budget.`;
+      const selectedCountry = state?.memory?.preferences?.selectedCountry || "India";
+      return `We noticed you usually prefer ${favorites.join(" and ") || "diverse destinations"}, ${style} style, around INR ${budget || 1500} budget, and pricing context of ${selectedCountry}.`;
     }
   },
   actions: {

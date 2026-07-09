@@ -85,6 +85,12 @@ function normalizeOverpassPlaces(elements, type, lat, lng) {
         lat: el.lat,
         lng: el.lon,
         address: el.tags["addr:full"] || el.tags["addr:street"] || el.tags.city || "Address unavailable",
+        website: el.tags.website || el.tags["contact:website"] || undefined,
+        mapsUrl: `https://www.openstreetmap.org/?mlat=${el.lat}&mlon=${el.lon}#map=16/${el.lat}/${el.lon}`,
+        openingHours: el.tags.opening_hours ? [String(el.tags.opening_hours)] : undefined,
+        openNow: undefined,
+        priceLevel: undefined,
+        photoUrl: undefined,
         price: type === "lodging" ? inferredHotelPrice : undefined,
         averagePrice: type === "restaurant" ? inferredMealPrice : undefined,
         tier: type === "lodging" ? inferredTier : undefined,
@@ -195,6 +201,18 @@ function normalizeGooglePlaces(data, type, lat, lng) {
       lat: pLat,
       lng: pLng,
       address: place.formattedAddress || place.shortFormattedAddress || "Address unavailable",
+      website: place.websiteUri || undefined,
+      mapsUrl: place.googleMapsUri || undefined,
+      openingHours: Array.isArray(place?.regularOpeningHours?.weekdayDescriptions)
+        ? place.regularOpeningHours.weekdayDescriptions
+        : undefined,
+      openNow: typeof place?.regularOpeningHours?.openNow === "boolean"
+        ? place.regularOpeningHours.openNow
+        : undefined,
+      priceLevel: typeof place?.priceLevel === "string" ? place.priceLevel : undefined,
+      photoUrl: place?.photos?.[0]?.name
+        ? `https://places.googleapis.com/v1/${encodeURIComponent(place.photos[0].name).replace(/%2F/g, "/")}/media?maxHeightPx=900&maxWidthPx=1600&key=${GOOGLE_MAPS_KEY}`
+        : undefined,
       price: type === "lodging" ? inferredHotelPrice : undefined,
       averagePrice: type === "restaurant" ? inferredMealPrice : undefined,
       type: type === "restaurant" ? (place.primaryTypeDisplayName?.text || "Restaurant") : undefined,
@@ -234,7 +252,7 @@ async function fetchFromGooglePlaces(lat, lng, type) {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": GOOGLE_MAPS_KEY,
-      "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.nationalPhoneNumber,places.editorialSummary,places.priceLevel"
+      "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.nationalPhoneNumber,places.editorialSummary,places.priceLevel,places.googleMapsUri,places.websiteUri,places.regularOpeningHours,places.photos"
     },
     body: JSON.stringify(body)
   }, {

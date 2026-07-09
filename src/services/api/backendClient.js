@@ -203,6 +203,38 @@ export async function backendTrackTripRevenue(eventPayload) {
   }
 }
 
+export async function backendTrackBookingFunnelEvent(eventPayload) {
+  if (!isBackendEnabled() || !eventPayload) {
+    return null;
+  }
+
+  const session = getStoredSession();
+  const payload = {
+    userId: String(eventPayload.userId || session?.uid || "guest"),
+    eventType: String(eventPayload.eventType || "booking.event"),
+    stage: eventPayload.stage,
+    source: eventPayload.source || "planner.travel-plan-panel",
+    tripId: eventPayload.tripId,
+    destination: eventPayload.destination,
+    amount: Number(eventPayload.amount || 0),
+    revenueImpact: Boolean(eventPayload.revenueImpact),
+    meta: eventPayload.meta && typeof eventPayload.meta === "object" ? eventPayload.meta : {}
+  };
+
+  try {
+    const data = await request("/admin/events/trip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    return data?.user || null;
+  } catch (error) {
+    console.warn("Backend booking funnel tracking failed:", error);
+    return null;
+  }
+}
+
 export async function backendAdminGetOverview() {
   if (!isBackendEnabled()) {
     return null;

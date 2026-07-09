@@ -35,6 +35,12 @@ export interface NearbyPlace {
   type?: string;
   phone?: string;
   desc?: string;
+  website?: string;
+  mapsUrl?: string;
+  openingHours?: string[];
+  openNow?: boolean;
+  priceLevel?: string;
+  photoUrl?: string;
   [key: string]: unknown;
 }
 

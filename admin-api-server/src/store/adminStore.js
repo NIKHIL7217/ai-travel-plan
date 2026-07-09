@@ -174,6 +174,16 @@ function summarize(users = [], events = []) {
     return delta >= 0 && delta <= 24 * 60 * 60 * 1000;
   }).length;
 
+  const bookingSearches = events.filter((event) => String(event.type || "").startsWith("booking.search.")).length;
+  const bookingCartAdds = events.filter((event) => event.type === "booking.cart.add").length;
+  const bookingCheckoutStarted = events.filter((event) => event.type === "booking.checkout.started").length;
+  const bookingCheckoutSuccess = events.filter((event) => event.type === "booking.checkout.success").length;
+  const bookingCheckoutFailed = events.filter((event) => event.type === "booking.checkout.failed").length;
+  const bookingCheckoutBlocked = events.filter((event) => event.type === "booking.checkout.blocked").length;
+  const bookingConversionRate = bookingCheckoutStarted > 0
+    ? Number(((bookingCheckoutSuccess / bookingCheckoutStarted) * 100).toFixed(2))
+    : 0;
+
   return {
     totalUsers,
     activeUsers,
@@ -182,7 +192,16 @@ function summarize(users = [], events = []) {
     verifiedUsers,
     totalRevenue: Number(totalRevenue.toFixed(2)),
     totalTrips,
-    loginsToday
+    loginsToday,
+    bookingFunnel: {
+      searches: bookingSearches,
+      cartAdds: bookingCartAdds,
+      checkoutStarted: bookingCheckoutStarted,
+      checkoutSuccess: bookingCheckoutSuccess,
+      checkoutFailed: bookingCheckoutFailed,
+      checkoutBlocked: bookingCheckoutBlocked,
+      conversionRate: bookingConversionRate
+    }
   };
 }
 
@@ -362,41 +381,64 @@ export async function trackAuthEvent(payload = {}) {
 }
 
 export async function trackTripEvent(payload = {}) {
-  const userId = String(payload.userId || "").trim();
+  const userId = String(payload.userId || "guest").trim() || "guest";
   const tripId = String(payload.tripId || "").trim();
   const amount = Math.max(0, toNumber(payload.amount, 0));
   const destination = String(payload.destination || "").trim();
-
-  if (!userId) {
-    throw new Error("userId is required for trip event.");
-  }
+  const eventType = String(payload.eventType || "trip.saved").trim() || "trip.saved";
+  const stage = String(payload.stage || "").trim();
+  const source = String(payload.source || "app").trim() || "app";
+  const metaPayload = payload.meta && typeof payload.meta === "object" ? payload.meta : {};
+  const shouldIncrementTripCount = eventType === "trip.saved";
+  const shouldIncrementRevenue = shouldIncrementTripCount || eventType === "booking.checkout.success" || payload.revenueImpact === true;
 
   return queueWrite(async ({ users, events }) => {
     const normalizedUsers = users.map((user) => ensureUserShape(user));
     const index = normalizedUsers.findIndex((user) => user.id === userId);
-    if (index < 0) {
-      throw new Error("User not found. Track auth/signup first.");
-    }
 
     const timestamp = now();
-    const current = normalizedUsers[index];
+    const current = index >= 0
+      ? normalizedUsers[index]
+      : ensureUserShape({
+          id: userId,
+          email: userId === "guest" ? "guest@wanderai.local" : "",
+          displayName: userId === "guest" ? "Guest" : "Traveler",
+          role: "member",
+          status: "active",
+          isVerified: false,
+          signupSource: "app",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          lastLoginAt: 0,
+          loginCount: 0,
+          totalTrips: 0,
+          totalRevenue: 0
+        });
+
     const nextUser = ensureUserShape({
       ...current,
-      totalTrips: current.totalTrips + 1,
-      totalRevenue: Number((current.totalRevenue + amount).toFixed(2)),
+      totalTrips: shouldIncrementTripCount ? current.totalTrips + 1 : current.totalTrips,
+      totalRevenue: shouldIncrementRevenue ? Number((current.totalRevenue + amount).toFixed(2)) : current.totalRevenue,
       updatedAt: timestamp
     });
 
     const nextUsers = [...normalizedUsers];
-    nextUsers[index] = nextUser;
+    if (index >= 0) {
+      nextUsers[index] = nextUser;
+    } else {
+      nextUsers.unshift(nextUser);
+    }
 
     const nextEvents = recordEvent(events, {
-      type: "trip.saved",
+      type: eventType,
       userId,
-      amount,
+      amount: shouldIncrementRevenue ? amount : 0,
       meta: {
         tripId,
-        destination
+        destination,
+        stage,
+        source,
+        ...metaPayload
       }
     });
 

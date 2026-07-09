@@ -335,6 +335,61 @@
   text-transform: capitalize;
 }
 
+.route-compare-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-compare-card {
+  text-align: left;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+  padding: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.route-compare-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.45);
+}
+
+.route-compare-card.active {
+  border-color: #2563eb;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.18);
+  background: rgba(239, 246, 255, 0.86);
+}
+
+.route-compare-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-risk {
+  font-size: 0.66rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.9);
+  color: var(--color-text-muted);
+}
+
+.route-compare-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
 /* Stops */
 .stops-head {
   display: flex;
@@ -477,6 +532,11 @@
   font-size: 0.78rem;
 }
 
+.route-pref-sub {
+  display: block;
+  margin-top: 4px;
+}
+
 .picker-label {
   font-size: 0.74rem;
   font-weight: 700;
@@ -564,6 +624,10 @@
 
   .chip-row {
     gap: 8px;
+  }
+
+  .route-compare-grid {
+    grid-template-columns: 1fr;
   }
 
   .mode-chip {

@@ -2,6 +2,9 @@
 
 This document provides a brief overview of how APIs are integrated, used, and configured in the WanderAI project, answering common developer questions.
 
+For full product-readiness and feature-rich roadmap tracking, see:
+- docs/feature-rich-master-checklist.md
+
 ---
 
 ## 1. Where are the Gemini API & Google Maps API called?

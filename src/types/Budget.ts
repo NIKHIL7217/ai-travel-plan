@@ -1,5 +1,6 @@
 export interface BudgetEstimateOptions {
   userQuery?: string;
+  selectedCountry?: string;
   requireLive?: boolean;
   fastPath?: boolean;
   allowFallbackWithoutLive?: boolean;

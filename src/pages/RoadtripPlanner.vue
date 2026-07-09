@@ -8,6 +8,8 @@ import { generateRoadtripEngine, isRoadtripMode, estimateFuel, estimateToll, bui
 import { extractTripIntent } from "../services/gemini";
 import { getFuelPriceInfo, getTollPricesForRoute } from "../services/fuel-prices";
 import { userLocation, detectUserLocation } from "../services/location";
+import { trackEvent } from "../core/monitoring";
+import { isFeatureEnabled } from "../config/featureFlags";
 // import RoadtripIntelligencePanel from "../features/roadtrip/RoadtripIntelligencePanel.vue";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
 
@@ -33,6 +35,7 @@ const vehicleMileage = ref({
 
 const showFuelPriceInfo = ref(false);
 const detailedTollInfo = ref(null);
+const selectedRouteOptionId = ref("fastest");
 
 const FUEL_BY_MODE = {
   Car: ["Petrol", "Diesel", "CNG", "Electric"],
@@ -109,6 +112,73 @@ const energyCost = computed(() => Number(selectedFuelOption.value?.totalCost || 
 const tollCost = computed(() => Number(tollEstimation.value?.estimated || 0));
 const stopsCost = computed(() => selectedStops.value.reduce((sum, stop) => sum + addCostForStop(stop), 0));
 const totalTripCost = computed(() => energyCost.value + tollCost.value + stopsCost.value);
+
+const routeComparisons = computed(() => {
+  if (!isFeatureEnabled("FEATURE_ROUTE_COMPARISON") || !roadtrip.value || !distanceKm.value || !driveHours.value) {
+    return [];
+  }
+
+  const baseMinutes = Math.max(25, Math.round(driveHours.value * 60));
+  const baseCost = Math.max(0, totalTripCost.value);
+  const baseRisk = conditionLevel.value === "good" ? "Low" : conditionLevel.value === "moderate" ? "Medium" : "Elevated";
+
+  return [
+    {
+      id: "fastest",
+      title: "Fastest",
+      subtitle: "Higher toll roads, lower travel time",
+      etaMinutes: Math.max(20, Math.round(baseMinutes * 0.88)),
+      estimatedCostInr: Math.round(baseCost * 1.08),
+      risk: baseRisk
+    },
+    {
+      id: "cheapest",
+      title: "Cheapest",
+      subtitle: "Lower toll/fuel pressure, slower pace",
+      etaMinutes: Math.round(baseMinutes * 1.2),
+      estimatedCostInr: Math.max(0, Math.round(baseCost * 0.9)),
+      risk: conditionLevel.value === "poor" ? "Elevated" : "Medium"
+    },
+    {
+      id: "safest",
+      title: "Safest",
+      subtitle: "Balanced speed with conservative route choice",
+      etaMinutes: Math.round(baseMinutes * 1.1),
+      estimatedCostInr: Math.round(baseCost * 1.03),
+      risk: "Low"
+    }
+  ];
+});
+
+const selectedRouteOption = computed(() => {
+  return routeComparisons.value.find((option) => option.id === selectedRouteOptionId.value) || routeComparisons.value[0] || null;
+});
+
+function formatDuration(minutes) {
+  const totalMinutes = Math.max(0, Number(minutes || 0));
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (!hrs) {
+    return `${mins}m`;
+  }
+  return `${hrs}h ${mins}m`;
+}
+
+function chooseRouteOption(optionId) {
+  selectedRouteOptionId.value = optionId;
+  const option = routeComparisons.value.find((entry) => entry.id === optionId);
+  if (!option) {
+    return;
+  }
+
+  trackEvent("roadtrip.route.option.selected", {
+    option: option.id,
+    etaMinutes: option.etaMinutes,
+    estimatedCostInr: option.estimatedCostInr,
+    destination: controls.value.destination,
+    origin: controls.value.origin
+  });
+}
 
 function categoryLabel(category) {
   if (category === "ev") return "Charging stop";
@@ -277,6 +347,7 @@ async function handleGenerateRoadtrip() {
       travelMode: controls.value.travelMode,
       days: Number(controls.value.days || 5),
       budgetTotal: totalTripCost.value,
+      routePreference: selectedRouteOption.value?.id || "fastest",
       itineraryPreview: routeStops.value.attractionStops.map((stop) => stop.name).slice(0, 3)
     });
   } catch (error) {
@@ -528,6 +599,27 @@ async function showTollBreakdown() {
             <div class="stat"><span>Road</span><strong class="capitalize">{{ conditionLevel }}</strong></div>
             <div class="stat"><span>Traffic</span><strong>{{ roadtrip.mapTelemetry.congestionPercent }}%</strong></div>
           </div>
+
+          <div v-if="routeComparisons.length" class="route-compare-grid">
+            <button
+              v-for="option in routeComparisons"
+              :key="option.id"
+              type="button"
+              class="route-compare-card"
+              :class="{ active: selectedRouteOptionId === option.id }"
+              @click="chooseRouteOption(option.id)"
+            >
+              <div class="route-compare-top">
+                <strong>{{ option.title }}</strong>
+                <span class="route-risk">Risk: {{ option.risk }}</span>
+              </div>
+              <small>{{ option.subtitle }}</small>
+              <div class="route-compare-meta">
+                <span>ETA {{ formatDuration(option.etaMinutes) }}</span>
+                <span>₹{{ formatMoney(option.estimatedCostInr) }}</span>
+              </div>
+            </button>
+          </div>
         </section>
 
         <!-- Fuel / charging stops -->
@@ -618,6 +710,7 @@ async function showTollBreakdown() {
           <h3>Live trip cost</h3>
           <div class="cost-total">₹{{ formatMoney(totalTripCost) }}</div>
           <small class="cost-sub">{{ controls.travelMode }} · {{ controls.fuelType }} · {{ controls.travelers }} traveler(s)</small>
+          <small v-if="selectedRouteOption" class="cost-sub route-pref-sub">Preferred route: {{ selectedRouteOption.title }}</small>
           <small class="location-tag">📍 Prices based on {{ userLocation.city }}, {{ userLocation.state }}</small>
 
           <div class="fuel-picker mt-3">
