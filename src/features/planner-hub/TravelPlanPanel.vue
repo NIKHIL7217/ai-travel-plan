@@ -898,7 +898,7 @@ async function proceedToCheckout() {
         <button
           v-for="vehicle in vehicleTypes"
           :key="vehicle.id"
-          class="vehicle-btn"
+          class="booking-tab"
           :class="{ active: roadtripVehicle === vehicle.id }"
           @click="roadtripVehicle = vehicle.id; onVehicleChange()"
         >
