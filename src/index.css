@@ -124,10 +124,12 @@ a {
 /* Layout Container */
 .container {
   width: 100%;
-  /* max-width: 1500px; */
+  max-width: 1500px;
   margin: 0 auto;
   padding: 0 clamp(18px, 3vw, 28px);
 }
+
+/* container2  */
 
 /* Cross-page breathing rhythm */
 main .container.animate-fade-in {

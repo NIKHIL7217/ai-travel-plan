@@ -7,7 +7,6 @@ import { useOfflineStore } from "./stores/offline";
 import { detectUserLocation, userLocation } from "./services/location";
 import { isAdminUser as hasAdminAccess } from "./utils/adminAccess";
 import TravelCopilotWidget from "./features/copilot/TravelCopilotWidget.vue";
-import '../public/favicon.png';
 
 const NAVBAR_HEIGHT = 78;
 const HERO_EXIT_OFFSET = 28;
@@ -181,7 +180,7 @@ onBeforeUnmount(() => {
       <div class="container nav-content">
         <!-- Logo -->
         <RouterLink to="/" class="brand-logo">
-          <img src="../public/favicon.png" class="logo-circle" alt="WanderAI Logo" />
+          <img src="/favicon.png" class="logo-circle" alt="WanderAI Logo" />
           <span class="logo-txt">Wander<span class="logo-blue">AI</span></span>
         </RouterLink>
 

@@ -118,14 +118,14 @@ export async function generateTravelPlan(destination: string, style: string, day
         {
           "destination": "Name of destination and country",
           "tagline": "Engaging catchy subtitle",
-          "summary": "1-2 sentence description",
+          "summary": "2-4 sentence description",
           "itinerary": [
             {
               "day": 1,
               "theme": "Theme of this day",
-              "morning": "Detailed morning activity",
-              "afternoon": "Detailed afternoon activity",
-              "evening": "Detailed evening activity",
+              "morning": "Detailed morning activity suggesting local attractions or heritage sites",
+              "afternoon": "Detailed afternoon activity suggesting for beautiful spots, markets, cultural experiences, restaurants",
+              "evening": "Detailed evening activity suggesting for sunset spots, nightlife, local events, leisure, cafe, dinner, etc.",
               "foodRecommendation": "Recommended local dish or restaurant"
             }
           ]

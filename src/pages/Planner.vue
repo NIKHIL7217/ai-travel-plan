@@ -101,7 +101,7 @@
       <aside class="left_panel">
         <div class="left_panel-header">
           <div class="ai-icon">
-            <img src="../../public/favicon.png" width="20" height="20" alt="WanderAI Logo" />
+            <img src="/favicon.png" width="20" height="20" alt="WanderAI Logo" />
           </div>
           <div class="ai-title">
             <strong>Wander AI</strong>
@@ -455,6 +455,7 @@ import {
 import { usePlannerSessionStore } from "../stores/plannerSession";
 import { userLocation } from "../services/location";
 import InteractiveTripMap from "../features/maps/InteractiveTripMap.vue";
+import favicon from '../assets/favicon.png';
 
 const TravelPlanPanel = defineAsyncComponent(() => import("../features/planner-hub/TravelPlanPanel.vue"));
 const WeatherHubPanel = defineAsyncComponent(() => import("../features/planner-hub/WeatherPanel.vue"));
