@@ -435,6 +435,31 @@ const currentFuelTypes = computed(() => {
 });
 
 const showCartDetails = ref(false);
+const checkoutStatus = ref({ type: "", text: "" });
+
+async function proceedToCheckout() {
+  if (!bookingStore.cartCount) {
+    checkoutStatus.value = { type: "error", text: "Cart is empty. Please add items before proceeding to checkout." };
+    return;
+  }
+
+  const result = await bookingStore.checkout({
+    method: "card",
+    name: "Wander Traveller"
+  });
+
+  if (!result) {
+    checkoutStatus.value = { type: "error", text: "Checkout process could not be completed. Please retry." };
+    return;
+  }
+
+  checkoutStatus.value = {
+    type: "success",
+    text: `Booking confirmed: ${result.reference}`
+  };
+  showCartDetails.value = false;
+  activeSection.value = "my-bookings";
+}
 </script>
 
 <template>
@@ -999,9 +1024,16 @@ const showCartDetails = ref(false);
         </div>
         <div class="cart-actions" style="display: flex; gap: 10px;">
           <button class="btn btn-outline" @click="bookingStore.clearCart()">Clear Cart</button>
-          <button class="btn btn-primary">Proceed to Checkout</button>
+          <button class="btn btn-primary" @click="proceedToCheckout">Proceed to Checkout</button>
         </div>
       </div>
+      <p
+        v-if="checkoutStatus.text"
+        class="checkout-status"
+        :class="checkoutStatus.type === 'success' ? 'checkout-status-success' : 'checkout-status-error'"
+      >
+        {{ checkoutStatus.text }}
+      </p>
     </div>
   </div>
 </template>
@@ -1280,6 +1312,20 @@ const showCartDetails = ref(false);
 .stat-value {
   font-size: 1.5rem;
   font-weight: 700;
+}
+
+.checkout-status {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.checkout-status-success {
+  color: #0f766e;
+}
+
+.checkout-status-error {
+  color: #b91c1c;
 }
 
 /* Bookings List */

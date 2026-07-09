@@ -288,7 +288,17 @@ function toggleHelpful(reviewId) {
 
 function openPlanner() {
   const destination = String(destinationInput.value || "").trim();
-  router.push({ path: "/planner", query: destination ? { destination } : undefined });
+  router.push({
+    path: "/planner",
+    query: destination
+      ? {
+        tab: "plan",
+        destination,
+        prompt: `Plan a complete trip to ${destination} with itinerary, hotels, restaurants and map.`,
+        source: "community"
+      }
+      : { tab: "plan", source: "community" }
+  });
 }
 
 onMounted(async () => {
