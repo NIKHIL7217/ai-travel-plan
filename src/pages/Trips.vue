@@ -149,7 +149,13 @@ onMounted(loadTripsExperience);
         <h1>Your Entire Travel Story In One Place</h1>
         <p>Upcoming plans, completed journeys, offline readiness, memory timeline, and achievements now live in one immersive flow.</p>
       </div>
-      <button type="button" class="btn btn-primary" @click="router.push('/planner')">Plan New Trip</button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        @click="router.push({ path: '/planner', query: { tab: 'plan', action: 'new', source: 'trips' } })"
+      >
+        Plan New Trip
+      </button>
     </section>
 
     <section class="section-tabs mt-6">

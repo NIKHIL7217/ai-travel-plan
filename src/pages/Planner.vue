@@ -423,7 +423,7 @@
 
             <template v-else-if="activeTab === 'map'">
               <div class="timeline-header"><div><h2>Route Intelligence</h2><p>{{ mapSummary.route }}</p></div></div>
-              <InteractiveTripMap v-if="mapPoints.length" :points="mapPoints" :show-route="true" height="320px" class="planner-map" />
+              <InteractiveTripMap :points="effectiveMapPoints" :show-route="true" height="320px" class="planner-map" />
               <div class="timeline-list">
                 <div class="timeline-card" @click="handleMapCardClick('distance')"><div class="t-icon-box orange"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" /></svg></div><div class="t-content"><h3>Distance</h3><p>{{ mapSummary.distance }}</p></div></div>
                 <div class="timeline-card" @click="handleMapCardClick('transfer')"><div class="t-icon-box pink"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 11h-2V7h2zm0 4h-2v-2h2z" /></svg></div><div class="t-content"><h3>Transfer Time</h3><p>{{ mapSummary.transfer }}</p></div></div>
@@ -450,7 +450,8 @@ import {
   generateTravelPlan,
   generateBudgetEstimate,
   extractTripIntent,
-  getRealLocationData
+  getRealLocationData,
+  geocodePlace
 } from "../services/gemini";
 import { usePlannerSessionStore } from "../stores/plannerSession";
 import { userLocation } from "../services/location";
@@ -468,6 +469,7 @@ const route = useRoute();
 const plannerSession = usePlannerSessionStore();
 const isGenerating = ref(false);
 const mapPoints = ref([]);
+const destinationCenter = ref(null);
 const INR_RATE = 83.5;
 
 const isListening = ref(false);
@@ -660,6 +662,16 @@ const stats = computed(() => {
   ];
 });
 
+const effectiveMapPoints = computed(() => {
+  if (mapPoints.value.length) {
+    return mapPoints.value;
+  }
+  if (destinationCenter.value) {
+    return [destinationCenter.value];
+  }
+  return [];
+});
+
 function formatInr(value) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Number(value || 0));
 }
@@ -778,8 +790,53 @@ function mapPlanToDays(plan, perDayCost) {
   });
 }
 
-function applyLocationData(location) {
+function buildFallbackHotels(destinationName) {
+  const destination = String(destinationName || "your destination").trim() || "your destination";
+  return [
+    { name: `${destination} Central Stay`, area: `${destination} Central`, summary: "Mid-range comfort close to landmarks", rating: "4.3", nightly: 4200 },
+    { name: `${destination} Heritage Hotel`, area: `${destination} Old Town`, summary: "Local vibe with walkable attractions", rating: "4.2", nightly: 3600 },
+    { name: `${destination} Riverside Suites`, area: `${destination} Riverside`, summary: "Scenic views and quiet neighborhood", rating: "4.4", nightly: 5100 }
+  ];
+}
+
+function buildFallbackRestaurants(destinationName) {
+  const destination = String(destinationName || "your destination").trim() || "your destination";
+  return [
+    { name: `${destination} Spice Kitchen`, type: "Local cuisine", area: `${destination} Market`, rating: "4.3", avgCost: 800 },
+    { name: `${destination} Street Bites`, type: "Street food", area: `${destination} Downtown`, rating: "4.2", avgCost: 500 },
+    { name: `${destination} Sunset Bistro`, type: "Multi-cuisine", area: `${destination} Promenade`, rating: "4.4", avgCost: 1100 }
+  ];
+}
+
+async function ensureDestinationPoint(destinationName) {
+  const destination = String(destinationName || "").trim();
+  if (!destination || mapPoints.value.length) {
+    return;
+  }
+
+  try {
+    const geo = await geocodePlace(destination);
+    if (geo && Number.isFinite(Number(geo.lat)) && Number.isFinite(Number(geo.lng))) {
+      destinationCenter.value = {
+        lat: Number(geo.lat),
+        lng: Number(geo.lng),
+        label: geo.formattedName || destination,
+        sublabel: "Destination center",
+        type: "start"
+      };
+      return;
+    }
+  } catch {
+    // Non-blocking fallback path.
+  }
+
+  destinationCenter.value = null;
+}
+
+function applyLocationData(location, destinationName) {
   if (!location) {
+    hotels.value = buildFallbackHotels(destinationName);
+    restaurants.value = buildFallbackRestaurants(destinationName);
     return;
   }
 
@@ -792,6 +849,8 @@ function applyLocationData(location) {
       rating: String(hotel.rating ?? "4.5"),
       nightly: Math.round(Number(hotel.price || 0)) || 6500
     }));
+  } else {
+    hotels.value = buildFallbackHotels(destinationName);
   }
 
   const liveFood = Array.isArray(location.restaurants) ? location.restaurants : [];
@@ -803,6 +862,8 @@ function applyLocationData(location) {
       rating: String(restaurant.rating ?? "4.4"),
       avgCost: Math.round(Number(restaurant.averagePrice || 0)) || 700
     }));
+  } else {
+    restaurants.value = buildFallbackRestaurants(destinationName);
   }
 
   const points = [
@@ -813,6 +874,7 @@ function applyLocationData(location) {
 
   if (points.length) {
     mapPoints.value = points;
+    destinationCenter.value = null;
   }
 
   if (location.weather?.temp) {
@@ -896,8 +958,15 @@ async function generateRealPlan(query, options = {}) {
     dayPlans.value = mapPlanToDays(plan, perDayCost);
     selectedDayId.value = dayPlans.value[0]?.id || "d1";
 
+    // Always rebuild destination-linked sections for every new generation.
+    hotels.value = [];
+    restaurants.value = [];
+    mapPoints.value = [];
+    destinationCenter.value = null;
+
     applyBudgetEstimate(budget, perDayCost * resolvedDays);
-    applyLocationData(location);
+    applyLocationData(location, planner.value.destination);
+    await ensureDestinationPoint(planner.value.destination);
 
     mapSummary.value = {
       route: dayPlans.value.map((day) => day.area).join(" → "),
@@ -1313,6 +1382,8 @@ function snapshotState() {
     restaurants: restaurants.value,
     budgetBuckets: budgetBuckets.value,
     mapSummary: mapSummary.value,
+    mapPoints: mapPoints.value,
+    destinationCenter: destinationCenter.value,
     aiTips: aiTips.value,
     chatMessages: chatMessages.value,
     activeTab: activeTab.value,
@@ -1331,6 +1402,8 @@ function restoreState(state) {
   restaurants.value = Array.isArray(state.restaurants) ? state.restaurants : [];
   budgetBuckets.value = state.budgetBuckets || { flights: 0, stay: 0, food: 0, transport: 0, activities: 0 };
   mapSummary.value = state.mapSummary || { route: "", distance: "", transfer: "" };
+  mapPoints.value = Array.isArray(state.mapPoints) ? state.mapPoints : [];
+  destinationCenter.value = state.destinationCenter || null;
   aiTips.value = Array.isArray(state.aiTips) ? state.aiTips : [];
   chatMessages.value = Array.isArray(state.chatMessages) && state.chatMessages.length ? state.chatMessages : [createGreetingMessage()];
   activeTab.value = typeof state.activeTab === "string" ? state.activeTab : "itinerary";
@@ -1391,6 +1464,8 @@ function resetWorkingState() {
   restaurants.value = [];
   budgetBuckets.value = { flights: 0, stay: 0, food: 0, transport: 0, activities: 0 };
   mapSummary.value = { route: "", distance: "", transfer: "" };
+  mapPoints.value = [];
+  destinationCenter.value = null;
   aiTips.value = [];
   chatMessages.value = [createGreetingMessage()];
   selectedDayId.value = "";
@@ -1434,6 +1509,44 @@ function openChat(sessionId) {
   }
 }
 
+const handledRouteActionKey = ref("");
+
+async function handlePlannerRouteIntent() {
+  const destination = typeof route.query.destination === "string" ? route.query.destination.trim() : "";
+  const prompt = typeof route.query.prompt === "string" ? route.query.prompt.trim() : "";
+  const action = typeof route.query.action === "string" ? route.query.action.trim() : "";
+  const source = typeof route.query.source === "string" ? route.query.source.trim() : "";
+  const key = `${destination}|${prompt}|${action}|${source}`;
+
+  if (!key || key === "|||" || handledRouteActionKey.value === key) {
+    return;
+  }
+
+  if (!(prompt || action === "new" || destination)) {
+    return;
+  }
+
+  handledRouteActionKey.value = key;
+  hubTab.value = "plan";
+
+  if (action === "new") {
+    startNewChat();
+    router.replace({ path: "/planner", query: { tab: "plan" } }).catch(() => {});
+    return;
+  }
+
+  if (prompt) {
+    await generateRealPlan(prompt);
+    router.replace({ path: "/planner", query: { tab: "plan" } }).catch(() => {});
+    return;
+  }
+
+  if (destination) {
+    await generateRealPlan(`Plan a complete ${Math.max(dayPlans.value.length || 5, 3)} day trip to ${destination} with hotels, food and local route map.`);
+    router.replace({ path: "/planner", query: { tab: "plan" } }).catch(() => {});
+  }
+}
+
 onMounted(() => {
   initSpeechRecognition();
 });
@@ -1469,10 +1582,18 @@ onMounted(() => {
   } catch {
     // Ignore malformed local state and continue with a fresh new-chat view.
   }
+  handlePlannerRouteIntent();
 });
 
 watch(
-  [planner, dayPlans, hotels, restaurants, budgetBuckets, mapSummary, aiTips, chatMessages, activeTab, selectedDayId, hasPlan],
+  () => [route.query.destination, route.query.prompt, route.query.action, route.query.source],
+  () => {
+    handlePlannerRouteIntent();
+  }
+);
+
+watch(
+  [planner, dayPlans, hotels, restaurants, budgetBuckets, mapSummary, mapPoints, destinationCenter, aiTips, chatMessages, activeTab, selectedDayId, hasPlan],
   () => {
     persistActiveSession();
     saveToStorage();
