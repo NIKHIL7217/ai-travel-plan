@@ -66,31 +66,31 @@ const quickAccessCards = [
     tab: "travel-plan",
     image: TravelPlan,
     title: "Travel Plan",
-    subtitle: "Bookings, roadtrips & stays"
+    subtitle: " Discover the joy of effortless travel bookings, open-road adventures, and relaxing overnight stays tailored just for you."
   },
   {
     tab: "weather",
     image: Weather,
     title: "Weather",
-    subtitle: "Forecast for your trip"
+    subtitle: "Here is your comprehensive weather forecast and seasonal outlook to help you pack perfectly for your upcoming trip."
   },
   {
     tab: "community",
     image: Community,
     title: "Community",
-    subtitle: "Reviews & tips"
+    subtitle: "Wander together with a passionate travel community where every adventure is shared and every journey inspires another."
   },
   {
     tab: "trips",
     image: SavedTrips,
     title: "Saved Trips",
-    subtitle: "Your past plans"
+    subtitle: "Your next great adventure begins right here, explore your collection of saved trips and take the first step toward reality."
   },
   {
     tab: "documents",
     image: Documents,
     title: "Documents",
-    subtitle: "Visa & travel docs"
+    subtitle: "Travel with total peace of mind by keeping your vital passports, visas, and booking confirmations safe in one place."
   }
 ];
 
