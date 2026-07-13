@@ -362,12 +362,12 @@
   min-height: 200px;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(circle at 24% 22%, rgba(56, 189, 248, 0.32), transparent 52%),
-    linear-gradient(145deg, rgba(8, 47, 73, 0.9), rgba(2, 132, 199, 0.82));
 }
 
 .step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(226, 232, 240, 0.36);
   border-radius: 999px;
   padding: 8px 14px;
@@ -376,7 +376,15 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #f8fafc;
-  background: rgba(8, 47, 73, 0.5);
+  /* background: rgba(8, 47, 73, 0.5); */
+}
+
+.step-image {
+  display: block;
+  width: 100%;
+  /* height: 56px; */
+  object-fit: contain;
+  border-radius: 12px;
 }
 
 .step-copy {

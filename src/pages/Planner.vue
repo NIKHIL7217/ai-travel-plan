@@ -643,14 +643,13 @@ const selectedDay = computed(
   () => dayPlans.value.find((day) => day.id === selectedDayId.value) || dayPlans.value[0] || { day: 1, theme: "", dateLabel: "", area: "", cost: 0, items: [] }
 );
 const totalBudget = computed(() => {
-  const { flights, stay, food, transport, activities } = budgetBuckets.value;
-  return flights + stay + food + transport + activities;
+  const { stay, food, transport, activities } = budgetBuckets.value;
+  return stay + food + transport + activities;
 });
 
 const budgetRows = computed(() => {
-  const { flights, stay, food, transport, activities } = budgetBuckets.value;
+  const { stay, food, transport, activities } = budgetBuckets.value;
   return [
-    { label: "Flights", amount: flights },
     { label: "Stay", amount: stay },
     { label: "Food", amount: food },
     { label: "Transport", amount: transport },
@@ -925,7 +924,7 @@ function applyBudgetEstimate(budget, fallbackTotal) {
     return;
   }
   budgetBuckets.value = {
-    flights: Math.round((Number(budget.flights) || 0) * INR_RATE),
+    flights: 0,
     stay: Math.round((Number(budget.accommodation) || 0) * INR_RATE),
     food: Math.round((Number(budget.food) || 0) * INR_RATE),
     transport: Math.round((Number(budget.transportation) || 0) * INR_RATE),

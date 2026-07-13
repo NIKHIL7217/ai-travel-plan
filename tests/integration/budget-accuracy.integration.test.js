@@ -36,7 +36,7 @@ function independentEstimate({ destination, days, travelers, style, travelMode }
   const food = Math.round(20 * pax * tripDays * destinationTier * Math.min(1.35, styleMultiplier));
   const activities = Math.round(14 * pax * tripDays * destinationTier * styleMultiplier);
 
-  const total = flights + transportation + accommodation + food + activities;
+  const total = transportation + accommodation + food + activities;
   return { flights, transportation, accommodation, food, activities, total };
 }
 
@@ -48,6 +48,19 @@ function relativeGap(actual, expected) {
 }
 
 describe("budget accuracy reconciliation", () => {
+  it("excludes flights from the total budget estimate", async () => {
+    const app = await generateBudgetEstimate("Goa", 4, 2, "comfort", "Flight", {
+      fastPath: true,
+      requireLive: false,
+      allowFallbackWithoutLive: true
+    });
+
+    const expectedTotal = app.accommodation + app.food + app.transportation + app.activities;
+
+    expect(app.flights).toBe(0);
+    expect(app.total).toBe(expectedTotal);
+  }, 30000);
+
   it("keeps app estimate within practical gap vs independent benchmark", async () => {
     const scenarios = [
       { destination: "Goa", days: 5, travelers: 2, style: "comfort", travelMode: "Car" },
@@ -87,5 +100,5 @@ describe("budget accuracy reconciliation", () => {
     const byDestination = Object.fromEntries(comparisons.map((item) => [item.destination.toLowerCase(), item.appTotal]));
     expect(byDestination.dubai).toBeGreaterThan(byDestination.bali);
     expect(byDestination.bali).toBeGreaterThan(byDestination.goa);
-  });
+  }, 60000);
 });

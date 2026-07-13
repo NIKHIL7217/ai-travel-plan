@@ -11,6 +11,10 @@ import Weather from '../assets/Weather.png';
 import SavedTrips from '../assets/SavedTrips.png';
 import Documents from '../assets/Documents.png';
 import Community from '../assets/Community.png';
+import TripPlanner from '../assets/Trip_Planner.png';
+import AiBuilder from '../assets/AI_Builder.png';
+import Comparision from '../assets/Comparision.png';
+import Share from  '../assets/Share.png';
 
 const router = useRouter();
 
@@ -99,25 +103,25 @@ const howItWorksSteps = [
     id: "step-1",
     title: "Describe your dream trip",
     description: "Tell WanderAI where you want to go, your travel style, and your budget range.",
-    accent: "Step 1"
+    image: TripPlanner
   },
   {
     id: "step-2",
     title: "AI builds personalized itinerary",
     description: "Get a complete trip plan with local highlights, pacing, and practical suggestions.",
-    accent: "Step 2"
+    image: AiBuilder
   },
   {
     id: "step-3",
     title: "Compare budgets and routes",
     description: "Evaluate cost options, transport modes, and route intelligence before you decide.",
-    accent: "Step 3"
+    image: Comparision
   },
   {
     id: "step-4",
     title: "Save, share and travel",
     description: "Move plans into trips, collaborate with your group, and carry offline-ready context.",
-    accent: "Step 4"
+    image: Share
   }
 ];
 
@@ -572,7 +576,7 @@ onUnmounted(() => {
 
           <div class="hero_newButtons" style="display: flex; gap: 12px; margin-top: 12px;">
             <button type="submit" class="btn btn-primary" @click="openRoute('/planner')">Start Planning</button>
-            <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
+            <button type="button" class="btn btn-outline">Explore Destinations</button>
           </div>
         </div>
 
@@ -642,11 +646,13 @@ onUnmounted(() => {
         <article
           v-for="(step, index) in howItWorksSteps"
           :key="step.id"
-          class="step-card glass-card"
+          class="step-card"
           :class="{ reverse: index % 2 === 1 }"
         >
           <div class="step-art" aria-hidden="true">
-            <div class="step-badge">{{ step.accent }}</div>
+            <div class="step-badge">
+              <img v-if="step.image" :src="step.image" :alt="step.title" class="step-image" loading="lazy" />
+            </div>
           </div>
           <div class="step-copy">
             <h3>{{ step.title }}</h3>

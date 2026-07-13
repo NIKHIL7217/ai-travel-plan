@@ -413,7 +413,6 @@ watch(
         <p>From personality to milestones, your full journey identity is now one cinematic profile.</p>
       </div>
       <div class="hero-actions">
-        <button type="button" class="btn btn-outline" @click="openSection('overview')">Overview</button>
         <button type="button" class="btn btn-outline" @click="openSection('vault')">Vault</button>
       </div>
     </header>

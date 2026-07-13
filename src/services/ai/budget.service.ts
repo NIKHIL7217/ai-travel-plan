@@ -134,12 +134,10 @@ function buildIndependentBudgetBenchmark({
   const distance = Math.max(40, Number(distanceKm || 0));
   const rooms = Math.ceil(pax / 2);
 
-  let flights = 0;
   let transportation = 0;
   const mode = String(travelMode || "car").toLowerCase();
 
   if (mode.includes("flight")) {
-    flights = Math.round(Math.max(85, distance * 0.095) * pax * styleMultiplier);
     transportation = Math.round(18 * tripDays * pax * styleMultiplier * transportCostMultiplier);
   } else if (mode.includes("train")) {
     transportation = Math.round((Math.max(20, distance * 0.026) * pax + 9 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
@@ -158,17 +156,17 @@ function buildIndependentBudgetBenchmark({
   const activities = Math.round(16 * tripDays * pax * styleMultiplier * destinationCostIndex * activityCostMultiplier);
 
   return normalizeBudgetForTravelMode({
-    flights,
+    flights: 0,
     accommodation,
     food,
     transportation,
     activities,
-    total: flights + accommodation + food + transportation + activities
+    total: accommodation + food + transportation + activities
   }, travelMode);
 }
 
 function reconcileBudgetWithBenchmark(candidate: BudgetEstimate, benchmark: BudgetEstimate, travelMode: string, budgetLimit: number): BudgetEstimate {
-  const categoryKeys = ["flights", "accommodation", "food", "transportation", "activities"];
+  const categoryKeys = ["accommodation", "food", "transportation", "activities"];
   const averageGap = categoryKeys
     .map((key) => relativeGap(candidate[key], benchmark[key]))
     .reduce((sum, item) => sum + item, 0) / categoryKeys.length;
@@ -185,18 +183,18 @@ function reconcileBudgetWithBenchmark(candidate: BudgetEstimate, benchmark: Budg
   }, {} as Record<string, number>);
 
   let normalized = normalizeBudgetForTravelMode({
-    flights: blended.flights,
+    flights: 0,
     accommodation: blended.accommodation,
     food: blended.food,
     transportation: blended.transportation,
     activities: blended.activities,
-    total: blended.flights + blended.accommodation + blended.food + blended.transportation + blended.activities
+    total: blended.accommodation + blended.food + blended.transportation + blended.activities
   }, travelMode);
 
   if (budgetLimit > 0 && normalized.total > budgetLimit * 1.08) {
     const shrink = Math.max(0.5, budgetLimit / normalized.total);
     normalized = normalizeBudgetForTravelMode({
-      flights: Math.round(normalized.flights * shrink),
+      flights: 0,
       accommodation: Math.round(normalized.accommodation * shrink),
       food: Math.round(normalized.food * shrink),
       transportation: Math.round(normalized.transportation * shrink),
@@ -210,7 +208,7 @@ function reconcileBudgetWithBenchmark(candidate: BudgetEstimate, benchmark: Budg
 
 function normalizeBudgetForTravelMode(rawBudget: Partial<BudgetEstimate>, travelMode: string): BudgetEstimate {
   const normalized: BudgetEstimate = {
-    flights: Math.max(0, Math.round(Number(rawBudget?.flights || 0))),
+    flights: 0,
     accommodation: Math.max(0, Math.round(Number(rawBudget?.accommodation || 0))),
     food: Math.max(0, Math.round(Number(rawBudget?.food || 0))),
     transportation: Math.max(0, Math.round(Number(rawBudget?.transportation || 0))),
@@ -218,13 +216,7 @@ function normalizeBudgetForTravelMode(rawBudget: Partial<BudgetEstimate>, travel
     total: Math.max(0, Math.round(Number(rawBudget?.total || 0)))
   };
 
-  const mode = String(travelMode || "").toLowerCase();
-  if (!mode.includes("flight")) {
-    normalized.transportation = Math.max(0, normalized.transportation + normalized.flights);
-    normalized.flights = 0;
-  }
-
-  normalized.total = normalized.flights + normalized.accommodation + normalized.food + normalized.transportation + normalized.activities;
+  normalized.total = normalized.accommodation + normalized.food + normalized.transportation + normalized.activities;
   return normalized;
 }
 
@@ -381,7 +373,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
 
         Constraints:
         - Reflect user's travel mode and stay/food preferences.
-        - If travel mode is not flight, set "flights" to 0 and include all movement costs in "transportation".
+        - Do not include flight costs in the budget. Set "flights" to 0 and keep all movement costs in "transportation".
         - ${budgetInstruction}
         - Return integer numeric values only.
 
@@ -416,7 +408,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
 
         if (parsed && typeof parsed === "object") {
           const normalized = normalizeBudgetForTravelMode({
-            flights: Math.max(0, Math.round(Number(parsed.flights || 0))),
+            flights: 0,
             accommodation: Math.max(0, Math.round(Number(parsed.accommodation || 0))),
             food: Math.max(0, Math.round(Number(parsed.food || 0))),
             transportation: Math.max(0, Math.round(Number(parsed.transportation || 0))),
@@ -445,38 +437,31 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     throw new Error("Live AI budget response unavailable right now. Try again shortly.");
   }
 
-  let flights = 0;
   let transportation = 0;
   const modeClean = (travelMode || "Car").toLowerCase();
 
   if (modeClean.includes("flight")) {
-    flights = Math.round(Math.max(55, distanceKm * 0.085) * travelers * styleMultiplier);
     transportation = Math.round(16 * days * travelers * styleMultiplier * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("train")) {
     const trainCost = Math.max(18, distanceKm * 0.022) * travelers * styleMultiplier;
     const localTransit = 11 * days * travelers * styleMultiplier;
-    flights = 0;
     transportation = Math.round((trainCost + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("bus")) {
     const busCost = Math.max(12, distanceKm * 0.017) * travelers * styleMultiplier;
     const localTransit = 9 * days * travelers * styleMultiplier;
-    flights = 0;
     transportation = Math.round((busCost + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("car")) {
     const fuelCostUsd = (distanceKm / 14) * 1.25;
     const tollCostUsd = distanceKm * 0.015;
     const localTransit = 12 * days * travelers * styleMultiplier;
-    flights = 0;
     transportation = Math.round(((fuelCostUsd + tollCostUsd) * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("bike")) {
     const fuelCostUsd = (distanceKm / 45) * 1.25;
     const localTransit = 8 * days * travelers * styleMultiplier;
-    flights = 0;
     transportation = Math.round((fuelCostUsd * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
   } else {
     const baseTransfer = Math.max(24, distanceKm * 0.03) * travelers * styleMultiplier;
     const localTransit = 15 * days * travelers * styleMultiplier;
-    flights = 0;
     transportation = Math.round((baseTransfer + localTransit) * destinationCostSignal.transportMultiplier);
   }
 
@@ -486,7 +471,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   const activityBase = styleMultiplier >= 1.5 ? 26 : styleMultiplier >= 1.1 ? 20 : 14;
   const activities = Math.round(activityBase * days * travelers * destinationCostSignal.activityMultiplier);
 
-  let total = flights + accommodation + food + transportation + activities;
+  let total = accommodation + food + transportation + activities;
 
   if (budgetLimit > 0 && total > budgetLimit) {
     const excessRatio = total / budgetLimit;
@@ -494,16 +479,16 @@ export async function generateBudgetEstimate(destination: string, days: number, 
       const reducedAccommodation = Math.round(accommodation * 0.9);
       const reducedFood = Math.round(food * 0.92);
       const reducedActivities = Math.round(activities * 0.88);
-      total = flights + reducedAccommodation + reducedFood + transportation + reducedActivities;
+      total = reducedAccommodation + reducedFood + transportation + reducedActivities;
       return validateBudgetEstimate({
-        flights,
+        flights: 0,
         accommodation: reducedAccommodation,
         food: reducedFood,
         transportation,
         activities: reducedActivities,
         total
       }, "reduced fallback budget estimate") || {
-        flights,
+        flights: 0,
         accommodation: reducedAccommodation,
         food: reducedFood,
         transportation,
@@ -514,7 +499,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   }
 
   const normalizedFallbackBudget = normalizeBudgetForTravelMode({
-    flights,
+    flights: 0,
     accommodation,
     food,
     transportation,
@@ -525,11 +510,11 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   const reconciledFallbackBudget = reconcileBudgetWithBenchmark(normalizedFallbackBudget, independentBenchmarkBudget, travelMode, budgetLimit);
 
   return validateBudgetEstimate(reconciledFallbackBudget, "fallback budget estimate") || {
-    flights,
+    flights: 0,
     accommodation,
     food,
     transportation,
     activities,
-    total: flights + accommodation + food + transportation + activities
+    total: accommodation + food + transportation + activities
   };
 }
