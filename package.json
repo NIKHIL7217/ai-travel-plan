@@ -26,6 +26,7 @@
     "quality:check": "npm run lint && npm run test:coverage && npm run build"
   },
   "dependencies": {
+    "@lucide/vue": "^1.24.0",
     "firebase": "^12.15.0",
     "leaflet": "^1.9.4",
     "motion-v": "^2.3.0",
