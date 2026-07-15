@@ -12,7 +12,7 @@ export const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 export const REAL_DATA_ONLY = import.meta.env.VITE_REAL_DATA_ONLY !== "false";
 export const NO_MOCK_DATA_POLICY = import.meta.env.VITE_NO_MOCK_DATA_POLICY !== "false";
 export const DEMO_MODE = !NO_MOCK_DATA_POLICY && import.meta.env.VITE_DEMO_MODE === "true";
-export const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+export const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
 
 export function isGeminiConfigured(): boolean {
   return Boolean(GEMINI_API_KEY);

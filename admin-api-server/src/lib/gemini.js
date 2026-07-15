@@ -1,6 +1,6 @@
 import process from "node:process";
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 
 export function getApiKey() {
   return process.env.GEMINI_API_KEY || "";

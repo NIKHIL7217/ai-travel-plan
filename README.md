@@ -10,7 +10,7 @@ For full product-readiness and feature-rich roadmap tracking, see:
 ## 1. Where are the Gemini API & Google Maps API called?
 
 ### **Gemini API Calls**
-The Gemini API model (`gemini-2.5-flash`) is used across the AI services located in the [src/services/ai](file:///d:/ai-travel-plan/src/services/ai) directory:
+The Gemini API model (`gemini-3.1-flash-lite`) is used across the AI services located in the [src/services/ai](file:///d:/ai-travel-plan/src/services/ai) directory:
 * **Trip Itinerary Generation:** Called in [itinerary.service.ts](file:///d:/ai-travel-plan/src/services/ai/itinerary.service.ts) inside `generateTravelPlan`.
 * **Budget Estimations:** Called in [budget.service.ts](file:///d:/ai-travel-plan/src/services/ai/budget.service.ts) inside `generateBudgetEstimate`.
 * **WhatsApp Chat Intent Parsing:** Called in [intent.service.ts](file:///d:/ai-travel-plan/src/services/ai/intent.service.ts) inside `extractTripIntent`.
