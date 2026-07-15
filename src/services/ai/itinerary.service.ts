@@ -1,4 +1,4 @@
-import { REAL_DATA_ONLY } from "./planner.service";
+import { GEMINI_API_KEY, REAL_DATA_ONLY, requestGeminiJson } from "./planner.service";
 import { geocodePlace } from "../maps/geocoding.service";
 import { fetchWeather } from "../travel/weather.service";
 import { fetchNearbyPlaces } from "../travel/places.service";
@@ -420,19 +420,32 @@ function createActivity(
   const transport = buildTransportLeg(previousLocation, location, slot.type);
 
   const whyVisit = (() => {
+    const rating = Number.isFinite(Number(place.rating)) && Number(place.rating) > 0
+      ? `Rated ${Number(place.rating).toFixed(1)}/5`
+      : null;
+    const reviews = Number.isFinite(Number(place.reviews)) && Number(place.reviews) > 0
+      ? `${Number(place.reviews).toLocaleString()} reviews`
+      : null;
+    const qualitySuffix = [rating, reviews].filter(Boolean).join(", ");
+    const qualityPrefix = qualitySuffix ? `${qualitySuffix}. ` : "";
+
     if (slot.type === "food") {
-      return "Popular local dining stop with consistent ratings and practical access for the day plan.";
+      return `${qualityPrefix}Well-regarded local dining stop with a practical location for this leg of the day.`;
     }
     if (slot.type === "cafe") {
-      return "Good pause point for ambience, rest, and light local flavors between activity legs.";
+      return `${qualityPrefix}A good mid-day pause point for ambience and light local flavors between activity legs.`;
     }
     if (slot.type === "sunset") {
-      return "Suitable window for golden-hour views and photography.";
+      return `${qualityPrefix}Ideal vantage point for golden-hour views and ${season} photography.`;
     }
     if (slot.type === "nightlife") {
-      return "Evening-friendly area that keeps the day balanced between exploration and unwind time.";
+      return `${qualityPrefix}Evening-friendly spot that closes the day on a relaxed and local note.`;
     }
-    return "Selected for relevance, ratings, and location flow across your daily route.";
+    if (place.desc) {
+      const shortDesc = place.desc.length > 120 ? place.desc.slice(0, 120).trimEnd() + "\u2026" : place.desc;
+      return qualityPrefix ? `${qualityPrefix}${shortDesc}` : shortDesc;
+    }
+    return `${qualityPrefix}Curated for route flow, local significance, and visitor ratings.`;
   })();
 
   const suitableFor = ["family", "couple", "solo", "group"].filter((label) => {
@@ -646,31 +659,46 @@ function injectEventsIntoDailyPlans(
   return { days: nextDays, mappedEvents };
 }
 
+/** Per-day slices of each place category, pre-distributed before the loop. */
+interface DayPlacePool {
+  attractions: NearbyPlace[];
+  restaurants: NearbyPlace[];
+  cafes: NearbyPlace[];
+}
+
+/**
+ * Distributes places across days using round-robin interleaving so that
+ * each day gets a guaranteed-unique slice:
+ *   Day 0 → indices [0, numDays, 2*numDays, …]
+ *   Day 1 → indices [1, numDays+1, 2*numDays+1, …]
+ *   …
+ * When the pool is smaller than numDays the tail days cycle gracefully
+ * but only after ALL earlier days have received distinct top-ranked places.
+ */
+function buildDayPools(places: NearbyPlace[], numDays: number): NearbyPlace[][] {
+  const pools: NearbyPlace[][] = Array.from({ length: numDays }, () => []);
+  places.forEach((place, i) => {
+    pools[i % numDays].push(place);
+  });
+  return pools;
+}
+
+/**
+ * Picks the next place for a slot from the pre-built per-day pool.
+ * Falls back to a generic placeholder when all pools are exhausted.
+ */
 function choosePlaceForSlot(
   slotType: string,
-  slotName: string,
-  dayIndex: number,
-  attractions: NearbyPlace[],
-  restaurants: NearbyPlace[],
-  cafes: NearbyPlace[],
+  dayPool: DayPlacePool,
+  localAttrIdx: number,
+  localRestIdx: number,
+  localCafeIdx: number,
   destinationName: string,
   centerLat: number | null,
   centerLng: number | null
 ): NearbyPlace {
-  const slotIndexMap: Record<string, number> = {
-    morning: 0,
-    "late morning": 1,
-    lunch: 0,
-    afternoon: 2,
-    evening: 0,
-    sunset: 3,
-    dinner: 1,
-    night: 2
-  };
-  const slotOffset = slotIndexMap[String(slotName || "").toLowerCase()] || 0;
-
   if (slotType === "food") {
-    return restaurants[(dayIndex + slotOffset) % Math.max(1, restaurants.length)] || {
+    return dayPool.restaurants[localRestIdx % Math.max(1, dayPool.restaurants.length)] || {
       name: `${destinationName} Local Eatery`,
       lat: centerLat || undefined,
       lng: centerLng || undefined,
@@ -680,7 +708,8 @@ function choosePlaceForSlot(
   }
 
   if (slotType === "cafe") {
-    return cafes[(dayIndex + slotOffset) % Math.max(1, cafes.length)] || restaurants[(dayIndex + slotOffset) % Math.max(1, restaurants.length)] || {
+    const pool = dayPool.cafes.length > 0 ? dayPool.cafes : dayPool.restaurants;
+    return pool[localCafeIdx % Math.max(1, pool.length)] || {
       name: `${destinationName} Cafe District`,
       lat: centerLat || undefined,
       lng: centerLng || undefined,
@@ -690,7 +719,11 @@ function choosePlaceForSlot(
   }
 
   if (slotType === "nightlife") {
-    return restaurants[(dayIndex + 1 + slotOffset) % Math.max(1, restaurants.length)] || attractions[(dayIndex + 1 + slotOffset) % Math.max(1, attractions.length)] || {
+    // Even-indexed nightlife slots pull from restaurants; odd from attractions
+    // (localRestIdx already advanced past lunch+dinner so parity varies by day)
+    const useRestaurant = localRestIdx % 2 === 0;
+    const pool = useRestaurant ? dayPool.restaurants : dayPool.attractions;
+    return pool[localRestIdx % Math.max(1, pool.length)] || {
       name: `${destinationName} Evening Promenade`,
       lat: centerLat || undefined,
       lng: centerLng || undefined,
@@ -698,7 +731,8 @@ function choosePlaceForSlot(
     };
   }
 
-  return attractions[(dayIndex * 3 + slotOffset) % Math.max(1, attractions.length)] || {
+  // sightseeing / culture / experience / sunset
+  return dayPool.attractions[localAttrIdx % Math.max(1, dayPool.attractions.length)] || {
     name: `${destinationName} City Center`,
     lat: centerLat || undefined,
     lng: centerLng || undefined,
@@ -799,13 +833,77 @@ async function buildPremiumTravelPlan(
   const season = seasonForDate(options.startDate);
   const dailyPlans: DailyItinerary[] = [];
 
+  // Pre-distribute places across days with round-robin interleaving.
+  // Day 0 receives places[0, N, 2N, …]; Day 1 receives places[1, N+1, 2N+1, …].
+  // This eliminates the period-2 repetition that occurs when a small pool wraps
+  // at pool.length / slotsPerDay boundaries.
+  const attrPools  = buildDayPools(attractions, requestedDays);
+  const restPools  = buildDayPools(restaurants, requestedDays);
+  const cafesRaw   = cafes.length > 0 ? cafes : restaurants;
+  const cafePools  = buildDayPools(cafesRaw, requestedDays);
+
   for (let dayIndex = 0; dayIndex < requestedDays; dayIndex += 1) {
     const weatherBrief = weatherForDay(weather, dayIndex);
     const theme = toTheme(resolvedDestinationName, season, dayIndex + 1);
     let previousLocation: PlaceMetadata | null = null;
 
+    // Per-day counters — reset each day so every day starts fresh from its own slice
+    let localAttrIdx = 0;
+    let localRestIdx = 0;
+    let localCafeIdx = 0;
+
+    // Track names used this day to prevent the same place appearing twice in one day
+    const usedThisDay = new Set<string>();
+
+    const dayPool: DayPlacePool = {
+      attractions: attrPools[dayIndex],
+      restaurants: restPools[dayIndex],
+      cafes: cafePools[dayIndex]
+    };
+
     const activities: ItineraryActivity[] = DAY_SLOT_BLUEPRINT.map((slot) => {
-      const place = choosePlaceForSlot(slot.type, slot.slot, dayIndex, attractions, restaurants, cafes, resolvedDestinationName, centerLat, centerLng);
+      let place = choosePlaceForSlot(
+        slot.type,
+        dayPool,
+        localAttrIdx,
+        localRestIdx,
+        localCafeIdx,
+        resolvedDestinationName,
+        centerLat,
+        centerLng
+      );
+
+      // If this place was already used today, step forward one position in the
+      // matching pool until we find a fresh one (or exhaust the pool).
+      const isAttrSlot = ["sightseeing", "culture", "experience", "sunset"].includes(slot.type);
+      const isRestSlot = slot.type === "food" || slot.type === "nightlife";
+      const isCafeSlot = slot.type === "cafe";
+
+      let attempts = 0;
+      const maxAttempts = 8;
+      while (usedThisDay.has(safeName(place.name).toLowerCase()) && attempts < maxAttempts) {
+        attempts += 1;
+        if (isAttrSlot)  localAttrIdx  += 1;
+        if (isRestSlot)  localRestIdx  += 1;
+        if (isCafeSlot)  localCafeIdx  += 1;
+        place = choosePlaceForSlot(
+          slot.type,
+          dayPool,
+          localAttrIdx,
+          localRestIdx,
+          localCafeIdx,
+          resolvedDestinationName,
+          centerLat,
+          centerLng
+        );
+      }
+
+      // Commit the chosen place and advance the correct local counter
+      usedThisDay.add(safeName(place.name).toLowerCase());
+      if (isAttrSlot)  localAttrIdx  += 1;
+      if (isRestSlot)  localRestIdx  += 1;
+      if (isCafeSlot)  localCafeIdx  += 1;
+
       const result = createActivity(slot, place, imageMap, season, previousLocation, dayIndex);
       previousLocation = result.nextLocation;
       return result.activity;

@@ -576,7 +576,7 @@ onUnmounted(() => {
 
           <div class="hero_newButtons" style="display: flex; gap: 12px; margin-top: 12px;">
             <button type="submit" class="btn btn-primary" @click="openRoute('/planner')">Start Planning</button>
-            <button type="button" class="btn btn-outline">Explore Destinations</button>
+            <button type="button" class="btn btn-outline" @click="openRoute('/destination')">Explore Destinations</button>
           </div>
         </div>
 
