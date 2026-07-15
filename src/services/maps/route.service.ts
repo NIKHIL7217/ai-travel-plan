@@ -14,6 +14,7 @@ import type {
 } from "../../types/Trip";
 import { requestWithRetry } from "../../core/monitoring/request";
 import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+import { backendLiveRoute } from "../api/backendClient";
 
 export type {
   RouteDistance,
@@ -72,6 +73,19 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
 export async function getRouteDistance(origin: RoutePoint, destination: RoutePoint): Promise<RouteDistance | null> {
   const cacheKey = `${routePointKey(origin)}->${routePointKey(destination)}`;
   return withCache(CacheBuckets.route, cacheKey, ROUTE_CACHE_TTL_MS, async () => {
+  try {
+    const backendRoute = await backendLiveRoute(
+      typeof origin === "string" ? origin : `${origin?.lat},${origin?.lng}`,
+      typeof destination === "string" ? destination : `${destination?.lat},${destination?.lng}`
+    );
+    const validatedBackendRoute = validateRouteDistance(backendRoute, "backend route distance");
+    if (validatedBackendRoute) {
+      return validatedBackendRoute;
+    }
+  } catch {
+    // Fall through to direct providers.
+  }
+
   let originLat = null, originLng = null;
   let destLat = null, destLng = null;
 

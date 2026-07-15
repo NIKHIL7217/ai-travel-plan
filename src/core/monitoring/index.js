@@ -67,6 +67,14 @@ export function trackApiFailure(payload) {
   return trackEvent("api.request.failure", payload, "warn");
 }
 
+export function trackLiveDataDecision(payload) {
+  return trackEvent("live.data.decision", payload, payload?.status === "failure" ? "warn" : "info");
+}
+
+export function getLiveDataSnapshot() {
+  return events.filter((event) => String(event.type || "").startsWith("live.data."));
+}
+
 export function getMonitoringSnapshot() {
   return [...events];
 }

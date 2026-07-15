@@ -3,6 +3,8 @@ import { parseWithSchema } from "../../schemas/parse";
 import type { WeatherReport } from "../../types/Trip";
 import { requestWithRetry } from "../../core/monitoring/request";
 import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+import { backendLiveWeather } from "../api/backendClient";
+import { trackLiveDataDecision } from "../../core/monitoring";
 
 export type { WeatherForecastDay, WeatherReport } from "../../types/Trip";
 
@@ -20,6 +22,17 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
 
   const cacheKey = `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
   return withCache(CacheBuckets.weather, cacheKey, WEATHER_CACHE_TTL_MS, async () => {
+
+  try {
+    const backendWeather = await backendLiveWeather(lat, lng);
+    const validatedBackendWeather = validateWeatherReport(backendWeather, "backend weather response");
+    if (validatedBackendWeather) {
+      trackLiveDataDecision({ feature: "weather", source: "backend", status: "success" });
+      return validatedBackendWeather;
+    }
+  } catch {
+    // Fall through to direct providers.
+  }
 
   // If OpenWeather Key is available, try OpenWeather API
   if (OPENWEATHER_KEY) {
@@ -83,6 +96,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
         };
         const validated = validateWeatherReport(report, "OpenWeather response");
         if (validated) {
+          trackLiveDataDecision({ feature: "weather", source: "openweather", status: "success" });
           return validated;
         }
       }
@@ -142,6 +156,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
       };
       const validated = validateWeatherReport(report, "Open-Meteo response");
       if (validated) {
+        trackLiveDataDecision({ feature: "weather", source: "open-meteo", status: "success" });
         return validated;
       }
     }
@@ -150,6 +165,7 @@ export async function fetchWeather(lat: number, lng: number): Promise<WeatherRep
   }
 
   if (REAL_DATA_ONLY || NO_MOCK_DATA_POLICY) {
+    trackLiveDataDecision({ feature: "weather", source: "none", status: "empty", reason: "strict_live_mode" });
     return null;
   }
 

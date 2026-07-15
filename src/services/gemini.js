@@ -4,6 +4,7 @@
  */
 
 export { isGeminiConfigured } from "./ai/planner.service";
+export { REAL_DATA_ONLY } from "./ai/planner.service";
 export { generateTravelPlan } from "./ai/itinerary.service";
 export { generateBudgetEstimate } from "./ai/budget.service";
 export { extractTripIntent } from "./ai/intent.service";

@@ -3,6 +3,7 @@ import { parseArrayWithSchema } from "../../schemas/parse";
 import type { NearbyPlace, PlaceType } from "../../types/Trip";
 import { requestWithRetry } from "../../core/monitoring/request";
 import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+import { backendLivePlaces } from "../api/backendClient";
 
 export type { NearbyPlace, PlaceType } from "../../types/Trip";
 
@@ -278,6 +279,16 @@ export async function fetchNearbyPlaces(lat: number, lng: number, type: PlaceTyp
   const normalizedType = String(type || "restaurant").toLowerCase();
   const cacheKey = `${normalizedType}:${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
   return withCache(CacheBuckets.search, cacheKey, PLACES_CACHE_TTL_MS, async () => {
+
+  try {
+    const backendResults = await backendLivePlaces(lat, lng, type);
+    const validatedBackendResults = validatePlaces(backendResults || [], `backend ${type} places`);
+    if (validatedBackendResults.length > 0) {
+      return validatedBackendResults;
+    }
+  } catch {
+    // Fall through to direct providers.
+  }
 
   // Prefer Google Places if key exists to get latest, high-fidelity place data.
   try {

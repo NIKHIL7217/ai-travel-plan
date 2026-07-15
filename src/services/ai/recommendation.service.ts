@@ -1039,6 +1039,19 @@ function cityHash(str: string): number {
  * via Gemini AI, or falls back to mock data
  */
 export async function getRealLocationData(destinationName: string): Promise<LocationData> {
+  const normalizedDestination = String(destinationName || "").trim();
+  if (!normalizedDestination) {
+    return {
+      hotels: [],
+      restaurants: [],
+      hospitals: [],
+      fuelStations: [],
+      attractions: [],
+      evChargingStations: []
+    };
+  }
+
+  return withCache(CacheBuckets.search, `location:${normalizedDestination.toLowerCase()}`, 1000 * 60 * 15, async () => {
   // We intentionally skip getTestingLocationData here because it returns DestinationDetails
   // (which lack lat/lng coordinates) instead of LocationData. We want it to fall through
   // to the geocode + fetchNearbyPlaces flow which has proper coordinates for the map.
@@ -1143,8 +1156,9 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
 
       if (response.ok) {
         const data = await response.json();
-        const text = data.candidates[0].content.parts[0].text;
-        const validated = validateLocationData(JSON.parse(text.trim()), "Gemini location data");
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const parsed = extractJsonObject(text) || safeJsonParse(text, null);
+        const validated = validateLocationData(parsed, "Gemini location data");
         if (validated) {
           return validated;
         }
@@ -1175,6 +1189,7 @@ export async function getRealLocationData(destinationName: string): Promise<Loca
   // Fallback to mock location data with coordinates
   const fallback = generateMockLocationData(destinationName);
   return validateLocationData(fallback, "fallback location data") || fallback;
+  });
 }
 
 function generateMockLocationData(destinationName) {

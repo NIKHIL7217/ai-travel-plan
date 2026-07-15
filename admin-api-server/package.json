@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Secure backend for WanderAI: server-side Gemini proxy + trip persistence.",
+  "description": "Secure backend for WanderAI: server-side Gemini proxy, live travel data proxy, and trip persistence.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

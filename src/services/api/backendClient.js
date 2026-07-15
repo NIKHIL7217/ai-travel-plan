@@ -3,7 +3,10 @@
  * Supports trip storage, secure AI chat proxy, and admin telemetry.
  */
 
+import { trackLiveDataDecision } from "../../core/monitoring";
+
 const API_BASE_URL =
+  import.meta.env.VITE_ADMIN_API_BASE_URL ||
   import.meta.env.VITE_ADMIN_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
   "";
@@ -244,6 +247,98 @@ export async function backendAdminGetOverview() {
     return await request("/admin/overview");
   } catch (error) {
     console.warn("Backend admin overview failed:", error);
+    return null;
+  }
+}
+
+export async function backendLiveGeocode(query) {
+  if (!isBackendEnabled()) {
+    trackLiveDataDecision({ feature: "geocode", source: "backend", status: "skipped", reason: "backend_disabled" });
+    return null;
+  }
+
+  try {
+    const response = await fetch(withQuery("/live/geocode", { q: query }), {
+      headers: { ...buildRequesterHeaders() }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `Backend geocode failed: ${response.status}`);
+    }
+    trackLiveDataDecision({ feature: "geocode", source: "backend", status: data?.result ? "success" : "empty" });
+    return data?.result || null;
+  } catch (error) {
+    console.warn("Backend geocode failed:", error);
+    trackLiveDataDecision({ feature: "geocode", source: "backend", status: "failure", reason: String(error?.message || error || "unknown") });
+    return null;
+  }
+}
+
+export async function backendLiveRoute(origin, destination) {
+  if (!isBackendEnabled()) {
+    trackLiveDataDecision({ feature: "route", source: "backend", status: "skipped", reason: "backend_disabled" });
+    return null;
+  }
+
+  try {
+    const response = await fetch(withQuery("/live/route", { origin, destination }), {
+      headers: { ...buildRequesterHeaders() }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `Backend route failed: ${response.status}`);
+    }
+    trackLiveDataDecision({ feature: "route", source: "backend", status: data?.route ? "success" : "empty" });
+    return data?.route || null;
+  } catch (error) {
+    console.warn("Backend route failed:", error);
+    trackLiveDataDecision({ feature: "route", source: "backend", status: "failure", reason: String(error?.message || error || "unknown") });
+    return null;
+  }
+}
+
+export async function backendLivePlaces(lat, lng, type) {
+  if (!isBackendEnabled()) {
+    trackLiveDataDecision({ feature: `places:${type}`, source: "backend", status: "skipped", reason: "backend_disabled" });
+    return null;
+  }
+
+  try {
+    const response = await fetch(withQuery("/live/places", { lat, lng, type }), {
+      headers: { ...buildRequesterHeaders() }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `Backend places failed: ${response.status}`);
+    }
+    trackLiveDataDecision({ feature: `places:${type}`, source: "backend", status: Array.isArray(data?.places) && data.places.length ? "success" : "empty" });
+    return Array.isArray(data?.places) ? data.places : [];
+  } catch (error) {
+    console.warn("Backend places failed:", error);
+    trackLiveDataDecision({ feature: `places:${type}`, source: "backend", status: "failure", reason: String(error?.message || error || "unknown") });
+    return null;
+  }
+}
+
+export async function backendLiveWeather(lat, lng) {
+  if (!isBackendEnabled()) {
+    trackLiveDataDecision({ feature: "weather", source: "backend", status: "skipped", reason: "backend_disabled" });
+    return null;
+  }
+
+  try {
+    const response = await fetch(withQuery("/live/weather", { lat, lng }), {
+      headers: { ...buildRequesterHeaders() }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `Backend weather failed: ${response.status}`);
+    }
+    trackLiveDataDecision({ feature: "weather", source: "backend", status: data?.weather ? "success" : "empty" });
+    return data?.weather || null;
+  } catch (error) {
+    console.warn("Backend weather failed:", error);
+    trackLiveDataDecision({ feature: "weather", source: "backend", status: "failure", reason: String(error?.message || error || "unknown") });
     return null;
   }
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { generateBudgetEstimate } from "../../src/services/ai/budget.service.ts";
 
+const INR_RATE = 83.5;
+
 function independentEstimate({ destination, days, travelers, style, travelMode }) {
   const costTierMap = {
     goa: 0.86,
@@ -26,15 +28,15 @@ function independentEstimate({ destination, days, travelers, style, travelMode }
   let transportation = 0;
 
   if (String(travelMode || "").toLowerCase().includes("flight")) {
-    flights = Math.round(95 * pax * destinationTier * styleMultiplier);
-    transportation = Math.round(22 * pax * tripDays * destinationTier);
+    flights = Math.round(95 * INR_RATE * pax * destinationTier * styleMultiplier);
+    transportation = Math.round(22 * INR_RATE * pax * tripDays * destinationTier);
   } else {
-    transportation = Math.round(30 * pax + 16 * pax * tripDays * destinationTier * styleMultiplier);
+    transportation = Math.round((30 * INR_RATE * pax) + (16 * INR_RATE * pax * tripDays * destinationTier * styleMultiplier));
   }
 
-  const accommodation = Math.round(58 * rooms * Math.max(1, tripDays - 1) * destinationTier * styleMultiplier);
-  const food = Math.round(20 * pax * tripDays * destinationTier * Math.min(1.35, styleMultiplier));
-  const activities = Math.round(14 * pax * tripDays * destinationTier * styleMultiplier);
+  const accommodation = Math.round(58 * INR_RATE * rooms * Math.max(1, tripDays - 1) * destinationTier * styleMultiplier);
+  const food = Math.round(20 * INR_RATE * pax * tripDays * destinationTier * Math.min(1.35, styleMultiplier));
+  const activities = Math.round(14 * INR_RATE * pax * tripDays * destinationTier * styleMultiplier);
 
   const total = transportation + accommodation + food + activities;
   return { flights, transportation, accommodation, food, activities, total };

@@ -123,14 +123,14 @@ export async function fetchUnifiedDiscoveryData(
 
       console.log(`✅ Received ${rawDestinations.length} destinations from API`);
 
-      // Enrich first 30 destinations with geo data (parallel processing)
-      const destinationsToEnrich = rawDestinations.slice(0, 30);
+      // Enrich only the top slice to avoid flooding geocode, route, and photo providers.
+      const destinationsToEnrich = rawDestinations.slice(0, 12);
       const enrichedDestinations = await Promise.all(
         destinationsToEnrich.map(dest => enrichDestination(dest, userLocation))
       );
 
       // Add remaining destinations without enrichment (for performance)
-      const remainingDestinations = rawDestinations.slice(30).map(dest => ({
+      const remainingDestinations = rawDestinations.slice(12).map(dest => ({
         ...dest,
         distanceKm: 0,
         lat: null,

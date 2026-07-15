@@ -15,6 +15,13 @@ function now() {
   return Date.now();
 }
 
+function canUseLocalStorage() {
+  return typeof localStorage !== "undefined"
+    && typeof localStorage.getItem === "function"
+    && typeof localStorage.setItem === "function"
+    && typeof localStorage.removeItem === "function";
+}
+
 function buildStorageKey(bucket, key) {
   return `${CACHE_PREFIX}:${bucket}:${key}`;
 }
@@ -28,7 +35,7 @@ function safeParse(raw) {
 }
 
 function readFromStorage(storageKey) {
-  if (typeof localStorage === "undefined") {
+  if (!canUseLocalStorage()) {
     return null;
   }
 
@@ -47,7 +54,7 @@ function readFromStorage(storageKey) {
 }
 
 function writeToStorage(storageKey, entry) {
-  if (typeof localStorage === "undefined") {
+  if (!canUseLocalStorage()) {
     return;
   }
 
@@ -68,7 +75,7 @@ export function getCachedValue(bucket, key) {
   }
 
   if (Number(storageEntry.expiresAt || 0) <= now()) {
-    if (typeof localStorage !== "undefined") {
+    if (canUseLocalStorage()) {
       localStorage.removeItem(storageKey);
     }
     inMemoryCache.delete(storageKey);

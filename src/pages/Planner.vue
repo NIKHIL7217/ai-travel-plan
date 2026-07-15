@@ -474,7 +474,9 @@ import {
   generateBudgetEstimate,
   extractTripIntent,
   getRealLocationData,
-  geocodePlace
+  geocodePlace,
+  getRouteDistance,
+  REAL_DATA_ONLY
 } from "../services/gemini";
 import { trackEvent } from "../core/monitoring";
 import { isFeatureEnabled } from "../config/featureFlags";
@@ -499,8 +501,6 @@ const profileMemoryStore = useProfileMemoryStore();
 const isGenerating = ref(false);
 const mapPoints = ref([]);
 const destinationCenter = ref(null);
-const INR_RATE = 83.5;
-
 const isListening = ref(false);
 const speechSupported = ref(true);
 let recognition = null;
@@ -885,8 +885,8 @@ async function ensureDestinationPoint(destinationName) {
 
 function applyLocationData(location, destinationName) {
   if (!location) {
-    hotels.value = buildFallbackHotels(destinationName);
-    restaurants.value = buildFallbackRestaurants(destinationName);
+    hotels.value = REAL_DATA_ONLY ? [] : buildFallbackHotels(destinationName);
+    restaurants.value = REAL_DATA_ONLY ? [] : buildFallbackRestaurants(destinationName);
     return;
   }
 
@@ -900,7 +900,7 @@ function applyLocationData(location, destinationName) {
       nightly: Math.round(Number(hotel.price || 0)) || 6500
     }));
   } else {
-    hotels.value = buildFallbackHotels(destinationName);
+    hotels.value = REAL_DATA_ONLY ? [] : buildFallbackHotels(destinationName);
   }
 
   const liveFood = Array.isArray(location.restaurants) ? location.restaurants : [];
@@ -913,7 +913,7 @@ function applyLocationData(location, destinationName) {
       avgCost: Math.round(Number(restaurant.averagePrice || 0)) || 700
     }));
   } else {
-    restaurants.value = buildFallbackRestaurants(destinationName);
+    restaurants.value = REAL_DATA_ONLY ? [] : buildFallbackRestaurants(destinationName);
   }
 
   const points = [
@@ -938,10 +938,10 @@ function applyBudgetEstimate(budget, fallbackTotal) {
   }
   budgetBuckets.value = {
     flights: 0,
-    stay: Math.round((Number(budget.accommodation) || 0) * INR_RATE),
-    food: Math.round((Number(budget.food) || 0) * INR_RATE),
-    transport: Math.round((Number(budget.transportation) || 0) * INR_RATE),
-    activities: Math.round((Number(budget.activities) || 0) * INR_RATE)
+    stay: Math.round(Number(budget.accommodation) || 0),
+    food: Math.round(Number(budget.food) || 0),
+    transport: Math.round(Number(budget.transportation) || 0),
+    activities: Math.round(Number(budget.activities) || 0)
   };
   if (!totalBudget.value && fallbackTotal) {
     budgetBuckets.value.activities += Math.round(fallbackTotal);
@@ -974,6 +974,7 @@ async function generateRealPlan(query, options = {}) {
     const stayPreference = patch.stayPreference || "mid-range";
     const foodPreference = patch.foodPreference || "mixed";
     const effectiveQuery = hasNewDestination ? query : `${destination} trip — ${query}`;
+    const origin = patch.origin || userLocation.value?.city || "Current Location";
 
     const planOptions = {
       userQuery: effectiveQuery,
@@ -986,10 +987,11 @@ async function generateRealPlan(query, options = {}) {
       endDate: options.endDate || planner.value.endDate || ""
     };
 
-    const [plan, budget, location] = await Promise.all([
+    const [plan, budget, location, routeInfo] = await Promise.all([
       generateTravelPlan(destination, style, days, travelers, budgetLimit, travelMode, planOptions),
       generateBudgetEstimate(destination, days, travelers, style, travelMode, { ...planOptions, budgetLimit }).catch(() => null),
-      getRealLocationData(destination).catch(() => null)
+      getRealLocationData(destination).catch(() => null),
+      getRouteDistance(origin, destination).catch(() => null)
     ]);
 
     if (!plan || !Array.isArray(plan.itinerary) || plan.itinerary.length === 0) {
@@ -997,7 +999,7 @@ async function generateRealPlan(query, options = {}) {
     }
 
     const resolvedDays = plan.itinerary.length;
-    const totalEstimate = budget?.total ? Math.round(budget.total * INR_RATE) : 0;
+    const totalEstimate = budget?.total ? Math.round(budget.total) : 0;
     const perDayCost = Math.round((totalEstimate || 90000) / Math.max(1, resolvedDays));
 
     planner.value = {
@@ -1007,6 +1009,7 @@ async function generateRealPlan(query, options = {}) {
       summary: plan.summary || plan.itinerary.map((day) => day.theme).filter(Boolean).slice(0, 5).join(" → "),
       travelers,
       updatedAt: "just now",
+      weather: plan?.weather?.current?.temperature || planner.value.weather,
       score: planner.value.score
     };
 
@@ -1025,8 +1028,10 @@ async function generateRealPlan(query, options = {}) {
 
     mapSummary.value = {
       route: dayPlans.value.map((day) => day.area).join(" → "),
-      distance: `${resolvedDays}-day route across ${planner.value.destination}`,
-      transfer: `${travelMode} based travel · ${travelers} traveller(s)`
+      distance: routeInfo?.distance ? `${routeInfo.distance.toLocaleString()} km total route context` : `${resolvedDays}-day route across ${planner.value.destination}`,
+      transfer: routeInfo?.durationSeconds
+        ? `${Math.max(1, Math.round((Number(routeInfo.durationSeconds[String(travelMode || "car").toLowerCase()] || routeInfo.durationSeconds.car || 0)) / 3600))}h ${travelMode.toLowerCase()} context · ${travelers} traveller(s)`
+        : `${travelMode} based travel · ${travelers} traveller(s)`
     };
 
     if (Array.isArray(plan.tips) && plan.tips.length) {
@@ -1035,7 +1040,7 @@ async function generateRealPlan(query, options = {}) {
 
     plannerSession.setActiveContext({
       destination: planner.value.destination,
-      origin: patch.origin || "Current Location",
+      origin,
       summary: planner.value.summary,
       style,
       travelMode,

@@ -7,11 +7,19 @@ import { budgetEstimateSchema } from "../../schemas/budget.schema";
 import { parseWithSchema } from "../../schemas/parse";
 import type { BudgetEstimate, BudgetEstimateOptions } from "../../types/Budget";
 import { requestWithRetry } from "../../core/monitoring/request";
+import { CacheBuckets, withCache } from "../../core/cache/dataCache";
 
 export type { BudgetEstimate, BudgetEstimateOptions } from "../../types/Budget";
 
+const INR_RATE = 83.5;
+const BUDGET_CACHE_TTL_MS = 1000 * 60 * 15;
+
 function validateBudgetEstimate(value: unknown, context: string): BudgetEstimate | null {
   return parseWithSchema(budgetEstimateSchema, value, context);
+}
+
+function toInr(value) {
+  return Math.round(Number(value || 0) * INR_RATE);
 }
 
 /**
@@ -122,8 +130,8 @@ function buildIndependentBudgetBenchmark({
   days,
   travelers,
   travelMode,
-  effectiveHotelRateInUsd,
-  effectiveMealRateInUsd,
+  effectiveHotelRateInInr,
+  effectiveMealRateInInr,
   styleMultiplier,
   foodPrefConfig,
   activityCostMultiplier = 1,
@@ -138,22 +146,22 @@ function buildIndependentBudgetBenchmark({
   const mode = String(travelMode || "car").toLowerCase();
 
   if (mode.includes("flight")) {
-    transportation = Math.round(18 * tripDays * pax * styleMultiplier * transportCostMultiplier);
+    transportation = Math.round(toInr(18) * tripDays * pax * styleMultiplier * transportCostMultiplier);
   } else if (mode.includes("train")) {
-    transportation = Math.round((Math.max(20, distance * 0.026) * pax + 9 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
+    transportation = Math.round(toInr(Math.max(20, distance * 0.026) * pax + 9 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
   } else if (mode.includes("bus")) {
-    transportation = Math.round((Math.max(14, distance * 0.019) * pax + 8 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
+    transportation = Math.round(toInr(Math.max(14, distance * 0.019) * pax + 8 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
   } else if (mode.includes("bike")) {
-    transportation = Math.round((((distance / 40) * 1.22) + 7 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
+    transportation = Math.round(toInr(((distance / 40) * 1.22) + 7 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
   } else {
-    transportation = Math.round((((distance / 13) * 1.24) + (distance * 0.012) + 10 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
+    transportation = Math.round(toInr(((distance / 13) * 1.24) + (distance * 0.012) + 10 * tripDays * pax) * styleMultiplier * transportCostMultiplier);
   }
 
-  const accommodation = Math.round(effectiveHotelRateInUsd * rooms * Math.max(1, tripDays - 1));
-  const food = Math.round(effectiveMealRateInUsd * Number(foodPrefConfig?.mealsPerDay || 2.5) * pax * tripDays);
+  const accommodation = Math.round(effectiveHotelRateInInr * rooms * Math.max(1, tripDays - 1));
+  const food = Math.round(effectiveMealRateInInr * Number(foodPrefConfig?.mealsPerDay || 2.5) * pax * tripDays);
 
-  const destinationCostIndex = Math.max(0.7, Math.min(1.8, (effectiveHotelRateInUsd / 60) * 0.55 + (effectiveMealRateInUsd / 8) * 0.45));
-  const activities = Math.round(16 * tripDays * pax * styleMultiplier * destinationCostIndex * activityCostMultiplier);
+  const destinationCostIndex = Math.max(0.7, Math.min(1.8, (effectiveHotelRateInInr / toInr(60)) * 0.55 + (effectiveMealRateInInr / toInr(8)) * 0.45));
+  const activities = Math.round(toInr(16) * tripDays * pax * styleMultiplier * destinationCostIndex * activityCostMultiplier);
 
   return normalizeBudgetForTravelMode({
     flights: 0,
@@ -237,6 +245,22 @@ function selectHotelsForPreference(hotels, stayPreference) {
 }
 
 export async function generateBudgetEstimate(destination: string, days: number, travelers: number, style: string, travelMode = "Car", options: BudgetEstimateOptions = {}): Promise<BudgetEstimate> {
+  const cacheKey = [
+    String(destination || "").trim().toLowerCase(),
+    Math.max(1, Number(days || 1)),
+    Math.max(1, Number(travelers || 1)),
+    String(style || "comfort").toLowerCase(),
+    String(travelMode || "car").toLowerCase(),
+    String(options.userQuery || "").trim().toLowerCase(),
+    String(options.sourceQuery || "").trim().toLowerCase(),
+    String(options.selectedCountry || "").trim().toLowerCase(),
+    String(options.stayPreference || "").trim().toLowerCase(),
+    String(options.foodPreference || "").trim().toLowerCase(),
+    Number(options.budgetLimit || 0),
+    Boolean(options.fastPath) ? "fast" : "full"
+  ].join("|");
+
+  return withCache(CacheBuckets.search, `budget:${cacheKey}`, BUDGET_CACHE_TTL_MS, async () => {
   const normalizedQuery = String(options.userQuery || "").trim();
   const selectedCountry = String(options.selectedCountry || "").trim();
   const sourceQuery = String(options.sourceQuery || normalizedQuery || destination || "").trim();
@@ -262,8 +286,8 @@ export async function generateBudgetEstimate(destination: string, days: number, 
 
   const origin = userLocation.value.city || "New Delhi";
   let distanceKm = 1000;
-  let hotelRateInUsd = 60;
-  let restRateInUsd = 8;
+  let hotelRateInInr = toInr(60);
+  let restRateInInr = toInr(8);
   let hasLiveHotelRate = false;
   let hasLiveMealRate = false;
 
@@ -296,7 +320,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         const chosenHotels = preferredHotels.length ? preferredHotels : allWithPrice;
         if (chosenHotels.length > 0) {
           const avgInr = chosenHotels.reduce((sum, h) => sum + Number(h.price || 0), 0) / chosenHotels.length;
-          hotelRateInUsd = avgInr / 83.5;
+          hotelRateInInr = avgInr;
           hasLiveHotelRate = true;
         }
       }
@@ -305,7 +329,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         const restaurantsWithPrice = restaurants.filter((r) => Number(r?.averagePrice || 0) > 0);
         if (restaurantsWithPrice.length > 0) {
           const avgInr = restaurantsWithPrice.reduce((sum, r) => sum + Number(r.averagePrice || 0), 0) / restaurantsWithPrice.length;
-          restRateInUsd = avgInr / 83.5;
+          restRateInInr = avgInr;
           hasLiveMealRate = true;
         }
       }
@@ -319,23 +343,23 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   );
 
   if (!hasLiveHotelRate) {
-    hotelRateInUsd *= destinationCostSignal.hotelMultiplier;
+    hotelRateInInr *= destinationCostSignal.hotelMultiplier;
   }
   if (!hasLiveMealRate) {
-    restRateInUsd *= destinationCostSignal.mealMultiplier;
+    restRateInInr *= destinationCostSignal.mealMultiplier;
   }
 
-  const effectiveHotelRateInUsd = hotelRateInUsd * getStayTierMultiplier(stayPreference);
+  const effectiveHotelRateInInr = hotelRateInInr * getStayTierMultiplier(stayPreference);
   const foodPrefConfig = getFoodPreferenceConfig(foodPreference);
-  const effectiveMealRateInUsd = restRateInUsd * foodPrefConfig.multiplier;
+  const effectiveMealRateInInr = restRateInInr * foodPrefConfig.multiplier;
   const styleMultiplier = getStyleMultiplier(style);
   const independentBenchmarkBudget = buildIndependentBudgetBenchmark({
     distanceKm,
     days,
     travelers,
     travelMode,
-    effectiveHotelRateInUsd,
-    effectiveMealRateInUsd,
+    effectiveHotelRateInInr,
+    effectiveMealRateInInr,
     styleMultiplier,
     foodPrefConfig,
     activityCostMultiplier: destinationCostSignal.activityMultiplier,
@@ -346,7 +370,7 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     try {
       const liveContextTag = new Date().toISOString();
       const budgetInstruction = budgetLimit > 0
-        ? `Try to keep total close to user budget cap (${budgetLimit} USD) while preserving requested comfort preferences.`
+        ? `Try to keep total close to user budget cap (${budgetLimit} INR) while preserving requested comfort preferences.`
         : "No strict budget cap provided by user.";
       const prompt = `
         You are a travel budget analyst.
@@ -360,10 +384,10 @@ export async function generateBudgetEstimate(destination: string, days: number, 
         Travel mode: ${travelMode}
         Stay preference: ${stayPreference}
         Food preference: ${foodPreference}
-        User budget cap: ${budgetLimit > 0 ? `${budgetLimit} USD` : "not provided"}
+        User budget cap: ${budgetLimit > 0 ? `${budgetLimit} INR` : "not provided"}
         Approx route distance: ${Math.round(distanceKm)} km
-        Preferred hotel nightly baseline: ${effectiveHotelRateInUsd.toFixed(2)} USD
-        Preferred meal baseline: ${effectiveMealRateInUsd.toFixed(2)} USD
+        Preferred hotel nightly baseline: ${Math.round(effectiveHotelRateInInr)} INR
+        Preferred meal baseline: ${Math.round(effectiveMealRateInInr)} INR
         Pricing country context: ${resolvedCountryHint || "Not provided"}
         Live Request Timestamp: ${liveContextTag}
         Source Query: ${sourceQuery || "N/A"}
@@ -441,35 +465,35 @@ export async function generateBudgetEstimate(destination: string, days: number, 
   const modeClean = (travelMode || "Car").toLowerCase();
 
   if (modeClean.includes("flight")) {
-    transportation = Math.round(16 * days * travelers * styleMultiplier * destinationCostSignal.transportMultiplier);
+    transportation = Math.round(toInr(16 * days * travelers) * styleMultiplier * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("train")) {
-    const trainCost = Math.max(18, distanceKm * 0.022) * travelers * styleMultiplier;
-    const localTransit = 11 * days * travelers * styleMultiplier;
+    const trainCost = toInr(Math.max(18, distanceKm * 0.022) * travelers) * styleMultiplier;
+    const localTransit = toInr(11 * days * travelers) * styleMultiplier;
     transportation = Math.round((trainCost + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("bus")) {
-    const busCost = Math.max(12, distanceKm * 0.017) * travelers * styleMultiplier;
-    const localTransit = 9 * days * travelers * styleMultiplier;
+    const busCost = toInr(Math.max(12, distanceKm * 0.017) * travelers) * styleMultiplier;
+    const localTransit = toInr(9 * days * travelers) * styleMultiplier;
     transportation = Math.round((busCost + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("car")) {
-    const fuelCostUsd = (distanceKm / 14) * 1.25;
-    const tollCostUsd = distanceKm * 0.015;
-    const localTransit = 12 * days * travelers * styleMultiplier;
-    transportation = Math.round(((fuelCostUsd + tollCostUsd) * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
+    const fuelCostInr = toInr((distanceKm / 14) * 1.25);
+    const tollCostInr = toInr(distanceKm * 0.015);
+    const localTransit = toInr(12 * days * travelers) * styleMultiplier;
+    transportation = Math.round(((fuelCostInr + tollCostInr) * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
   } else if (modeClean.includes("bike")) {
-    const fuelCostUsd = (distanceKm / 45) * 1.25;
-    const localTransit = 8 * days * travelers * styleMultiplier;
-    transportation = Math.round((fuelCostUsd * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
+    const fuelCostInr = toInr((distanceKm / 45) * 1.25);
+    const localTransit = toInr(8 * days * travelers) * styleMultiplier;
+    transportation = Math.round((fuelCostInr * styleMultiplier + localTransit) * destinationCostSignal.transportMultiplier);
   } else {
-    const baseTransfer = Math.max(24, distanceKm * 0.03) * travelers * styleMultiplier;
-    const localTransit = 15 * days * travelers * styleMultiplier;
+    const baseTransfer = toInr(Math.max(24, distanceKm * 0.03) * travelers) * styleMultiplier;
+    const localTransit = toInr(15 * days * travelers) * styleMultiplier;
     transportation = Math.round((baseTransfer + localTransit) * destinationCostSignal.transportMultiplier);
   }
 
   const rooms = Math.ceil(travelers / 2);
-  const accommodation = Math.round(effectiveHotelRateInUsd * rooms * Math.max(1, days - 1));
-  const food = Math.round(effectiveMealRateInUsd * foodPrefConfig.mealsPerDay * travelers * days);
+  const accommodation = Math.round(effectiveHotelRateInInr * rooms * Math.max(1, days - 1));
+  const food = Math.round(effectiveMealRateInInr * foodPrefConfig.mealsPerDay * travelers * days);
   const activityBase = styleMultiplier >= 1.5 ? 26 : styleMultiplier >= 1.1 ? 20 : 14;
-  const activities = Math.round(activityBase * days * travelers * destinationCostSignal.activityMultiplier);
+  const activities = Math.round(toInr(activityBase) * days * travelers * destinationCostSignal.activityMultiplier);
 
   let total = accommodation + food + transportation + activities;
 
@@ -517,4 +541,5 @@ export async function generateBudgetEstimate(destination: string, days: number, 
     activities,
     total: accommodation + food + transportation + activities
   };
+  });
 }

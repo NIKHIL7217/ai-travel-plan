@@ -1,6 +1,8 @@
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 import { requestWithRetry } from "../../core/monitoring/request";
 import { CacheBuckets, withCache } from "../../core/cache/dataCache";
+import { backendLiveGeocode } from "../api/backendClient";
+import { trackLiveDataDecision } from "../../core/monitoring";
 
 const GEOCODE_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 
@@ -111,6 +113,16 @@ export async function geocodePlace(placeName: string): Promise<GeocodeResult | n
 
   const cacheKey = trimmed.toLowerCase();
   return withCache(CacheBuckets.search, `geocode:${cacheKey}`, GEOCODE_CACHE_TTL_MS, async () => {
+    try {
+      const backendResult = await backendLiveGeocode(trimmed);
+      if (backendResult && Number.isFinite(Number(backendResult.lat)) && Number.isFinite(Number(backendResult.lng))) {
+        trackLiveDataDecision({ feature: "geocode", source: "backend", status: "success", query: trimmed });
+        return backendResult;
+      }
+    } catch {
+      // Fall through to direct providers.
+    }
+
     // Try using Google Geocoding if API key is present
     if (GOOGLE_MAPS_KEY) {
       try {
@@ -122,6 +134,7 @@ export async function geocodePlace(placeName: string): Promise<GeocodeResult | n
         if (res.ok) {
           const data = await res.json();
           if (data.results && data.results.length > 0) {
+            trackLiveDataDecision({ feature: "geocode", source: "google", status: "success", query: trimmed });
             const loc = data.results[0].geometry.location;
             return { lat: loc.lat, lng: loc.lng, formattedName: data.results[0].formatted_address };
           }
@@ -141,12 +154,14 @@ export async function geocodePlace(placeName: string): Promise<GeocodeResult | n
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
+          trackLiveDataDecision({ feature: "geocode", source: "osm", status: "success", query: trimmed });
           return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), formattedName: data[0].display_name };
         }
       }
     } catch (e) {
       console.error("OSM Geocoding failed:", e);
     }
+    trackLiveDataDecision({ feature: "geocode", source: "none", status: "empty", query: trimmed });
     return null;
   });
 }

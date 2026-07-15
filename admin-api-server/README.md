@@ -1,7 +1,8 @@
 # WanderAI API Server
 
 Secure backend for WanderAI. It keeps the **Gemini API key server-side** (so it is
-never shipped in the browser bundle) and provides trip persistence.
+never shipped in the browser bundle), can proxy live travel APIs server-side,
+and provides trip persistence.
 
 ## Why this exists
 
@@ -26,6 +27,21 @@ ADMIN_API_SECRET=change-me-strong-secret
 ENFORCE_ADMIN_SECRET=true
 ```
 
+Optional live data envs:
+
+```bash
+GOOGLE_MAPS_API_KEY=your_google_maps_key
+OPENWEATHER_API_KEY=your_openweather_key
+
+# Live proxy cache tuning (optional)
+LIVE_PROXY_CACHE_ENABLED=true
+LIVE_PROXY_CACHE_MAX_ENTRIES=800
+LIVE_PROXY_CACHE_TTL_GEOCODE_MS=21600000
+LIVE_PROXY_CACHE_TTL_ROUTE_MS=7200000
+LIVE_PROXY_CACHE_TTL_PLACES_MS=1200000
+LIVE_PROXY_CACHE_TTL_WEATHER_MS=600000
+```
+
 Then in the project root `.env` add:
 
 ```
@@ -41,6 +57,11 @@ Restart `npm run dev` (the Vite frontend) so it picks up the new env var.
 | GET | `/api/health` | Health + whether Gemini is configured |
 | POST | `/api/ai/generate` | `{ prompt, json? }` → `{ text }` (key stays server-side) |
 | POST | `/api/ai/chat` | `{ messages, system }` → SSE stream of `{ text }` deltas |
+| GET | `/api/live/geocode?q=` | Server-side geocode with Google/OSM fallback |
+| GET | `/api/live/route?origin=&destination=` | Server-side route distance + duration |
+| GET | `/api/live/places?lat=&lng=&type=` | Server-side nearby places lookup |
+| GET | `/api/live/weather?lat=&lng=` | Server-side weather lookup |
+| GET | `/api/live/cache/stats` | Live proxy cache stats (entries, TTLs, hit/miss/dedupe counters) |
 | GET | `/api/trips?userId=` | List saved trips |
 | GET | `/api/trips/:id` | Get one trip |
 | POST | `/api/trips` | Save a trip |
